@@ -1,0 +1,49 @@
+{
+  "name": "kao",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "KAO(Kinetic Aero One) — 회원 탈것의 주행을 실시간으로 지켜보고 문제를 원격으로 조치하는 서비스",
+  "packageManager": "pnpm@12.16.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "node .output/server/index.mjs",
+    "postinstall": "nuxt prepare",
+    "lint": "eslint .",
+    "lint:fsd": "steiger ./src",
+    "typecheck": "nuxt typecheck",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
+  },
+  "dependencies": {
+    "h3": "1.15.11",
+    "nuxt": "4.6.4",
+    "three": "^0.187.0",
+    "vue": "^3.5.45",
+    "vue-router": "^5.5.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@feature-sliced/steiger-plugin": "^0.8.2",
+    "@nuxt/eslint": "^1.17.0",
+    "@playwright/test": "^1.65.0",
+    "@storybook/vue3-vite": "^10.6.7",
+    "@types/node": "^26.6.6",
+    "@types/three": "^0.187.0",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "@vue/test-utils": "^2.5.1",
+    "eslint": "^10.14.0",
+    "happy-dom": "^21.0.4",
+    "steiger": "^0.10.0",
+    "storybook": "^10.6.7",
+    "typescript": "6.0.3",
+    "vitest": "^5.1.0",
+    "vue-tsc": "^3.3.14"
+  }
+}
