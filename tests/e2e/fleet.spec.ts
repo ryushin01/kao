@@ -28,16 +28,23 @@ test('조치 대기열에서 원격 조치를 확인하고 보내면 조치 중�
   await expect(log.getByRole('listitem').filter({ hasText: `${title}` }).filter({ hasText: '명령 전송' })).toHaveCount(1)
 })
 
-test('카드 제목을 누르면 탈것 상세 화면으로 가고, 없는 탈것은 404를 보여 줍니다', async ({ page }) => {
+test('카드 제목을 누르면 탈것 상세 화면으로 갑니다', async ({ page }) => {
   await page.goto('/fleet')
   await page.getByRole('link', { name: 'STRiDA LT' }).click()
   await expect(page).toHaveURL(/\/fleet\/kao-0004$/)
   await expect(page.getByRole('heading', { level: 1, name: 'STRiDA LT' })).toBeVisible()
   await expect(page.getByRole('heading', { name: '실시간 지표' })).toBeVisible()
+})
 
-  const response = await page.goto('/fleet/unknown')
-  expect(response?.status()).toBe(404)
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('사건의 지평선 너머')
+test.describe('동작 줄이기 설정', () => {
+  test.use({ reducedMotion: 'reduce' })
+
+  test('없는 탈것은 404 화면을 보여 주고, 애니메이션은 멈춘 상태로 시작합니다', async ({ page }) => {
+    const response = await page.goto('/fleet/unknown')
+    expect(response?.status()).toBe(404)
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('사건의 지평선 너머')
+    await expect(page.getByRole('button', { name: '애니메이션 정지' })).toHaveAttribute('aria-pressed', 'true')
+  })
 })
 
 test('애니메이션 정지 버튼은 눌림 상태를 알립니다', async ({ page }) => {

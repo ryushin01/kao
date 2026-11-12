@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useHead } from '#imports'
+import { initMotionPreference } from '@shared/lib'
 import { SiteFooter } from '@widgets/site-footer'
 import { SiteHeader } from '@widgets/site-header'
 import { EventHorizon } from '@widgets/event-horizon'
@@ -10,6 +11,9 @@ const props = defineProps<{ error: { statusCode?: number; statusMessage?: string
 
 const notFound = computed(() => props.error.statusCode === 404)
 const heading = computed(() => (notFound.value ? '사건의 지평선 너머로 사라진 화면입니다' : '관제 신호가 끊겼습니다'))
+
+// 오류 화면은 AppRoot 밖에서 그려지므로 동작 줄이기 설정을 여기서도 읽습니다.
+onMounted(initMotionPreference)
 
 useHead({ title: () => `${notFound.value ? '찾을 수 없음' : '오류'} — KAO` })
 </script>
