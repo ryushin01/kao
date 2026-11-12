@@ -228,6 +228,8 @@ async function build(id, config) {
     for (const prim of mesh.listPrimitives()) if (config.drop.test(prim.getMaterial()?.getName() ?? '-')) mesh.removePrimitive(prim)
   }
   const counts = splitWheels(document, config.wheels, config.keepOnBody ?? /calip/i)
+  const missing = counts.flatMap((count, index) => (count === 0 ? [index] : []))
+  if (missing.length) throw new Error(`${id}: wheel_${missing.join(', wheel_')}에서 형상을 찾지 못했습니다. --inspect로 바퀴 좌표를 다시 확인해 주세요.`)
 
   // 바퀴가 아닌 메시는 몸체 노드 하나로 모읍니다.
   const body = document.createNode('body')
@@ -277,6 +279,11 @@ async function buildLite(id) {
   await io.write(`public/models/${id}.lite.glb`, lite)
   const tris = [...materialBounds(lite).values()].reduce((sum, e) => sum + e.tris, 0)
   console.log(`${id}: 지도용 삼각형 약 ${Math.round(tris)} · public/models/${id}.lite.glb`)
+}
+
+if (onlyId && !(onlyId in MODELS)) {
+  console.error(`알 수 없는 모델 id: ${onlyId} (가능한 값: ${Object.keys(MODELS).join(', ')})`)
+  process.exit(1)
 }
 
 for (const [id, config] of Object.entries(MODELS)) {
