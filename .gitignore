@@ -13,3 +13,6 @@ test-results
 .env.*
 !.env.example
 .DS_Store
+
+# Sketchfab에서 받은 3D 모델 원본(압축 전)
+assets-src
