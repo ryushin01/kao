@@ -236,7 +236,7 @@ export function createStridaLT(paintHex: string): Miniature {
     tire.rotation.x = Math.PI / 2
     tire.castShadow = true
     spin.add(tire)
-    const rimRadius = radius - tireRadius * 1.8
+    const rimRadius = radius - tireRadius * 2 - 0.008
     spin.add(new Mesh(new TorusGeometry(rimRadius, 0.008, 10, 72), m.chrome))
     const hub = new Mesh(new CylinderGeometry(0.018, 0.018, 0.07, 20), m.darkMetal)
     hub.rotation.x = Math.PI / 2
