@@ -6,6 +6,8 @@ export interface StageOptions {
   fov?: number
   near?: number
   far?: number
+  /** 렌더 해상도 배율 상한. 브라우저 배율이 바뀔 때마다 기기 배율과 비교해 다시 적용합니다. */
+  maxPixelRatio?: number
   /** 프레임마다 부릅니다. delta는 초 단위입니다. */
   onFrame?: (delta: number, elapsed: number) => void
 }
@@ -38,9 +40,8 @@ export function disposeObject(root: { traverse: (fn: (object: unknown) => void) 
   })
 }
 
-export function createStage({ canvas, fov = 35, near = 0.1, far = 400, onFrame }: StageOptions): Stage {
+export function createStage({ canvas, fov = 35, near = 0.1, far = 400, maxPixelRatio = 2, onFrame }: StageOptions): Stage {
   const renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' })
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.outputColorSpace = SRGBColorSpace
   renderer.toneMapping = ACESFilmicToneMapping
   renderer.toneMappingExposure = 1.05
@@ -88,6 +89,8 @@ export function createStage({ canvas, fov = 35, near = 0.1, far = 400, onFrame }
     if (!parent) return
     const width = Math.max(1, parent.clientWidth)
     const height = Math.max(1, parent.clientHeight)
+    // 브라우저 배율을 바꾸면 요소 크기도 바뀌어 여기로 들어오므로, 기기 배율을 다시 읽습니다.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio))
     renderer.setSize(width, height, false)
     camera.aspect = width / height
     camera.updateProjectionMatrix()
