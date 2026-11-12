@@ -7,14 +7,14 @@ const props = defineProps<{ publicKey: string | null }>()
 const { state, busy, message, enable, disable, test } = usePush(() => props.publicKey)
 
 // 서버에 설정이 없거나 지원하지 않는 브라우저면 헤더에 아무것도 그리지 않습니다.
+// 알림이 차단된 경우에도 버튼만 두고, 눌렀을 때 허용하는 방법을 안내합니다(헤더에 문구를 늘 띄우지 않음).
 const visible = computed(() => state.value === 'on' || state.value === 'off' || state.value === 'denied')
-const unavailable = computed(() => (state.value === 'denied' ? '알림이 차단되어 있습니다. 브라우저 사이트 설정에서 허용해 주세요.' : ''))
 </script>
 
 <template>
   <div v-if="visible" class="push">
     <HudButton
-      v-if="state === 'on' || state === 'off'"
+      v-if="visible"
       size="sm"
       :pressed="state === 'on'"
       :disabled="busy"
@@ -24,7 +24,7 @@ const unavailable = computed(() => (state.value === 'denied' ? '알림이 차단
       위험 알림
     </HudButton>
     <HudButton v-if="state === 'on'" size="sm" :disabled="busy" @click="test">시험 알림</HudButton>
-    <p class="push__message" role="status">{{ unavailable || message }}</p>
+    <p class="push__message" role="status">{{ message }}</p>
   </div>
 </template>
 

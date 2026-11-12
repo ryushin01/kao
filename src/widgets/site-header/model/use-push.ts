@@ -36,6 +36,10 @@ export function usePush(publicKey: () => string | null) {
   async function enable() {
     const key = publicKey()
     if (!registration || !key || busy.value) return
+    if (Notification.permission === 'denied') {
+      message.value = '알림이 차단되어 있습니다. 브라우저 주소창의 사이트 설정에서 알림을 허용한 뒤 다시 눌러 주세요.'
+      return
+    }
     busy.value = true
     message.value = ''
     try {
