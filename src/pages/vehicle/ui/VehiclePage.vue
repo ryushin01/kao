@@ -24,7 +24,7 @@ const { data } = await useFetch<FleetFrame>('/api/fleet', { key: 'fleet' })
 if (!data.value?.vehicles.some((vehicle) => vehicle.id === vehicleId.value)) {
   throw createError({ statusCode: 404, statusMessage: '등록되지 않은 탈것입니다.', fatal: true })
 }
-const { frame, patchVehicle } = useLiveFleet(data)
+const { frame, applyAction } = useLiveFleet(data)
 
 const vehicle = computed(() => frame.value!.vehicles.find((item) => item.id === vehicleId.value)!)
 const profile = computed(() => MODEL_PROFILES[vehicle.value.modelId])
@@ -36,7 +36,7 @@ const log = computed(() => frame.value!.log.filter((entry) => entry.vehicleId ==
 
 useHead({ title: () => `${title.value} — KAO 관제` })
 
-const onSent = (response: RemoteActionResponse) => patchVehicle(response.vehicle)
+const onSent = (response: RemoteActionResponse) => applyAction(response)
 </script>
 
 <template>

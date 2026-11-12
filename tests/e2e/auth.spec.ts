@@ -22,12 +22,15 @@ test('비밀번호가 틀리면 원인과 방법을 알리고, 빈 칸은 해당
 })
 
 test('회원은 자기 탈것만 보고, 원격 조치 버튼 대신 안내를 봅니다', async ({ page }) => {
+  // 3D 장면이 있는 상세 화면을 세 번 오가므로 GPU 없는 환경에서는 오래 걸립니다.
+  test.slow()
   await page.goto('/login')
   await page.getByRole('button', { name: /가상 회원 02/ }).click()
   await expect(page).toHaveURL(/\/fleet\/kao-0002$/)
   await expect(page.getByRole('navigation', { name: '주요 메뉴' }).getByRole('link', { name: '내 탈것' })).toBeVisible()
   await expect(page.getByRole('heading', { name: '지표 이력' })).toBeVisible()
-  await expect(page.getByRole('group', { name: /이력 그래프/ })).toBeVisible()
+  // 이력은 화면이 뜬 뒤 따로 받아 그립니다.
+  await expect(page.getByRole('group', { name: /이력 그래프/ })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('button', { name: '명령 보내기' })).toHaveCount(0)
 
   await page.goto('/fleet')

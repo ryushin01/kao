@@ -32,9 +32,18 @@ export const ACTION_LATENCY = 2400
 export const SPEED_CAP_DURATION = 90_000
 const SLOT_MS = 45_000
 const NATURAL_RESOLVE_MS = 15 * 60_000
-const FAULT_RATE_SCALE = 0.12
-const FAULT_PROBABILITY = 0.12
-const MAX_ACTIVE_FAULTS = 2
+/**
+ * 문제 빈도. 운영은 알림이 너무 잦지 않게 'calm'(동시 2건, 경고 단계 2분 이상)이고,
+ * E2E 서버는 언제 열어도 조치할 문제가 있도록 'busy'(KAO_SIM_PROFILE=busy)로 띄웁니다.
+ */
+const PROFILES = {
+  calm: { rateScale: 0.12, probability: 0.12, maxActive: 2 },
+  busy: { rateScale: 1, probability: 1, maxActive: 4 },
+} as const
+const PROFILE = PROFILES[process.env.KAO_SIM_PROFILE === 'busy' ? 'busy' : 'calm']
+const FAULT_RATE_SCALE = PROFILE.rateScale
+const FAULT_PROBABILITY = PROFILE.probability
+const MAX_ACTIVE_FAULTS = PROFILE.maxActive
 const RECOVERY_PER_SECOND = 0.35
 const RESOLVED_KEEP = 3
 const RESOLVED_VISIBLE_MS = 20 * 60_000
@@ -181,35 +190,47 @@ function positionAt(vehicle: VehicleSpec, actions: ActionRecord[], time: number)
 
 const faultMetrics = new Map(VEHICLE_SPECS.map((vehicle) => [vehicle.id, vehicle.metrics.filter((metric) => metric.fault)]))
 
-/** 하루치 문제 에피소드. 조치 기록이 같으면 결과도 같으므로 기억해 둡니다. */
+/**
+ * 하루치 문제 에피소드. 하루의 모든 칸을 한 번에 계산하고, 조치 기록이 같으면 결과도 같으므로 기억해 둡니다.
+ * 아직 오지 않은 칸의 에피소드도 들어 있지만, 시작 전에는 지표에 영향이 없고 문제로도 보이지 않습니다.
+ */
 const episodeCache = new Map<string, Episode[]>()
+const SLOTS_PER_DAY = Math.ceil(86_400_000 / SLOT_MS)
 
-function episodesFor(dayStart: number, until: number, actions: ActionRecord[]): Episode[] {
-  const lastSlot = Math.floor((until - dayStart) / SLOT_MS)
-  const key = `${dayStart}:${lastSlot}:${actions.map((action) => action.id).join(',')}`
+function episodesFor(dayStart: number, actions: ActionRecord[]): Episode[] {
+  const key = `${dayStart}:${actions.map((action) => action.id).join(',')}`
   const cached = episodeCache.get(key)
   if (cached) return cached
 
   const byIssue = new Map(actions.map((action) => [action.issueId, action]))
   const episodes: Episode[] = []
-  for (let slot = 0; slot <= lastSlot; slot += 1) {
+  // 진행 중인 에피소드만 들고 갑니다(최대 MAX_ACTIVE_FAULTS건). 끝난 것은 그때그때 뺍니다.
+  let active: Episode[] = []
+  for (let slot = 0; slot < SLOTS_PER_DAY; slot += 1) {
     const seed = random(hash('fault', dayStart, slot))
     if (seed() > FAULT_PROBABILITY) continue
     const vehicle = VEHICLE_SPECS[Math.floor(seed() * VEHICLE_SPECS.length)]!
     const metrics = faultMetrics.get(vehicle.id)!
     const metric = metrics[Math.floor(seed() * metrics.length)]!
     const start = dayStart + slot * SLOT_MS + Math.floor(seed() * SLOT_MS * 0.6)
-    const active = episodes.filter((episode) => episode.end > start)
+    active = active.filter((episode) => episode.end > start)
     if (active.length >= MAX_ACTIVE_FAULTS) continue
     if (active.some((episode) => episode.vehicle.id === vehicle.id && episode.metric.key === metric.key)) continue
     const id = `${vehicle.id}-${metric.key}-${dayStart / 1000}-${slot}`
     const action = byIssue.get(id) ?? null
     const natural = start + NATURAL_RESOLVE_MS
-    episodes.push({ id, vehicle, metric, start, end: action ? Math.min(action.sentAt, natural) : natural, action })
+    const episode: Episode = { id, vehicle, metric, start, end: action ? Math.min(action.sentAt, natural) : natural, action }
+    episodes.push(episode)
+    active.push(episode)
   }
-  if (episodeCache.size > 200) episodeCache.clear()
+  if (episodeCache.size > 50) episodeCache.clear()
   episodeCache.set(key, episodes)
   return episodes
+}
+
+/** 시각 time 근처에 영향을 줄 수 있는 에피소드만(회복까지 고려해 넉넉히) */
+function episodesNear(episodes: Episode[], time: number) {
+  return episodes.filter((episode) => episode.start <= time && episode.end + 120_000 >= time - RESOLVED_VISIBLE_MS)
 }
 
 function faultRate(metric: MetricSpec) {
@@ -312,7 +333,7 @@ export interface FrameInput {
 export function computeFrame({ now, actions, readings = [], vehicleIds }: FrameInput): FleetFrame {
   const dayStart = dayStartOf(now)
   const todays = actions.filter((action) => action.sentAt >= dayStart && action.sentAt <= now)
-  const episodes = episodesFor(dayStart, now, todays)
+  const episodes = episodesNear(episodesFor(dayStart, todays), now)
   const visible = VEHICLE_SPECS.filter((vehicle) => !vehicleIds || vehicleIds.includes(vehicle.id))
 
   const vehicles = visible.map((vehicle): VehicleSnapshot => {
@@ -421,7 +442,7 @@ export function computeHistory({ vehicleId, metricKey, from, to, points, actions
     const at = Math.round(from + step * i)
     const dayStart = dayStartOf(at)
     const todays = actions.filter((action) => action.sentAt >= dayStart && action.sentAt <= at)
-    const episodes = episodesFor(dayStart, at, todays).filter((episode) => episode.vehicle.id === vehicleId)
+    const episodes = episodesNear(episodesFor(dayStart, todays), at).filter((episode) => episode.vehicle.id === vehicleId)
     const value = metric.key === 'speed' ? speedAt(vehicle, todays, at) : metricValue(vehicle, metric, episodes, todays, at)
     samples.push({ at, value: round(value, metric.precision) })
   }

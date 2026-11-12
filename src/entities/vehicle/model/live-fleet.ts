@@ -1,7 +1,7 @@
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import type { Ref } from 'vue'
 import { FLEET_STREAM_URL } from '@shared/api'
-import type { FleetFrame } from '@shared/api'
+import type { FleetFrame, RemoteActionResponse } from '@shared/api'
 
 export type StreamStatus = 'connecting' | 'live' | 'reconnecting'
 
@@ -34,14 +34,15 @@ export function useLiveFleet(initial: Ref<FleetFrame | null | undefined>) {
     source = null
   })
 
-  /** 원격 조치 응답처럼 스트림보다 먼저 받은 차량 상태를 바로 반영합니다. */
-  const patchVehicle = (vehicle: FleetFrame['vehicles'][number]) => {
+  /** 원격 조치 응답처럼 스트림보다 먼저 받은 차량 상태와 기록을 바로 반영합니다. */
+  const applyAction = ({ vehicle, entry }: RemoteActionResponse) => {
     if (!frame.value) return
     frame.value = {
       ...frame.value,
       vehicles: frame.value.vehicles.map((item) => (item.id === vehicle.id ? vehicle : item)),
+      log: frame.value.log.some((item) => item.id === entry.id) ? frame.value.log : [entry, ...frame.value.log],
     }
   }
 
-  return { frame, status, patchVehicle }
+  return { frame, status, applyAction }
 }

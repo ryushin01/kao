@@ -14,7 +14,7 @@ import { LiveAnnouncer } from '@widgets/live-announcer'
 useHead({ title: '관제 센터 — KAO' })
 
 const { data } = await useFetch<FleetFrame>('/api/fleet', { key: 'fleet' })
-const { frame, status, patchVehicle } = useLiveFleet(data)
+const { frame, status, applyAction } = useLiveFleet(data)
 
 const summary = computed(() => (frame.value ? fleetSummary(frame.value) : null))
 const queue = computed(() =>
@@ -26,7 +26,7 @@ const statusText = computed(
   () => ({ connecting: '연결 중', live: '실시간 수신 중', reconnecting: '다시 연결하는 중' })[status.value],
 )
 
-const onSent = (response: RemoteActionResponse) => patchVehicle(response.vehicle)
+const onSent = (response: RemoteActionResponse) => applyAction(response)
 </script>
 
 <template>

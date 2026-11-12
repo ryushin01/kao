@@ -7,6 +7,9 @@ import type { Page } from '@playwright/test'
  * 실제 모델을 불러오는지는 models.spec.ts에서 따로 확인합니다.
  */
 export const test = base.extend({
+  // 같은 이유로 '동작 줄이기' 상태에서 검사합니다. 3D 장면은 바뀔 때만 다시 그려 CPU를 덜 씁니다.
+  // 애니메이션 정지 버튼 검사처럼 움직임이 필요한 곳은 test.use({ reducedMotion: 'no-preference' })로 바꿉니다.
+  reducedMotion: 'reduce',
   page: async ({ page }, use) => {
     await page.route('**/models/*.glb', (route) => route.abort())
     await use(page)

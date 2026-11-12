@@ -16,6 +16,8 @@ test('조치 대기열에서 원격 조치를 확인하고 보내면 조치 중�
   await page.goto('/fleet')
   const queue = page.getByRole('region', { name: '조치 대기열' })
   const issue = queue.getByRole('article').first()
+  // 시뮬레이션 문제는 시각에 따라 생기므로 열린 문제가 나올 때까지 기다립니다.
+  await expect(issue.getByRole('list', { name: '원격 조치' })).toBeVisible({ timeout: 20_000 })
   const title = await issue.getByRole('heading', { level: 3 }).textContent()
   await issue.getByRole('list', { name: '원격 조치' }).getByRole('button').first().click()
 
@@ -26,7 +28,7 @@ test('조치 대기열에서 원격 조치를 확인하고 보내면 조치 중�
 
   await expect(page.getByRole('status').filter({ hasText: '명령을 보냈습니다' })).toBeVisible()
   const log = page.getByRole('region', { name: '원격 조치 기록' })
-  await expect(log.getByText(`${title}`).first()).toBeVisible()
+  await expect(log.getByText(`${title}`).first()).toBeVisible({ timeout: 10_000 })
   await expect(log.getByText('완료').first()).toBeVisible({ timeout: 10_000 })
   // 두 번 눌러도 명령은 한 번만 기록됩니다.
   await expect(log.getByRole('listitem').filter({ hasText: `${title}` }).filter({ hasText: '명령 전송' })).toHaveCount(1)
@@ -34,8 +36,9 @@ test('조치 대기열에서 원격 조치를 확인하고 보내면 조치 중�
 
 test('카드 제목을 누르면 탈것 상세 화면으로 갑니다', async ({ page }) => {
   await page.goto('/fleet')
-  await page.getByRole('link', { name: 'STRiDA LT' }).click()
-  await expect(page).toHaveURL(/\/fleet\/kao-0004$/)
+  // 조치 대기열에도 같은 이름의 링크가 있을 수 있어 등록 탈것 목록 안에서 찾습니다.
+  await page.getByRole('region', { name: '등록 탈것' }).getByRole('link', { name: 'STRiDA LT' }).click()
+  await expect(page).toHaveURL(/\/fleet\/kao-0004$/, { timeout: 15_000 })
   await expect(page.getByRole('heading', { level: 1, name: 'STRiDA LT' })).toBeVisible()
   await expect(page.getByRole('heading', { name: '실시간 지표' })).toBeVisible()
 })
@@ -51,10 +54,14 @@ test.describe('동작 줄이기 설정', () => {
   })
 })
 
-test('애니메이션 정지 버튼은 눌림 상태를 알립니다', async ({ page }) => {
-  await page.goto('/')
-  const toggle = page.getByRole('button', { name: '애니메이션 정지' })
-  await expect(toggle).toHaveAttribute('aria-pressed', 'false')
-  await toggle.click()
-  await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+test.describe('움직임이 켜진 상태', () => {
+  test.use({ reducedMotion: 'no-preference' })
+
+  test('애니메이션 정지 버튼은 눌림 상태를 알립니다', async ({ page }) => {
+    await page.goto('/')
+    const toggle = page.getByRole('button', { name: '애니메이션 정지' })
+    await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await toggle.click()
+    await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+  })
 })
