@@ -6,7 +6,7 @@ import { formatNumber } from '@shared/lib'
 import { HudPanel, LineChart } from '@shared/ui'
 import type { ChartThreshold } from '@shared/ui'
 
-const props = defineProps<{ vehicleId: string; metrics: MetricReading[] }>()
+const props = defineProps<{ vehicleId: string; metrics: MetricReading[]; live?: boolean }>()
 
 const id = useId()
 const RANGES = [10, 30, 60] as const
@@ -28,15 +28,25 @@ const thresholds = computed<ChartThreshold[]>(() => {
   return list
 })
 
+let latest = 0
+
 async function load() {
+  // 고른 지표·기간이 바뀌면 먼저 보낸 요청의 응답은 버립니다.
+  const request = ++latest
+  const key = `${metricKey.value}:${minutes.value}`
   loading.value = true
   try {
-    history.value = await fetchHistory(props.vehicleId, metricKey.value, minutes.value)
+    const result = await fetchHistory(props.vehicleId, metricKey.value, minutes.value)
+    if (request !== latest) return
+    history.value = result
     error.value = ''
   } catch (cause) {
+    if (request !== latest) return
+    // 다른 지표의 그림이 남아 오해하지 않도록, 고른 것이 바뀐 뒤 실패하면 그림을 지웁니다.
+    if (history.value && `${history.value.metric.key}:${(history.value.to - history.value.from) / 60_000}` !== key) history.value = null
     error.value = cause instanceof Error ? cause.message : '기록을 불러오지 못했습니다.'
   } finally {
-    loading.value = false
+    if (request === latest) loading.value = false
   }
 }
 
@@ -67,6 +77,7 @@ watch([metricKey, minutes], load)
         </label>
       </fieldset>
     </div>
+    <p v-if="live" class="history__note">실차 측정값은 아직 이력으로 저장하지 않아, 그래프는 시뮬레이션 기준입니다.</p>
     <p v-if="error" role="alert" class="history__error">{{ error }}</p>
     <LineChart
       v-if="metric && history"

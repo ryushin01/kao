@@ -48,6 +48,19 @@ describe('computeFrame', () => {
   })
 })
 
+describe('실차 신호', () => {
+  it('30초 안에 측정값이 들어온 탈것은 시뮬레이션 문제 없이 실측 지표로 상태를 정합니다', () => {
+    const { now, vehicle } = firstOpenIssue()
+    const readings = [{ vehicleId: vehicle.id, at: now - 1000, speed: 40, metrics: {} }]
+    const live = computeFrame({ now, actions: [], readings, vehicleIds: [vehicle.id] }).vehicles[0]!
+    expect(live.source).toBe('live')
+    expect(live.issues).toEqual([])
+    expect(live.speed).toBe(40)
+    const stale = computeFrame({ now: now + 31_000, actions: [], readings, vehicleIds: [vehicle.id] }).vehicles[0]!
+    expect(stale.source).toBe('simulated')
+  })
+})
+
 describe('원격 조치', () => {
   it('열린 문제에 조치를 보내면 조치 중을 거쳐 해결되고, 속도 제한이 걸립니다', () => {
     const { now, vehicle, issue } = firstOpenIssue()

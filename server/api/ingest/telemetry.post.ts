@@ -32,7 +32,8 @@ export default defineEventHandler(async (event) => {
     metrics[key] = value
   }
   const now = Date.now()
-  const at = typeof body?.at === 'number' && Math.abs(body.at - now) < 60_000 ? body.at : now
+  // 미래 시각은 받지 않습니다(시계 차이 5초까지만 허용). 1분보다 오래된 시각은 지금으로 바꿉니다.
+  const at = typeof body?.at === 'number' && body.at <= now + 5_000 && body.at >= now - 60_000 ? Math.min(body.at, now) : now
   const speed = typeof body?.speed === 'number' && Number.isFinite(body.speed) ? body.speed : undefined
   await useStore().insertReading({ vehicleId: vehicle.id, at, speed, metrics })
   return { ok: true, vehicleId: vehicle.id, at }

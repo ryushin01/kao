@@ -40,5 +40,5 @@ for (const account of DEMO_ACCOUNTS) {
 const now = Date.now()
 await sql`delete from telemetry_readings where at < ${now - 86_400_000}`
 await sql`delete from remote_actions where sent_at < ${now - 7 * 86_400_000}`
-await sql`delete from push_notifications where sent_at < now() - interval '7 days'`
+await sql`delete from push_deliveries where sent_at < now() - interval '7 days'`
 console.log(`[migrate] 스키마 ${statements.length}문, 데모 계정 ${DEMO_ACCOUNTS.length}개 적용`)

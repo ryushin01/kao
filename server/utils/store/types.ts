@@ -27,8 +27,10 @@ export interface Store {
   savePushSubscription(record: PushSubscriptionRecord): Promise<void>
   deletePushSubscription(endpoint: string, userId: string): Promise<void>
   listPushSubscriptions(): Promise<Array<PushSubscriptionRecord & { role: UserRole; vehicleIds: string[] }>>
-  /** 이 문제로 알림을 보낼 차례면 true(처음 한 번만) */
-  claimNotification(issueId: string): Promise<boolean>
+  /** 이 문제를 이 구독에 보낼 차례면 true(처음 한 번만) */
+  claimDelivery(issueId: string, endpoint: string): Promise<boolean>
+  /** 보내지 못했으면 다음 검사 때 다시 보내도록 기록을 지웁니다. */
+  releaseDelivery(issueId: string, endpoint: string): Promise<void>
   insertReading(reading: LiveReading): Promise<void>
   listReadingsSince(since: number): Promise<LiveReading[]>
 }

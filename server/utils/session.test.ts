@@ -26,13 +26,16 @@ describe('비밀번호', () => {
 })
 
 describe('메모리 저장소', () => {
-  it('데모 계정을 갖고, 같은 문제의 두 번째 조치와 같은 문제의 두 번째 알림을 막습니다', async () => {
+  it('데모 계정을 갖고, 같은 문제의 두 번째 조치와 같은 구독에 같은 알림을 막고, 실패하면 다시 보낼 수 있게 합니다', async () => {
     const store = createMemoryStore()
     expect((await store.findUserByLogin('member03'))?.vehicleIds).toEqual(['kao-0003'])
     const action = { id: 'a', issueId: 'i', vehicleId: 'kao-0001', action: 'notify-rider' as const, sentAt: 1, userId: 'u' }
     expect(await store.insertAction(action)).toBe(true)
     expect(await store.insertAction({ ...action, id: 'b' })).toBe(false)
-    expect(await store.claimNotification('i')).toBe(true)
-    expect(await store.claimNotification('i')).toBe(false)
+    expect(await store.claimDelivery('i', 'https://fcm.googleapis.com/a')).toBe(true)
+    expect(await store.claimDelivery('i', 'https://fcm.googleapis.com/a')).toBe(false)
+    expect(await store.claimDelivery('i', 'https://fcm.googleapis.com/b')).toBe(true)
+    await store.releaseDelivery('i', 'https://fcm.googleapis.com/a')
+    expect(await store.claimDelivery('i', 'https://fcm.googleapis.com/a')).toBe(true)
   })
 })

@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { HudButton } from '@shared/ui'
-import { usePush } from '../model/use-push'
+import type { usePush } from '../model/use-push'
 
-const props = defineProps<{ publicKey: string | null }>()
-const { state, busy, message, enable, disable, test } = usePush(() => props.publicKey)
+const props = defineProps<{ push: ReturnType<typeof usePush> }>()
+const { state, busy, message, enable, disable, test } = props.push
 
 // 서버에 설정이 없거나 지원하지 않는 브라우저면 헤더에 아무것도 그리지 않습니다.
 // 알림이 차단된 경우에도 버튼만 두고, 눌렀을 때 허용하는 방법을 안내합니다(헤더에 문구를 늘 띄우지 않음).

@@ -333,23 +333,21 @@ export interface FrameInput {
 export function computeFrame({ now, actions, readings = [], vehicleIds }: FrameInput): FleetFrame {
   const dayStart = dayStartOf(now)
   const todays = actions.filter((action) => action.sentAt >= dayStart && action.sentAt <= now)
-  const episodes = episodesNear(episodesFor(dayStart, todays), now)
+  const daily = episodesFor(dayStart, todays)
+  const episodes = episodesNear(daily, now)
   const visible = VEHICLE_SPECS.filter((vehicle) => !vehicleIds || vehicleIds.includes(vehicle.id))
 
   const vehicles = visible.map((vehicle): VehicleSnapshot => {
     const live = readings
       .filter((item) => item.vehicleId === vehicle.id && now - item.at <= LIVE_READING_MAX_AGE)
       .sort((a, b) => b.at - a.at)[0]
-    const mine = episodes.filter((episode) => episode.vehicle.id === vehicle.id)
+    // 실차 신호가 들어온 탈것에는 시뮬레이션 문제를 붙이지 않습니다(상태는 실측 지표로 판단).
+    const mine = live ? [] : episodes.filter((episode) => episode.vehicle.id === vehicle.id)
     const issues = mine.map((episode) => issueOf(episode, now)).filter((issue): issue is Issue => issue !== null)
     const active = issues.filter((issue) => issue.status !== 'resolved')
     const resolved = issues
       .filter((issue) => issue.status === 'resolved' && now - (issue.resolvedAt ?? 0) <= RESOLVED_VISIBLE_MS)
       .slice(-RESOLVED_KEEP)
-    const health = active.reduce<HealthState>(
-      (worst, issue) => (SEVERITY_RANK[issue.severity] > SEVERITY_RANK[worst] ? issue.severity : worst),
-      'nominal',
-    )
     const position = positionAt(vehicle, todays, now)
     const simulatedSpeed = speedAt(vehicle, todays, now)
     const speed = live?.speed ?? simulatedSpeed
@@ -358,6 +356,8 @@ export function computeFrame({ now, actions, readings = [], vehicleIds }: FrameI
       const liveValue = live?.metrics[metric.key]
       return reading(metric, typeof liveValue === 'number' ? liveValue : metricValue(vehicle, metric, mine, todays, now))
     })
+    const states: HealthState[] = live ? metrics.map((metric) => metric.state) : active.map((issue) => issue.severity)
+    const health = states.reduce<HealthState>((worst, state) => (SEVERITY_RANK[state] > SEVERITY_RANK[worst] ? state : worst), 'nominal')
     return {
       id: vehicle.id,
       modelId: vehicle.modelId,
@@ -381,7 +381,7 @@ export function computeFrame({ now, actions, readings = [], vehicleIds }: FrameI
   })
 
   const visibleIds = new Set(visible.map((vehicle) => vehicle.id))
-  const titles = new Map(episodes.map((episode) => [episode.id, episode.metric.fault!.title]))
+  const titles = new Map(daily.map((episode) => [episode.id, episode.metric.fault!.title]))
   const log: ActionLogEntry[] = todays
     .filter((action) => visibleIds.has(action.vehicleId))
     .flatMap((action) => {
@@ -450,8 +450,8 @@ export function computeHistory({ vehicleId, metricKey, from, to, points, actions
 }
 
 /** 지금 위험 등급인 열린 문제(웹 푸시 알림 대상) */
-export function criticalIssues(now: number, actions: ActionRecord[]) {
-  return computeFrame({ now, actions }).vehicles.flatMap((vehicle) =>
+export function criticalIssues(now: number, actions: ActionRecord[], readings: LiveReading[] = []) {
+  return computeFrame({ now, actions, readings }).vehicles.flatMap((vehicle) =>
     vehicle.issues
       .filter((issue) => issue.status === 'open' && issue.severity === 'critical')
       .map((issue) => ({ vehicle, issue })),

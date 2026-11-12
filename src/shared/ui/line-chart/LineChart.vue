@@ -83,7 +83,8 @@ const format = (value: number) => `${formatNumber(value, props.precision)}${prop
 const summary = computed(() => {
   if (!props.samples.length) return `${props.label} 기록이 아직 없습니다.`
   const values = props.samples.map((sample) => sample.value)
-  return `${props.label} 그래프. ${formatClock(props.samples[0]!.at)}부터 ${formatClock(last.value!.at)}까지, 최저 ${format(Math.min(...values))}, 최고 ${format(Math.max(...values))}, 마지막 ${format(last.value!.value)}.`
+  const limits = props.thresholds.length ? ` 기준선: ${props.thresholds.map((item) => `${item.label}${props.unit}`).join(', ')}.` : ''
+  return `${props.label} 그래프. ${formatClock(props.samples[0]!.at)}부터 ${formatClock(last.value!.at)}까지, 최저 ${format(Math.min(...values))}, 최고 ${format(Math.max(...values))}, 마지막 ${format(last.value!.value)}.${limits}`
 })
 
 function pick(event: PointerEvent) {

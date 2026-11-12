@@ -38,14 +38,20 @@ export function createMemoryStore(): Store {
         return user ? [{ ...record, role: user.role, vehicleIds: user.vehicleIds }] : []
       })
     },
-    async claimNotification(issueId) {
-      if (notified.has(issueId)) return false
-      notified.add(issueId)
+    async claimDelivery(issueId, endpoint) {
+      const key = `${issueId} ${endpoint}`
+      if (notified.has(key)) return false
+      notified.add(key)
       return true
+    },
+    async releaseDelivery(issueId, endpoint) {
+      notified.delete(`${issueId} ${endpoint}`)
     },
     async insertReading(reading) {
       readings.push(reading)
-      if (readings.length > 500) readings.splice(0, readings.length - 500)
+      // 개수가 아니라 시각으로 정리해, 다른 탈것이 많이 보내도 유효한 측정값이 지워지지 않게 합니다.
+      const cutoff = Date.now() - 120_000
+      for (let i = readings.length - 1; i >= 0; i -= 1) if (readings[i]!.at < cutoff) readings.splice(i, 1)
     },
     async listReadingsSince(since) {
       return readings.filter((reading) => reading.at >= since)

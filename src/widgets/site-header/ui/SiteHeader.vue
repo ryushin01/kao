@@ -5,11 +5,13 @@ import { clearNuxtData, navigateTo } from '#imports'
 import { formatClock } from '@shared/lib'
 import { homePathFor, useSession } from '@entities/session'
 import { LogoutButton } from '@features/auth'
+import { usePush } from '../model/use-push'
 import PushToggle from './PushToggle.vue'
 import MotionToggle from './MotionToggle.vue'
 
 const session = useSession()
 const user = session.user
+const push = usePush(() => session.pushPublicKey.value)
 const now = ref<number | null>(null)
 let timer: ReturnType<typeof setInterval> | undefined
 
@@ -53,11 +55,11 @@ async function onLoggedOut() {
         </p>
         <MotionToggle />
         <template v-if="user">
-          <PushToggle :public-key="session.pushPublicKey.value" />
+          <PushToggle :push="push" />
           <p class="site-header__user">
             <span class="visually-hidden">로그인: </span>{{ user.name }}
           </p>
-          <LogoutButton @done="onLoggedOut" />
+          <LogoutButton :before-logout="push.clear" @done="onLoggedOut" />
         </template>
       </div>
     </div>

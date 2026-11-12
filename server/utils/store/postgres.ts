@@ -65,9 +65,14 @@ export function createPostgresStore(url: string): Store {
       `) as Array<{ endpoint: string; p256dh: string; auth: string; user_id: string; role: UserRole; vehicle_ids: string[] }>
       return rows.map((row) => ({ endpoint: row.endpoint, p256dh: row.p256dh, auth: row.auth, userId: row.user_id, role: row.role, vehicleIds: row.vehicle_ids }))
     },
-    async claimNotification(issueId) {
-      const rows = await sql`insert into push_notifications (issue_id) values (${issueId}) on conflict do nothing returning issue_id`
+    async claimDelivery(issueId, endpoint) {
+      const rows = await sql`
+        insert into push_deliveries (issue_id, endpoint) values (${issueId}, ${endpoint}) on conflict do nothing returning issue_id
+      `
       return rows.length > 0
+    },
+    async releaseDelivery(issueId, endpoint) {
+      await sql`delete from push_deliveries where issue_id = ${issueId} and endpoint = ${endpoint}`
     },
     async insertReading(reading) {
       await sql`

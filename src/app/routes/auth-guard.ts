@@ -8,13 +8,17 @@ import { homePathFor, useSession } from '@entities/session'
  * - /fleet/:id: 관제 요원이나 그 탈것의 회원만
  */
 export default defineNuxtRouteMiddleware(async (to) => {
-  const session = useSession()
-  const { user } = await session.ensure()
+  const isLogin = to.path === '/login'
+  // 공개 화면은 세션 조회 결과와 상관없이 엽니다.
+  if (!isLogin && !to.path.startsWith('/fleet')) return undefined
 
-  if (to.path === '/login') {
-    return user ? navigateTo(homePathFor(user)) : undefined
-  }
-  if (!to.path.startsWith('/fleet')) return undefined
+  const session = useSession()
+  const user = await session
+    .ensure()
+    .then((value) => value.user)
+    .catch(() => null)
+
+  if (isLogin) return user ? navigateTo(homePathFor(user)) : undefined
   if (!user) return navigateTo({ path: '/login', query: { redirect: to.fullPath } })
 
   const vehicleId = typeof to.params.id === 'string' ? to.params.id : null

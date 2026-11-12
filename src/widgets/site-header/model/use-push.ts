@@ -27,7 +27,19 @@ export function usePush(publicKey: () => string | null) {
     try {
       registration = await navigator.serviceWorker.register('/sw.js')
       const existing = await registration.pushManager.getSubscription()
-      state.value = Notification.permission === 'denied' ? 'denied' : existing ? 'on' : 'off'
+      if (Notification.permission === 'denied') {
+        state.value = 'denied'
+      } else if (existing) {
+        // 브라우저에 남은 구독을 지금 로그인한 계정으로 다시 맞춥니다(다른 계정의 알림이 오지 않게).
+        await savePushSubscription(existing.toJSON())
+          .then(() => (state.value = 'on'))
+          .catch(async () => {
+            await existing.unsubscribe()
+            state.value = 'off'
+          })
+      } else {
+        state.value = 'off'
+      }
     } catch {
       state.value = 'unsupported'
     }
@@ -50,7 +62,13 @@ export function usePush(publicKey: () => string | null) {
         return
       }
       const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyToBytes(key) })
-      await savePushSubscription(subscription.toJSON())
+      try {
+        await savePushSubscription(subscription.toJSON())
+      } catch (error) {
+        // 서버에 저장하지 못했으면 브라우저 구독도 되돌려, 켜진 것처럼 보이지 않게 합니다.
+        await subscription.unsubscribe()
+        throw error
+      }
       state.value = 'on'
       message.value = '위험 알림을 켰습니다. 볼 수 있는 탈것에 위험 등급 문제가 생기면 알려 드립니다.'
     } catch (error) {
@@ -91,5 +109,14 @@ export function usePush(publicKey: () => string | null) {
     }
   }
 
-  return { state, busy, message, enable, disable, test }
+  /** 로그아웃 전에 이 브라우저의 구독을 서버와 브라우저에서 모두 지웁니다. */
+  async function clear() {
+    const subscription = await registration?.pushManager.getSubscription()
+    if (!subscription) return
+    await deletePushSubscription(subscription.endpoint).catch(() => {})
+    await subscription.unsubscribe()
+    state.value = 'off'
+  }
+
+  return { state, busy, message, enable, disable, test, clear }
 }

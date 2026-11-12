@@ -28,10 +28,13 @@ create table if not exists push_subscriptions (
   created_at timestamptz not null default now()
 );
 
--- 같은 문제로 알림을 두 번 보내지 않도록 보낸 문제를 기록합니다.
-create table if not exists push_notifications (
-  issue_id text primary key,
-  sent_at timestamptz not null default now()
+-- 같은 문제를 같은 구독에 두 번 보내지 않도록 보낸 기록을 남깁니다. 보내지 못하면 지워 다음 검사 때 다시 보냅니다.
+drop table if exists push_notifications;
+create table if not exists push_deliveries (
+  issue_id text not null,
+  endpoint text not null,
+  sent_at timestamptz not null default now(),
+  primary key (issue_id, endpoint)
 );
 
 -- 실제 차량에서 받은 측정값(/api/ingest/telemetry)
