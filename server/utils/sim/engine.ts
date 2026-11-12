@@ -21,7 +21,7 @@ import type { MetricSpec, VehicleSpec } from '../fleet-specs'
  *
  * - 속도: 사인파의 합이라 거리(적분)를 바로 구할 수 있습니다. 속도 제한 구간만 수치 적분으로 뺍니다.
  * - 문제: 45초 칸마다 시드 난수로 '문제 후보'를 뽑고, 하루 시작(KST 0시)부터 차례로 받아들일지 정합니다.
- *   같은 지표에 진행 중인 문제가 있거나 동시에 3건이면 건너뜁니다. 문제는 조치하거나 12분이 지나면 끝납니다.
+ *   같은 지표에 진행 중인 문제가 있거나 동시에 2건이면 건너뜁니다. 문제는 조치하거나 15분이 지나면 끝납니다.
  * - 지표: 기준값 + 문제로 생긴 치우침(선형으로 커지고, 끝나면 지수로 회복) + 시각으로 정한 잡음
  */
 
@@ -31,10 +31,10 @@ export const TIME_SCALE = 12
 export const ACTION_LATENCY = 2400
 export const SPEED_CAP_DURATION = 90_000
 const SLOT_MS = 45_000
-const NATURAL_RESOLVE_MS = 12 * 60_000
-const FAULT_RATE_SCALE = 0.3
-const FAULT_PROBABILITY = 0.42
-const MAX_ACTIVE_FAULTS = 3
+const NATURAL_RESOLVE_MS = 15 * 60_000
+const FAULT_RATE_SCALE = 0.12
+const FAULT_PROBABILITY = 0.12
+const MAX_ACTIVE_FAULTS = 2
 const RECOVERY_PER_SECOND = 0.35
 const RESOLVED_KEEP = 3
 const RESOLVED_VISIBLE_MS = 20 * 60_000

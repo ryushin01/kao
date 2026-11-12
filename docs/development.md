@@ -22,16 +22,37 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
 
 ## 서버와 시뮬레이션
 
-| 경로 | 내용 |
-|---|---|
-| `GET /api/fleet` | 현재 프레임(4대의 위치·지표·문제, 조치 기록) |
-| `GET /api/fleet/stream` | 0.5초마다 프레임을 보내는 Server-Sent Events |
-| `POST /api/vehicles/:id/actions` | `{ issueId, action }`으로 원격 조치. 잘못된 조치는 422, 이미 조치 중이면 409 |
+| 경로 | 권한 | 내용 |
+|---|---|---|
+| `GET /api/showroom` | 공개 | 소개 화면용 모델·도장·열린 문제 수(위치·회원 정보 제외) |
+| `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/session` | 공개 | 로그인(서명 쿠키 `kao_session`, 7일), 로그아웃, 현재 사용자와 웹 푸시 공개 키 |
+| `GET /api/fleet` | 로그인 | 볼 수 있는 탈것의 현재 프레임 |
+| `GET /api/fleet/stream` | 로그인 | 0.5초마다 프레임을 보내는 SSE. 50초마다 닫고 다시 연결 |
+| `POST /api/vehicles/:id/actions` | 관제 요원 | `{ issueId, action }`. 맞지 않는 조치 422, 이미 조치 중 409 |
+| `GET /api/vehicles/:id/history?metric=&minutes=` | 로그인(볼 수 있는 탈것) | 10·30·60분 지표 이력 120점 |
+| `POST/DELETE /api/push/subscriptions`, `POST /api/push/test` | 로그인 | 웹 푸시 구독·해지, 시험 알림 |
+| `GET /api/cron/notify` | `CRON_SECRET` | 위험 등급 문제 웹 푸시 |
+| `POST /api/ingest/telemetry` | `INGEST_TOKEN` | 실차 측정값 수신([실차 연결](integration.md)) |
 
-- `server/utils/fleet-specs.ts`: 탈것별 지표, 경고·위험 기준, 문제와 쓸 수 있는 조치
-- `server/utils/fleet-engine.ts`: 시드 난수를 쓰는 순수 시뮬레이션. 요청이 올 때 지난 시간만큼 0.5초 단위로 진행합니다.
-- 위치는 실제 속도의 12배(`TIME_SCALE`)로 움직입니다. 지표 값은 배속하지 않습니다.
-- 상태는 서버 메모리에 있으므로 서버를 다시 켜면 처음부터 시작합니다. 서버가 여러 개인 환경(서버리스)에서는 인스턴스마다 다른 상태를 갖습니다.
+쿠키를 쓰는 변경 요청은 `Origin`이 같은 사이트일 때만 받습니다(SameSite=Lax에 더한 CSRF 방어).
+
+### 시뮬레이션(`server/utils/sim/engine.ts`)
+
+시간의 순수 함수입니다. 같은 시각과 같은 조치 기록이면 어느 서버에서든 같은 결과를 냅니다.
+
+- **속도·위치**: 속도는 사인파 두 개의 합이라 거리를 적분식으로 바로 구합니다. 속도·출력 제한 조치가 걸린 90초는 제한을 넘은 만큼 수치 적분으로 뺍니다. 위치는 실제 속도의 12배(`TIME_SCALE`)로 움직이고, 바퀴 수는 매시 정각부터 셉니다.
+- **문제**: KST 0시부터 45초 칸마다 시드 난수로 후보를 뽑고, 같은 지표에 진행 중인 문제가 있거나 동시에 2건이면 건너뜁니다. 문제는 지표를 나쁜 쪽으로 천천히 밀고(경고 단계 2분 이상), 조치하면 멈춘 뒤 지수로 회복합니다. 조치가 없으면 15분 뒤 저절로 끝납니다. 문제 id는 `탈것-지표-날짜-칸`이라 조치 기록과 이어집니다.
+- **이력**: 지난 시각을 다시 계산하므로 따로 저장하지 않습니다.
+
+### 저장소(`server/utils/store/`)
+
+`DATABASE_URL`이 있으면 Neon(`postgres.ts`), 없으면 메모리(`memory.ts`)를 씁니다. 로컬 개발·테스트·미리보기 배포는 메모리 저장소이며 데모 계정이 들어 있습니다. 스키마는 `server/db/schema.sql`, 적용은 `pnpm db:migrate`([배포](deploy.md)).
+
+### 로그인과 화면 접근
+
+- 계정: 관제 요원(`operator`)과 회원(`member01`~`04`, 각자 탈것 하나). 비밀번호는 scrypt로 해시합니다. 데모 계정 목록은 `src/shared/api/contract.ts`의 `DEMO_ACCOUNTS`.
+- 화면 접근은 전역 라우트 미들웨어(`src/app/routes/auth-guard.ts`)가 정합니다: `/fleet`은 관제 요원만(회원은 자기 탈것으로), `/fleet/:id`는 관제 요원이나 그 탈것의 회원만.
+- API도 같은 규칙을 서버에서 다시 확인합니다(`server/utils/session.ts`).
 
 ## 미니어처
 
@@ -55,8 +76,8 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
 
 | 명령 | 내용 |
 |---|---|
-| `pnpm test` | Vitest(happy-dom): 시뮬레이션, 공통 UI, 지표·카드, 원격 조치(확인·더블 클릭·실패) |
-| `pnpm test:e2e` | Playwright: 프로덕션 빌드(`pnpm build` 먼저)를 데스크톱·모바일에서 검사. axe(WCAG 2.2 AA 태그), 가로 넘침, 원격 조치 흐름, 404 |
+| `pnpm test` | Vitest(happy-dom): 시뮬레이션(같은 시각 같은 결과, 조치 흐름, 이력), 세션 서명·비밀번호·저장소, 공통 UI·그래프(키보드), 로그인 폼, 원격 조치(확인·더블 클릭·실패·회원 화면) |
+| `pnpm test:e2e` | Playwright: 프로덕션 빌드(`pnpm build` 먼저)를 데스크톱·모바일에서 검사. axe(WCAG 2.2 AA 태그), 가로 넘침, 원격 조치 흐름, 로그인·권한, 404. 화면 검사는 3D 모델 요청을 막고(`tests/e2e/fixtures.ts`), 실제 모델 로드는 `models.spec.ts`에서 따로 확인 |
 | `pnpm storybook` | 공통 UI·엔티티·기능 컴포넌트 스토리 |
 
 axe를 통과해도 KWCAG 2.2를 모두 만족하는 것은 아니므로 새 화면은 키보드, 화면 낭독기, 정지 기능을 직접 확인합니다.

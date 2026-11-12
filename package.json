@@ -1,6 +1,6 @@
 {
   "name": "kao",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "KAO(Kinetic Aero One) — 회원 탈것의 주행을 실시간으로 지켜보고 문제를 원격으로 조치하는 서비스",

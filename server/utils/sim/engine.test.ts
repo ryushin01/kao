@@ -37,11 +37,11 @@ describe('computeFrame', () => {
     expect(computeFrame({ now, actions: [], vehicleIds: ['kao-0002'] }).vehicles.map((v) => v.id)).toEqual(['kao-0002'])
   })
 
-  it('하루 중 문제가 생기고 동시에 3건을 넘지 않습니다', () => {
+  it('하루 중 문제가 생기고 동시에 2건을 넘지 않습니다', () => {
     let seen = 0
     for (let t = DAY; t < DAY + 6 * 3600_000; t += 60_000) {
       const active = computeFrame({ now: t, actions: [] }).vehicles.flatMap((v) => v.issues).filter((i) => i.status !== 'resolved')
-      expect(active.length).toBeLessThanOrEqual(3)
+      expect(active.length).toBeLessThanOrEqual(2)
       seen += active.length
     }
     expect(seen).toBeGreaterThan(0)
