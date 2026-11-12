@@ -97,6 +97,19 @@ export function createStage({ canvas, fov = 35, near = 0.1, far = 400, maxPixelR
     invalidate()
   }
 
+  // 크기는 그대로인데 기기 배율만 바뀌는 경우(배율이 다른 모니터로 창 이동)도 따라갑니다.
+  let ratioQuery: MediaQueryList | null = null
+  const watchPixelRatio = () => {
+    ratioQuery?.removeEventListener('change', onRatioChange)
+    ratioQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+    ratioQuery.addEventListener('change', onRatioChange)
+  }
+  function onRatioChange() {
+    resize()
+    watchPixelRatio()
+  }
+  watchPixelRatio()
+
   const resizeObserver = new ResizeObserver(resize)
   if (canvas.parentElement) resizeObserver.observe(canvas.parentElement)
   resize()
@@ -128,6 +141,7 @@ export function createStage({ canvas, fov = 35, near = 0.1, far = 400, maxPixelR
     dispose() {
       if (frameId) cancelAnimationFrame(frameId)
       resizeObserver.disconnect()
+      ratioQuery?.removeEventListener('change', onRatioChange)
       intersection.disconnect()
       document.removeEventListener('visibilitychange', onVisibility)
       disposeObject(scene)
