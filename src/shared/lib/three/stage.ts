@@ -147,6 +147,8 @@ export function createStage({ canvas, fov = 35, near = 0.1, far = 400, maxPixelR
       disposeObject(scene)
       timer.dispose()
       renderer.dispose()
+      // dispose()만으로는 브라우저가 WebGL 컨텍스트를 바로 돌려주지 않아, 화면을 오가면 컨텍스트 수 한도에 걸립니다.
+      renderer.forceContextLoss()
     },
   }
 }
