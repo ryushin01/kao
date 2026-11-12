@@ -36,7 +36,7 @@ export const vehicleFixture: VehicleSnapshot = {
   year: 2025,
   plate: 'K-0001',
   member: '가상 회원 01',
-  paint: { name: 'Uyuni White', hex: '#e9e6df' },
+  paint: { name: 'Vik Black', hex: '#0e0f11' },
   routeId: 'urban-loop',
   progress: 0.42,
   lap: 3,

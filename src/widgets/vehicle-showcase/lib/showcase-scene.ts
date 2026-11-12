@@ -14,7 +14,7 @@ import {
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { VehicleSnapshot } from '@shared/api'
 import { applyStudioEnvironment, createStage, disposeObject } from '@shared/lib'
-import { createMiniature, rollWheels } from '@entities/vehicle'
+import { createMiniature, loadModelMiniature, rollWheels } from '@entities/vehicle'
 import type { Miniature } from '@entities/vehicle'
 
 export interface ShowcaseOptions {
@@ -29,6 +29,7 @@ export function createShowcaseScene({ canvas, vehicle, playing }: ShowcaseOption
   let lean = 0
   let miniature: Miniature | null = null
   let currentModel = ''
+  let disposed = false
 
   const stage = createStage({ canvas, fov: 30, far: 100, onFrame: (delta) => update(delta) })
   const { scene, camera, renderer } = stage
@@ -88,22 +89,31 @@ export function createShowcaseScene({ canvas, vehicle, playing }: ShowcaseOption
     controls.update()
   }
 
+  function mount(next: Miniature) {
+    if (miniature) {
+      scene.remove(miniature.root)
+      disposeObject(miniature.root)
+    }
+    miniature = next
+    miniature.root.traverse((object) => {
+      if (object instanceof Mesh) object.castShadow = true
+    })
+    scene.add(miniature.root)
+    frameCamera(miniature.length)
+    stage.invalidate()
+  }
+
   function setVehicle(next: ShowcaseOptions['vehicle']) {
     speed = next.speed
     lean = next.metrics.find((metric) => metric.key === 'lean')?.value ?? 0
     if (next.modelId !== currentModel) {
-      if (miniature) {
-        scene.remove(miniature.root)
-        disposeObject(miniature.root)
-      }
-      miniature = createMiniature(next.modelId, next.paint.hex)
-      miniature.root.position.x = -0.05
-      miniature.root.traverse((object) => {
-        if (object instanceof Mesh) object.castShadow = true
+      const modelId = next.modelId
+      currentModel = modelId
+      // 직접 만든 모형을 먼저 보여 주고, 실제 3D 모델을 다 받으면 바꿉니다.
+      mount(createMiniature(modelId, next.paint.hex))
+      void loadModelMiniature(modelId, next.paint.hex).then((model) => {
+        if (!disposed && model && currentModel === modelId) mount(model)
       })
-      scene.add(miniature.root)
-      currentModel = next.modelId
-      frameCamera(miniature.length)
     }
     stage.invalidate()
   }
@@ -144,6 +154,7 @@ export function createShowcaseScene({ canvas, vehicle, playing }: ShowcaseOption
       stage.setPlaying(next)
     },
     dispose() {
+      disposed = true
       controls.dispose()
       disposeEnvironment()
       stage.dispose()

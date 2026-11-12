@@ -19,8 +19,8 @@ import type { Object3D, PerspectiveCamera } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { FleetFrame, HealthState, VehicleSnapshot } from '@shared/api'
 import { ROUTES, findRoute } from '@shared/config'
-import { applyStudioEnvironment, createStage } from '@shared/lib'
-import { createMiniature, rollWheels } from '@entities/vehicle'
+import { applyStudioEnvironment, createStage, disposeObject } from '@shared/lib'
+import { createMiniature, loadModelMiniature, rollWheels } from '@entities/vehicle'
 import type { Miniature } from '@entities/vehicle'
 
 const HEALTH_COLORS: Record<HealthState, string> = {
@@ -69,6 +69,7 @@ function curveFor(routeId: string) {
 }
 
 export function createTrackerScene({ canvas, frame, playing, onProject, onPick }: TrackerSceneOptions) {
+  let disposed = false
   let timeScale = frame.timeScale
   let followId: string | null = null
   const markers = new Map<string, Marker>()
@@ -156,6 +157,18 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
       speed: vehicle.speed,
       lean: 0,
       health: vehicle.health,
+    })
+
+    // 실제 3D 모델을 다 받으면 직접 만든 모형과 바꿔 끼웁니다.
+    void loadModelMiniature(vehicle.modelId, vehicle.paint.hex, 'lite').then((model) => {
+      const marker = markers.get(vehicle.id)
+      if (disposed || !model || !marker) return
+      model.root.scale.setScalar(MINIATURE_LENGTH[vehicle.kind] / model.length)
+      holder.remove(marker.miniature.root)
+      disposeObject(marker.miniature.root)
+      holder.add(model.root)
+      marker.miniature = model
+      stage.invalidate()
     })
   }
 
@@ -283,6 +296,7 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
       stage.setPlaying(next)
     },
     dispose() {
+      disposed = true
       canvas.removeEventListener('pointerdown', onPointerDown)
       canvas.removeEventListener('pointerup', onPointerUp)
       controls.dispose()

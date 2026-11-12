@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './fixtures'
 
 test('관제 센터는 4대를 실시간으로 받아 표와 카드로 보여 줍니다', async ({ page }) => {
   await page.goto('/fleet')
