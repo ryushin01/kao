@@ -1,4 +1,8 @@
-import { expect, test } from './fixtures'
+import { expect, loginAs, test } from './fixtures'
+
+test.beforeEach(async ({ page }) => {
+  await loginAs(page, 'operator')
+})
 
 test('관제 센터는 4대를 실시간으로 받아 표와 카드로 보여 줍니다', async ({ page }) => {
   await page.goto('/fleet')

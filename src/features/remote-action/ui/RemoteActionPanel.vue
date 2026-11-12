@@ -11,6 +11,8 @@ const props = defineProps<{
   vehicleName: string
   issue: Issue
   send?: (vehicleId: string, body: RemoteActionRequest) => Promise<RemoteActionResponse>
+  /** 회원 화면: 조치 버튼 없이 상태만 보여 줍니다(원격 조치는 관제 요원만). */
+  readonly?: boolean
 }>()
 const emit = defineEmits<{ success: [response: RemoteActionResponse] }>()
 
@@ -64,7 +66,10 @@ async function confirm() {
       </p>
     </header>
 
-    <div v-if="issue.status === 'open'" class="issue__actions">
+    <p v-if="issue.status === 'open' && readonly" class="issue__readonly">
+      관제 센터가 확인하고 있습니다. 원격 조치는 관제 요원이 보냅니다.
+    </p>
+    <div v-else-if="issue.status === 'open'" class="issue__actions">
       <p :id="`${id}-hint`" class="hud-label">원격 조치</p>
       <ul :aria-labelledby="`${id}-hint`">
         <li v-for="action in issue.actions" :key="action">
@@ -180,6 +185,11 @@ async function confirm() {
   .issue__actions li {
     grid-template-columns: 1fr;
   }
+}
+
+.issue__readonly {
+  font-size: 0.875rem;
+  color: var(--color-warning);
 }
 
 .issue__progress {

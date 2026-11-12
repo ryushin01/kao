@@ -3,17 +3,17 @@ import { computed, ref } from 'vue'
 import { NuxtLink } from '#components'
 import { useFetch, useHead } from '#imports'
 import { ACTIONS } from '@shared/api'
-import type { ActionCode, FleetFrame } from '@shared/api'
+import type { ActionCode, ShowroomResponse } from '@shared/api'
 import { HudPanel, StatusBadge } from '@shared/ui'
-import { MODEL_PROFILES, fleetSummary } from '@entities/vehicle'
+import { MODEL_PROFILES } from '@entities/vehicle'
 import { EventHorizon } from '@widgets/event-horizon'
 import { VehicleShowcase } from '@widgets/vehicle-showcase'
 
 useHead({ title: 'KAO — 돌이킬 수 없는 지점에 닿기 전에' })
 
-const { data } = await useFetch<FleetFrame>('/api/fleet', { key: 'fleet-home' })
+const { data } = await useFetch<ShowroomResponse>('/api/showroom', { key: 'showroom' })
 const vehicles = computed(() => data.value?.vehicles ?? [])
-const summary = computed(() => (data.value ? fleetSummary(data.value) : null))
+const summary = computed(() => data.value?.summary ?? null)
 const selectedId = ref('kao-0002')
 const selected = computed(() => vehicles.value.find((vehicle) => vehicle.id === selectedId.value) ?? vehicles.value[0])
 
@@ -44,6 +44,7 @@ const chapters = [
         <NuxtLink to="/fleet" class="cta cta--primary">관제 센터 열기</NuxtLink>
         <a href="#observe" class="cta">작동 방식 보기</a>
       </div>
+      <p class="hero__note">관제 센터는 로그인 화면의 데모 계정으로 바로 들어갈 수 있습니다.</p>
       <dl v-if="summary" class="hero__stats">
         <div>
           <dt class="hud-label">등록 탈것</dt>
@@ -228,6 +229,13 @@ const chapters = [
   border-color: var(--color-crimson);
   background: var(--color-crimson);
   color: #fff;
+}
+
+.hero__note {
+  margin-top: calc(var(--space-3) * -1);
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  text-shadow: 0 0 12px #000;
 }
 
 .hero__stats {

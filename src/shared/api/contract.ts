@@ -66,6 +66,8 @@ export interface VehicleSnapshot {
   member: string
   paint: { name: string; hex: string }
   routeId: string
+  /** live: 실제 차량에서 30초 안에 측정값이 들어옴, simulated: 시뮬레이션 */
+  source: 'live' | 'simulated'
   /** 경로 위 위치(0 이상 1 미만) */
   progress: number
   lap: number
@@ -127,3 +129,49 @@ export const ISSUE_STATUS_LABELS: Record<IssueStatus, string> = {
   resolving: '조치 중',
   resolved: '해결됨',
 }
+
+export type UserRole = 'operator' | 'member'
+
+export interface SessionUser {
+  id: string
+  login: string
+  name: string
+  role: UserRole
+  /** 볼 수 있는 탈것 id. 관제 요원은 전체 */
+  vehicleIds: string[]
+}
+
+export interface SessionResponse {
+  user: SessionUser | null
+  /** 웹 푸시 공개 키(서버에 설정이 없으면 null) */
+  pushPublicKey: string | null
+}
+
+export interface LoginRequest {
+  login: string
+  password: string
+}
+
+export interface HistoryResponse {
+  vehicleId: string
+  metric: MetricReading
+  from: number
+  to: number
+  samples: Array<{ at: number; value: number }>
+}
+
+/** 로그인하지 않아도 보는 소개 화면용 요약 */
+export interface ShowroomResponse {
+  vehicles: Array<Pick<VehicleSnapshot, 'id' | 'modelId' | 'kind' | 'maker' | 'model' | 'paint' | 'speed' | 'metrics'>>
+  summary: { vehicles: number; open: number }
+}
+
+/** 로그인 화면에 보여 주는 데모 계정(비밀번호는 모두 같음) */
+export const DEMO_PASSWORD = 'kao-demo-2026'
+export const DEMO_ACCOUNTS: Array<{ login: string; name: string; role: UserRole; vehicleIds: string[]; description: string }> = [
+  { login: 'operator', name: '관제 요원', role: 'operator', vehicleIds: [], description: '4대 전체 관제와 원격 조치' },
+  { login: 'member01', name: '가상 회원 01', role: 'member', vehicleIds: ['kao-0001'], description: 'Genesis G80' },
+  { login: 'member02', name: '가상 회원 02', role: 'member', vehicleIds: ['kao-0002'], description: 'Lamborghini Aventador' },
+  { login: 'member03', name: '가상 회원 03', role: 'member', vehicleIds: ['kao-0003'], description: 'Ducati Panigale V4 S' },
+  { login: 'member04', name: '가상 회원 04', role: 'member', vehicleIds: ['kao-0004'], description: 'STRiDA LT' },
+]

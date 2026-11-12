@@ -6,7 +6,7 @@
   "description": "KAO(Kinetic Aero One) — 회원 탈것의 주행을 실시간으로 지켜보고 문제를 원격으로 조치하는 서비스",
   "packageManager": "pnpm@12.16.1",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   },
   "scripts": {
     "dev": "nuxt dev",
@@ -20,14 +20,18 @@
     "test:e2e": "playwright test",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
-    "build:models": "node scripts/build-models.mjs"
+    "build:models": "node scripts/build-models.mjs",
+    "vercel-build": "node scripts/migrate.mjs && nuxt build",
+    "db:migrate": "node scripts/migrate.mjs"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.2.0",
     "h3": "1.15.11",
     "nuxt": "4.6.4",
     "three": "^0.187.0",
     "vue": "^3.5.45",
-    "vue-router": "^5.5.0"
+    "vue-router": "^5.5.0",
+    "web-push": "^4.0.0"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
@@ -40,6 +44,7 @@
     "@storybook/vue3-vite": "^10.6.7",
     "@types/node": "^26.6.6",
     "@types/three": "^0.187.0",
+    "@types/web-push": "^3.6.4",
     "@vitejs/plugin-vue": "^6.0.10",
     "@vue/test-utils": "^2.5.1",
     "eslint": "^10.14.0",

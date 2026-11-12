@@ -12,6 +12,8 @@ test.describe('실제 3D 모델', () => {
       if (response.url().endsWith('.glb') && response.ok()) loaded.push(new URL(response.url()).pathname)
     })
 
+    const login = await page.request.post('/api/auth/login', { data: { login: 'operator', password: 'kao-demo-2026' } })
+    expect(login.ok()).toBe(true)
     await page.goto('/fleet/kao-0002')
     await expect.poll(() => loaded).toContain('/models/lamborghini-aventador.glb')
     await expect.poll(() => loaded).toContain('/models/lamborghini-aventador.lite.glb')

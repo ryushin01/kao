@@ -38,6 +38,7 @@ export const vehicleFixture: VehicleSnapshot = {
   member: '가상 회원 01',
   paint: { name: 'Vik Black', hex: '#0e0f11' },
   routeId: 'urban-loop',
+  source: 'simulated',
   progress: 0.42,
   lap: 3,
   speed: 72,

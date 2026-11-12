@@ -16,3 +16,6 @@ test-results
 
 # Sketchfab에서 받은 3D 모델 원본(압축 전)
 assets-src
+.vercel
+.env*.local
+.env*

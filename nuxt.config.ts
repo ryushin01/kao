@@ -32,5 +32,21 @@ export default defineNuxtConfig({
     },
   },
   eslint: { config: { stylistic: false } },
-  typescript: { strict: true },
+  typescript: {
+    strict: true,
+    // 앱에서 아직 가져오지 않은 파일(테스트, 픽스처, 스토리)도 타입 검사에 넣습니다.
+    tsConfig: { include: ['../src/**/*', '../tests/**/*'] },
+  },
+  nitro: {
+    // 서버 코드는 모두 명시적으로 가져옵니다.
+    imports: false,
+    vercel: {
+      functions: {
+        // DB(Neon)와 같은 싱가포르에서 실행합니다. 관제 스트림은 50초마다 닫고 다시 연결합니다.
+        regions: ['sin1'],
+        maxDuration: 60,
+        supportsResponseStreaming: true,
+      },
+    },
+  },
 })
