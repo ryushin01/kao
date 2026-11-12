@@ -77,7 +77,7 @@ export const VEHICLE_SPECS: VehicleSpec[] = [
     year: 2025,
     plate: 'K-0001',
     member: '가상 회원 01',
-    paint: { name: 'Uyuni White', hex: '#e9e6df' },
+    paint: { name: 'Vik Black', hex: '#0e0f11' },
     routeId: 'urban-loop',
     cruise: [38, 92],
     metrics: [
@@ -117,7 +117,7 @@ export const VEHICLE_SPECS: VehicleSpec[] = [
     year: 2022,
     plate: 'K-0002',
     member: '가상 회원 02',
-    paint: { name: 'Grigio Telesto', hex: '#6b6f74' },
+    paint: { name: 'Rosso Mars', hex: '#a3141c' },
     routeId: 'coastal-highway',
     cruise: [80, 210],
     metrics: [

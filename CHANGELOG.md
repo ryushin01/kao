@@ -1,5 +1,13 @@
 # 버전 기록
 
+## 0.2.0 — 2026-11-12
+
+- Genesis G80, Lamborghini Aventador, Ducati Panigale V4 미니어처를 실제 3D 모델(Sketchfab, CC BY 4.0)로 교체
+  - `scripts/build-models.mjs`로 실제 치수·방향 맞추기, 위치 기반 바퀴 분리(바퀴 회전), 도장 재질 표시, 단순화·WebP·meshopt 압축
+  - 처음에는 직접 만든 모형을 보여 주고, GLB를 받으면 바꿔 끼움. 받지 못하면 직접 만든 모형을 계속 씀
+  - 푸터와 README에 모델 출처 표기
+- 도장 색 변경: G80 Vik Black, Aventador Rosso Mars
+
 ## 0.1.1 — 2026-11-12
 
 - 오류(404) 화면이 운영체제의 '동작 줄이기' 설정을 따르지 않던 문제 수정

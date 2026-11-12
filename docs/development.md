@@ -35,6 +35,20 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
 
 ## 미니어처
 
+### 실제 3D 모델 (G80, Aventador, Panigale)
+
+1. Sketchfab에서 glTF로 받아 `assets-src/<모델 id>/`에 풉니다. 이 폴더는 git에 올리지 않습니다.
+2. `pnpm build:models [모델 id]`로 `public/models/<모델 id>.glb`를 만듭니다. 설정은 `scripts/build-models.mjs`의 `MODELS`에 있습니다.
+   - 모든 노드 변환을 메시에 굽고 실제 전장·+x 앞·바닥 y=0으로 맞춥니다(`forward`로 원본의 앞 방향 지정).
+   - 이름이 제각각이라 바퀴는 위치로 고릅니다. `wheels`에 축 중심·반지름·폭을 적으면 그 원기둥 안의 삼각형을 `wheel_N` 노드(원점 = 축 중심)로 옮깁니다. 캘리퍼(`/calip/i`)는 몸체에 남깁니다.
+   - `paint` 정규식에 맞는 재질에 `extras.kaoPaint`를 붙여 화면에서 회원 도장 색으로 바꿉니다.
+   - `--inspect`를 붙이면 맞춘 뒤 재질별 위치·삼각형 수를 출력합니다. 바퀴 좌표와 도장 재질은 이 값으로 정합니다.
+3. 화면은 `MODEL_ASSETS`(`src/entities/vehicle/config/model-assets.ts`)에 등록된 모델만 불러오고, 출처는 푸터와 README에 표기합니다(CC BY 4.0).
+
+화면은 직접 만든 모형을 먼저 그리고, `loadModelMiniature`로 GLB를 받으면 바꿔 끼웁니다. 받지 못하면 직접 만든 모형을 계속 씁니다.
+
+### 직접 만든 모형
+
 `src/entities/vehicle/lib/miniatures/`에 모델마다 파일이 하나씩 있습니다. 옆모습 윤곽을 밀어 낸 몸체(`extrudeProfile`), 바퀴 자리를 파낸 바닥선(`sillWithArches`), 원통·상자 부품으로 만들며 좌표는 실제 치수(m)입니다. 관제 지도에서는 차종별 길이로 맞춰 키우고, 이륜차는 `leanPivot`으로 코너 안쪽으로 기울입니다.
 
 ## 테스트
