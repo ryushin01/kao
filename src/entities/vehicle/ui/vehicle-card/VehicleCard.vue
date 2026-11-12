@@ -4,6 +4,7 @@ import type { VehicleSnapshot } from '@shared/api'
 import { findRoute } from '@shared/config'
 import { formatNumber, formatPercent } from '@shared/lib'
 import { StatusBadge } from '@shared/ui'
+import { CATEGORY_LABELS } from '../../config/categories'
 import { MODEL_PROFILES } from '../../config/models'
 import { activeIssues } from '../../model/selectors'
 
@@ -17,7 +18,7 @@ const issues = computed(() => activeIssues(props.vehicle))
 <template>
   <article class="vehicle-card" :data-health="vehicle.health">
     <header class="vehicle-card__head">
-      <p class="hud-label">{{ vehicle.plate }} · {{ profile.category }}</p>
+      <p class="hud-label">{{ vehicle.plate }} · {{ CATEGORY_LABELS[vehicle.kind] }}</p>
       <h3 class="vehicle-card__title">
         <slot name="title">{{ profile.displayName }}</slot>
       </h3>

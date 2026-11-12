@@ -34,6 +34,16 @@ test('조치 대기열에서 원격 조치를 확인하고 보내면 조치 중�
   await expect(log.getByRole('listitem').filter({ hasText: `${title}` }).filter({ hasText: '명령 전송' })).toHaveCount(1)
 })
 
+test('분류 필터를 고르면 그 분류의 탈것만 보여 줍니다', async ({ page }) => {
+  await page.goto('/fleet')
+  const vehicles = page.getByRole('region', { name: '등록 탈것' })
+  await expect(vehicles.getByRole('article')).toHaveCount(4)
+  await page.getByRole('group', { name: '분류' }).getByRole('radio', { name: /슈퍼바이크/ }).check({ force: true })
+  await expect(vehicles.getByRole('article')).toHaveCount(1)
+  await expect(vehicles.getByRole('heading', { level: 3 })).toHaveText('Ducati Panigale V4 S')
+  await expect(vehicles.getByText('K-0003 · 슈퍼바이크')).toBeVisible()
+})
+
 test('카드 제목을 누르면 탈것 상세 화면으로 갑니다', async ({ page }) => {
   await page.goto('/fleet')
   // 조치 대기열에도 같은 이름의 링크가 있을 수 있어 등록 탈것 목록 안에서 찾습니다.

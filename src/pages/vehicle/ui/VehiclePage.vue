@@ -7,7 +7,7 @@ import { findRoute } from '@shared/config'
 import { formatNumber, formatPercent } from '@shared/lib'
 import { HudPanel, StatusBadge } from '@shared/ui'
 import { useSession } from '@entities/session'
-import { MODEL_PROFILES, MetricReadout, useLiveFleet } from '@entities/vehicle'
+import { CATEGORY_LABELS, MODEL_PROFILES, MetricReadout, useLiveFleet } from '@entities/vehicle'
 import { RemoteActionPanel } from '@features/remote-action'
 import { ActionLog } from '@widgets/action-log'
 import { FleetTracker } from '@widgets/fleet-tracker'
@@ -50,7 +50,7 @@ const onSent = (response: RemoteActionResponse) => applyAction(response)
     </nav>
 
     <header class="vehicle__head">
-      <p class="hud-label">{{ vehicle.plate }} · {{ profile.category }} · {{ vehicle.member }}</p>
+      <p class="hud-label">{{ vehicle.plate }} · {{ CATEGORY_LABELS[vehicle.kind] }} · {{ vehicle.member }}</p>
       <h1 class="vehicle__title">{{ title }}</h1>
       <p class="vehicle__model">{{ vehicle.model }} · {{ vehicle.year }} · {{ vehicle.paint.name }}</p>
       <div class="vehicle__state">
