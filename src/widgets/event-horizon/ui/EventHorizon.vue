@@ -55,7 +55,8 @@ onMounted(() => {
       material.uniforms.uProgress!.value = current
     },
   })
-  stage.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))
+  // 전체 화면 셰이더라 픽셀 수가 곧 부하입니다. 흐린 배경이므로 1배 해상도로 충분합니다.
+  stage.renderer.setPixelRatio(1)
   const quad = new Mesh(new PlaneGeometry(2, 2), material)
   quad.frustumCulled = false
   stage.scene.add(quad)
