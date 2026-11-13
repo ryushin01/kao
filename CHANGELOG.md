@@ -1,5 +1,12 @@
 # 버전 기록
 
+## 0.2.1 — 2026-11-13
+
+- 메모리: 3D 화면(미니어처, 관제 지도, 블랙홀)을 닫을 때 WebGL 컨텍스트를 바로 돌려줌(`forceContextLoss`). 화면을 오가도 컨텍스트가 쌓이지 않음
+- 메모리: WebGL을 쓸 수 있는지 확인할 때 3D 위젯이 뜰 때마다 새 컨텍스트를 만들고 놓아 주지 않던 문제. 한 번만 확인해 결과를 기억하고, 확인에 쓴 컨텍스트는 바로 놓아 줌
+- 공통화: 차량 현황 주소를 세 화면이 각자 적던 것을 `shared/api`의 `FLEET_URL`로(`FLEET_STREAM_URL`도 여기서 만듦)
+- 정리: 쓰지 않는 `fetchFleet`·`vehicleTitle`, 공개 API의 쓰지 않는 타입 내보내기, 파일 안에서만 쓰는 값의 export
+
 ## 0.2.0 — 2026-11-12
 
 - Genesis G80, Lamborghini Aventador, Ducati Panigale V4 미니어처를 실제 3D 모델(Sketchfab, CC BY 4.0)로 교체

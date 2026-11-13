@@ -14,6 +14,3 @@ export function fleetSummary(frame: FleetFrame) {
   }
 }
 
-export function vehicleTitle(vehicle: Pick<VehicleSnapshot, 'maker' | 'model'>): string {
-  return `${vehicle.maker} ${vehicle.model}`
-}

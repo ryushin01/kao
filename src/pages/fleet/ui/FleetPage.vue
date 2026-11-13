@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { NuxtLink } from '#components'
 import { useFetch, useHead } from '#imports'
+import { FLEET_URL } from '@shared/api'
 import type { FleetFrame, RemoteActionResponse } from '@shared/api'
 import { formatClock, toIsoString } from '@shared/lib'
 import { HudPanel } from '@shared/ui'
@@ -13,7 +14,7 @@ import { LiveAnnouncer } from '@widgets/live-announcer'
 
 useHead({ title: '관제 센터 — KAO' })
 
-const { data } = await useFetch<FleetFrame>('/api/fleet', { key: 'fleet' })
+const { data } = await useFetch<FleetFrame>(FLEET_URL, { key: 'fleet' })
 const { frame, status, patchVehicle } = useLiveFleet(data)
 
 const summary = computed(() => (frame.value ? fleetSummary(frame.value) : null))

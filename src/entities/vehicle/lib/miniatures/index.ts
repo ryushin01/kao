@@ -22,6 +22,5 @@ export function rollWheels(miniature: Miniature, distance: number) {
 }
 
 export { loadModelMiniature } from './gltf-model'
-export type { ModelDetail } from './gltf-model'
 
 export type { Miniature }
