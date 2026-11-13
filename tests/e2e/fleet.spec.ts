@@ -31,8 +31,10 @@ test('조치 대기열에서 원격 조치를 확인하고 보내면 조치 중�
 
 test('카드 제목을 누르면 탈것 상세 화면으로 갑니다', async ({ page }) => {
   await page.goto('/fleet')
-  await page.getByRole('link', { name: 'STRiDA LT' }).click()
-  await expect(page).toHaveURL(/\/fleet\/kao-0004$/)
+  // 고장이 나 조치 대기열에 오른 탈것은 같은 이름의 링크가 하나 더 생기므로, 등록 탈것 카드에서 찾습니다.
+  await page.getByRole('region', { name: '등록 탈것' }).getByRole('link', { name: 'STRiDA LT' }).click()
+  // CPU로 WebGL을 그리는 CI에서는 상세 화면으로 넘어가는 데 몇 초 걸립니다.
+  await expect(page).toHaveURL(/\/fleet\/kao-0004$/, { timeout: 15_000 })
   await expect(page.getByRole('heading', { level: 1, name: 'STRiDA LT' })).toBeVisible()
   await expect(page.getByRole('heading', { name: '실시간 지표' })).toBeVisible()
 })
