@@ -1,7 +1,7 @@
 # KAO — Kinetic Aero One
 
 [![CI](https://github.com/ryushin01/kao/actions/workflows/ci.yml/badge.svg)](https://github.com/ryushin01/kao/actions/workflows/ci.yml)
-![version](https://img.shields.io/badge/version-0.2.1-8B0000)
+![version](https://img.shields.io/badge/version-0.2.2-8B0000)
 
 회원의 자동차·모터사이클·자전거가 달리는 동안 상태를 실시간으로 지켜보고, 문제가 생기면 원격으로 조치하는 관제 서비스입니다. 등록된 탈것은 실제 모양을 본뜬 3D 미니어처로 지도 위를 달립니다.
 
@@ -82,7 +82,7 @@ src/
 tests/e2e/        Playwright E2E
 ```
 
-## 3D 모델 출처
+## 출처
 
 | 모델 | 원작자 | 라이선스 |
 |---|---|---|
@@ -90,7 +90,7 @@ tests/e2e/        Playwright E2E
 | [2022 Lamborghini Aventador LP780-4 Ultimae](https://sketchfab.com/3d-models/2022-lamborghini-aventador-lp780-4-ultimae-714a8795e58442258f96bd364b9096b1) | [Ddiaz Design](https://sketchfab.com/ddiaz-design) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | [Ducati Panigale V4](https://sketchfab.com/3d-models/ducati-panigale-v4-47f87e3d70f644289e34cbff91255d0c) | [ROY](https://sketchfab.com/roy.gearloft.in) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 
-크기·방향 조정, 바퀴 분리, 도장 색 변경, 압축을 거쳤습니다.
+크기·방향 조정, 바퀴 분리, 도장 색 변경, 압축을 거쳤습니다. STRiDA LT 미니어처는 Three.js 코드로 직접 만들었고, 사이트 바닥글의 '3D 모델 출처' 링크가 이 표로 옵니다.
 
 ## 문서
 
