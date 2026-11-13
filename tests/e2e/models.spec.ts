@@ -13,8 +13,9 @@ test.describe('실제 3D 모델', () => {
     })
 
     await page.goto('/fleet/kao-0002')
-    await expect.poll(() => loaded).toContain('/models/lamborghini-aventador.glb')
-    await expect.poll(() => loaded).toContain('/models/lamborghini-aventador.lite.glb')
+    // CPU로 그리는 CI에서는 첫 모델을 그리는 동안 다음 위젯이 늦게 뜹니다.
+    await expect.poll(() => loaded, { timeout: 15_000 }).toContain('/models/lamborghini-aventador.glb')
+    await expect.poll(() => loaded, { timeout: 15_000 }).toContain('/models/lamborghini-aventador.lite.glb')
     await expect(page.getByRole('img', { name: /Lamborghini Aventador 미니어처/ })).toBeVisible()
     await expect(page.getByRole('contentinfo').getByRole('link', { name: /2022 Lamborghini Aventador LP780-4 Ultimae/ })).toBeVisible()
     expect(errors).toEqual([])

@@ -20,7 +20,8 @@ test('조치 대기열에서 원격 조치를 확인하고 보내면 조치 중�
   await dialog.getByRole('button', { name: '명령 보내기' }).dblclick()
   await expect(dialog).toBeHidden()
 
-  await expect(page.getByRole('status').filter({ hasText: '명령을 보냈습니다' })).toBeVisible()
+  // '명령을 보냈습니다' 알림은 카드 안에 있어, 조치가 빨리 끝나 카드가 사라지면 함께 사라집니다.
+  // 그래서 여기서는 남는 조치 기록으로 확인하고, 알림 문구는 RemoteActionPanel 단위 테스트가 확인합니다.
   const log = page.getByRole('region', { name: '원격 조치 기록' })
   await expect(log.getByText(`${title}`).first()).toBeVisible()
   await expect(log.getByText('완료').first()).toBeVisible({ timeout: 10_000 })
