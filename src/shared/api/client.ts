@@ -1,6 +1,9 @@
-import type { FleetFrame, RemoteActionRequest, RemoteActionResponse } from './contract'
+import type { RemoteActionRequest, RemoteActionResponse } from './contract'
 
-export const FLEET_STREAM_URL = '/api/fleet/stream'
+/** 차량 현황 한 번 받기. 화면은 서버 렌더링을 위해 Nuxt의 useFetch로 부릅니다. */
+export const FLEET_URL = '/api/fleet'
+/** 차량 현황 실시간 스트림(SSE) */
+export const FLEET_STREAM_URL = `${FLEET_URL}/stream`
 
 async function request<T>(input: string, init?: RequestInit): Promise<T> {
   const response = await fetch(input, {
@@ -12,10 +15,6 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
     throw new Error(body?.message ?? `요청이 실패했습니다. (${response.status})`)
   }
   return (await response.json()) as T
-}
-
-export function fetchFleet(): Promise<FleetFrame> {
-  return request<FleetFrame>('/api/fleet')
 }
 
 export function sendRemoteAction(vehicleId: string, body: RemoteActionRequest): Promise<RemoteActionResponse> {

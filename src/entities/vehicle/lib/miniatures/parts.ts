@@ -135,7 +135,7 @@ export function tube(from: Point3, to: Point3, radius: number, material: Materia
 }
 
 /** 축이 z 방향인 원판 */
-export function disc(radius: number, thickness: number, material: Material, segments = 40): Mesh {
+function disc(radius: number, thickness: number, material: Material, segments = 40): Mesh {
   const mesh = new Mesh(new CylinderGeometry(radius, radius, thickness, segments), material)
   mesh.rotation.x = Math.PI / 2
   return mesh

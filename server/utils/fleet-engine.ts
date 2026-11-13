@@ -14,7 +14,7 @@ import { VEHICLE_SPECS } from './fleet-specs'
 import type { MetricSpec, VehicleSpec } from './fleet-specs'
 
 /** 위치 이동에만 쓰는 배속. 실제 속도로는 한 바퀴에 수십 분이 걸려 화면에서 움직임이 보이지 않습니다. */
-export const TIME_SCALE = 12
+const TIME_SCALE = 12
 /** 원격 조치를 보낸 뒤 차량이 응답하기까지 걸리는 시간(ms) */
 export const ACTION_LATENCY = 2400
 const RESOLVED_KEEP = 3

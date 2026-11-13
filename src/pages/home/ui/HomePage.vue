@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { NuxtLink } from '#components'
 import { useFetch, useHead } from '#imports'
-import { ACTIONS } from '@shared/api'
+import { ACTIONS, FLEET_URL } from '@shared/api'
 import type { ActionCode, FleetFrame } from '@shared/api'
 import { HudPanel, StatusBadge } from '@shared/ui'
 import { MODEL_PROFILES, fleetSummary } from '@entities/vehicle'
@@ -11,7 +11,7 @@ import { VehicleShowcase } from '@widgets/vehicle-showcase'
 
 useHead({ title: 'KAO — 돌이킬 수 없는 지점에 닿기 전에' })
 
-const { data } = await useFetch<FleetFrame>('/api/fleet', { key: 'fleet-home' })
+const { data } = await useFetch<FleetFrame>(FLEET_URL, { key: 'fleet-home' })
 const vehicles = computed(() => data.value?.vehicles ?? [])
 const summary = computed(() => (data.value ? fleetSummary(data.value) : null))
 const selectedId = ref('kao-0002')
