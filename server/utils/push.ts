@@ -38,16 +38,28 @@ export interface PushPayload {
   tag: string
 }
 
-/** 보냈으면 'sent', 구독이 사라졌으면 'gone', 일시적으로 실패하면 'failed' */
+/** 푸시 요청 한 건의 전체 마감(ms). web-push의 timeout은 소켓이 조용할 때만 걸리므로 따로 둡니다. */
+const PUSH_DEADLINE_MS = 8000
+
+/**
+ * 보냈으면 'sent', 구독이 사라졌으면 'gone', 일시적으로 실패하면 'failed'.
+ * 마감을 넘기면 실패로 보고 다음 검사 때 다시 보냅니다(수신 API 응답이 함수 제한 시간까지 끌리지 않게).
+ * 늦게라도 처음 요청이 닿으면 같은 문제를 두 번 받을 수 있지만, 알림의 tag(문제 id)가 같아 화면에는 하나로 겹칩니다.
+ */
 async function deliver(subscription: PushSubscriptionRecord, payload: PushPayload): Promise<'sent' | 'gone' | 'failed'> {
   if (!isPushEndpoint(subscription.endpoint)) return 'gone'
+  let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    await sendNotification(
-      { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },
-      JSON.stringify(payload),
-      // 푸시 서비스가 응답하지 않으면 5초 뒤 실패로 보고 다음 검사 때 다시 보냅니다(수신 API 응답이 함수 제한 시간까지 끌리지 않게).
-      { TTL: 600, urgency: 'high', timeout: 5000 },
-    )
+    await Promise.race([
+      sendNotification(
+        { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },
+        JSON.stringify(payload),
+        { TTL: 600, urgency: 'high', timeout: 5000 },
+      ),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('push deadline')), PUSH_DEADLINE_MS)
+      }),
+    ])
     return 'sent'
   } catch (error) {
     const status = (error as { statusCode?: number }).statusCode
@@ -57,6 +69,8 @@ async function deliver(subscription: PushSubscriptionRecord, payload: PushPayloa
       return 'gone'
     }
     return 'failed'
+  } finally {
+    clearTimeout(timer)
   }
 }
 
@@ -84,23 +98,25 @@ export async function notifyCriticalIssues(now = Date.now()) {
   if (issues.length === 0) return { sent: 0, issues: 0 }
   const subscriptions = await store.listPushSubscriptions()
   let sent = 0
-  for (const { vehicle, issue } of issues) {
-    const targets = subscriptions.filter((item) => item.role === 'operator' || item.vehicleIds.includes(vehicle.id))
-    const payload: PushPayload = {
-      title: `위험: ${vehicle.maker} ${vehicle.model}`,
-      body: `${issue.title} — ${issue.detail}`,
-      url: `/fleet/${vehicle.id}`,
-      tag: issue.id,
-    }
-    await Promise.all(
-      targets.map(async (target) => {
-        if (!(await store.claimDelivery(issue.id, target.endpoint))) return
-        const result = await deliver(target, payload)
-        if (result === 'sent') sent += 1
-        else if (result === 'failed') await store.releaseDelivery(issue.id, target.endpoint)
-      }),
-    )
-  }
+  // 문제·구독마다 동시에 보내, 전체 시간도 요청 한 건의 마감(PUSH_DEADLINE_MS) 안팎으로 묶습니다.
+  await Promise.all(
+    issues.flatMap(({ vehicle, issue }) => {
+      const payload: PushPayload = {
+        title: `위험: ${vehicle.maker} ${vehicle.model}`,
+        body: `${issue.title} — ${issue.detail}`,
+        url: `/fleet/${vehicle.id}`,
+        tag: issue.id,
+      }
+      return subscriptions
+        .filter((item) => item.role === 'operator' || item.vehicleIds.includes(vehicle.id))
+        .map(async (target) => {
+          if (!(await store.claimDelivery(issue.id, target.endpoint))) return
+          const result = await deliver(target, payload)
+          if (result === 'sent') sent += 1
+          else if (result === 'failed') await store.releaseDelivery(issue.id, target.endpoint)
+        })
+    }),
+  )
   return { sent, issues: issues.length }
 }
 

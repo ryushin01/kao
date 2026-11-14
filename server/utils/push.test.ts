@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
-import { isPushEndpoint } from './push'
+// @vitest-environment node
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { sendNotification } from 'web-push'
+import { isPushEndpoint, sendTestPush } from './push'
+import { useStore } from './store'
+
+vi.mock('web-push', () => ({ setVapidDetails: vi.fn(), sendNotification: vi.fn() }))
 
 describe('isPushEndpoint', () => {
   it('브라우저 푸시 서비스 주소만 받습니다', () => {
@@ -21,5 +26,27 @@ describe('isPushEndpoint', () => {
     ]) {
       expect(isPushEndpoint(url), url).toBe(false)
     }
+  })
+})
+
+describe('푸시 보내기', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllEnvs()
+  })
+
+  it('응답하지 않는 푸시 서비스는 8초 마감에서 실패로 보고 기다리지 않습니다', async () => {
+    vi.stubEnv('VAPID_PUBLIC_KEY', 'test-public')
+    vi.stubEnv('VAPID_PRIVATE_KEY', 'test-private')
+    await useStore().savePushSubscription({ endpoint: 'https://fcm.googleapis.com/fcm/send/test', p256dh: 'p', auth: 'a', userId: 'user-operator' })
+
+    vi.mocked(sendNotification).mockResolvedValueOnce({ statusCode: 201, body: '', headers: {} })
+    expect(await sendTestPush('user-operator')).toBe(1)
+
+    vi.useFakeTimers()
+    vi.mocked(sendNotification).mockReturnValueOnce(new Promise(() => {}))
+    const pending = sendTestPush('user-operator')
+    await vi.advanceTimersByTimeAsync(8000)
+    expect(await pending).toBe(0)
   })
 })

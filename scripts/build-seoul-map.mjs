@@ -8,7 +8,7 @@
  * - src/shared/config/routes.ts: 탈것 4대의 주행 경로. 실제 도로를 따라 닫힌 경로(위도·경도)
  * - public/maps/seoul.json: 관제 지도에 그리는 도로·한강·공원(지도 중심 기준 m 좌표, 정수)
  *
- * 경로는 경유점(도로 이름·진행 방향·태그)을 잇는 최단 경로이고, 진출입로를 포함해 일방통행을 모두 지킵니다
+ * 경로는 경유점(도로 이름·진행 방향·태그)을 잇는 최단 경로이고, 일방통행(oneway 태그와 OSM 관례상 한 방향인 길)을 지킵니다
  * (실제로 달릴 수 있는 길만). 교차로 구조 때문에 크게 돌아가는 조합은 경유점과 방향을 바꿔 고릅니다.
  * Node 22.18 이상이 TS 파일을 그대로 불러와 앱과 같은 좌표 변환을 씁니다.
  */
@@ -89,9 +89,10 @@ const minorWays = minorRaw.elements.filter((el) => el.type === 'way')
 const edges = new Map()
 for (const way of roadWays) {
   const t = way.tags
-  // 일방통행: oneway=yes·1, 회전교차로, 고속도로, 그리고 OSM 관례대로 진출입로(_link)는 oneway=no가 아니면 한 방향입니다.
-  const oneway =
-    t.oneway === 'yes' || t.oneway === '1' || t.junction === 'roundabout' || t.highway === 'motorway' || (t.highway.endsWith('_link') && t.oneway !== 'no')
+  // 일방통행: oneway=yes·1·true, 그리고 OSM에서 따로 적지 않아도 한 방향으로 보는 고속도로·고속도로 진출입로·회전교차로.
+  // 다른 진출입로(trunk_link 등)는 oneway 태그가 있을 때만 한 방향입니다.
+  const implied = t.oneway !== 'no' && (t.highway === 'motorway' || t.highway === 'motorway_link' || t.junction === 'roundabout' || t.junction === 'circular')
+  const oneway = t.oneway === 'yes' || t.oneway === '1' || t.oneway === 'true' || implied
   const reverse = t.oneway === '-1'
   for (let i = 0; i < way.nodes.length - 1; i += 1) {
     const a = nodes.get(way.nodes[i])
