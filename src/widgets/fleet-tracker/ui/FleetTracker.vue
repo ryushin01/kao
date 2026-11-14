@@ -7,6 +7,7 @@ import { formatNumber, formatPercent, isWebGLAvailable, useMotion, whenNearViewp
 import { HudPanel, StatusBadge } from '@shared/ui'
 import { MODEL_PROFILES } from '@entities/vehicle'
 import { MAP_PLACES } from '../config/places'
+import { describeLocation } from '../lib/describe-location'
 import { layoutLabels } from '../lib/label-layout'
 import type { TrackerScene } from '../lib/tracker-scene'
 
@@ -24,16 +25,18 @@ const scene = shallowRef<TrackerScene | null>(null)
 const { paused } = useMotion()
 
 const vehicles = computed(() => props.frame.vehicles)
-const gpsCount = computed(() => vehicles.value.filter((vehicle) => vehicle.positionSource === 'gps').length)
+const gpsCount = computed(() => vehicles.value.filter((vehicle) => vehicle.gps !== null).length)
 const description = computed(
   () =>
     `서울 도심 관제 지도. 광화문·남산·한강·여의도의 실제 도로와 높은 건물 사이를 ${vehicles.value.length}대의 미니어처가 각자의 경로로 달리고 있습니다. ` +
     (gpsCount.value > 0 ? `실차 GPS로 위치를 받는 ${gpsCount.value}대는 실제 위치에, 나머지는 ` : '') +
     `움직임이 보이도록 실제보다 ${props.frame.timeScale}배 빠르게 움직이며, 실제 위치와 상태는 지도 아래 표에 있습니다.`,
 )
+/** 실차 GPS가 경로 밖이면 바퀴 수·진행률은 시뮬레이션 값이라 표에 내지 않고, 실제 위치를 지명 기준으로 알립니다. */
+const offRoute = (vehicle: FleetFrame['vehicles'][number]) => vehicle.gps !== null && !vehicle.gps.onRoute
 const positionLabel = (vehicle: FleetFrame['vehicles'][number]) => {
   if (vehicle.positionSource === 'gps') return 'GPS'
-  return vehicle.gps ? 'GPS 경로 밖(시뮬레이션 위치)' : '시뮬레이션'
+  return vehicle.gps ? `GPS 경로 밖: ${describeLocation(vehicle.gps.lat, vehicle.gps.lng)}` : '시뮬레이션'
 }
 
 /** 이름표 크기(px). 글자(속도·상태)가 바뀌어 크기가 달라질 때만 ResizeObserver로 다시 잽니다. */
@@ -193,8 +196,8 @@ onBeforeUnmount(() => {
             <th scope="row">{{ MODEL_PROFILES[vehicle.modelId].displayName }}</th>
             <td>{{ findRoute(vehicle.routeId).name }}</td>
             <td>{{ positionLabel(vehicle) }}</td>
-            <td class="tabular">{{ vehicle.lap }}</td>
-            <td class="tabular">{{ formatPercent(vehicle.progress) }}</td>
+            <td class="tabular">{{ offRoute(vehicle) ? '—' : vehicle.lap }}</td>
+            <td class="tabular">{{ offRoute(vehicle) ? '—' : formatPercent(vehicle.progress) }}</td>
             <td class="tabular">
               {{ formatNumber(vehicle.speed) }} km/h
               <span v-if="vehicle.speedCap" class="tracker__cap">(제한 {{ vehicle.speedCap }})</span>

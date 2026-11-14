@@ -32,9 +32,9 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
 | `GET /api/vehicles/:id/history?metric=&minutes=` | 로그인(볼 수 있는 탈것) | 10·30·60분 지표 이력 120점 |
 | `POST/DELETE /api/push/subscriptions`, `POST /api/push/test` | 로그인 | 웹 푸시 구독·해지, 시험 알림 |
 | `GET /api/cron/notify` | `CRON_SECRET` | 위험 등급 문제 웹 푸시 |
-| `POST /api/ingest/telemetry` | `INGEST_TOKEN` | 실차 측정값·GPS 수신. 응답에 차량이 받아 갈 명령([실차 연결](integration.md)) |
-| `GET /api/ingest/commands?vehicleId=` | `INGEST_TOKEN` | 차량이 아직 응답하지 않은 원격 조치 명령 |
-| `POST /api/ingest/commands/:id/ack` | `INGEST_TOKEN` | 명령 적용 결과 `{ vehicleId, result: applied \| failed, message? }` |
+| `POST /api/ingest/telemetry` | 장치 토큰·`INGEST_TOKEN` | 실차 측정값·GPS 수신. 응답에 차량이 받아 갈 명령([실차 연결](integration.md)) |
+| `GET /api/ingest/commands?vehicleId=` | 장치 토큰·`INGEST_TOKEN` | 차량이 아직 응답하지 않은 원격 조치 명령 |
+| `POST /api/ingest/commands/:id/ack` | 장치 토큰·`INGEST_TOKEN` | 명령 적용 결과 `{ vehicleId, result: applied \| failed, message? }` |
 
 쿠키를 쓰는 변경 요청은 `Origin`이 같은 사이트일 때만 받습니다(SameSite=Lax에 더한 CSRF 방어).
 
@@ -48,11 +48,11 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
 
 ### 실차 연동(`server/utils/sim/live.ts`, `server/utils/ingest.ts`)
 
-30초 안에 측정값이 들어온 탈것은 시뮬레이션 대신 실측값·GPS·실측 문제를 씁니다. 시뮬레이션처럼 상태는 저장한 기록(측정값, 실측 문제, 명령과 차량 응답)만으로 계산하는 순수 함수(`live.ts`)이고, 수신 API(`ingest.ts`)가 측정값이 올 때마다 실측 문제를 열고·올리고·해결해 저장합니다. 늦게 도착한 측정값은 이력에만 저장하고, 겹친 요청은 문제의 `checked_at`(마지막으로 반영한 측정 시각)이 그대로일 때만 저장해 서로 덮어쓰지 않습니다. 0시 직전에 보낸 명령도 응답·회복을 기다리거나 그 명령으로 해결한 문제가 화면에 남아 있는 동안은 계속 보도록, 조치는 0시 32분 전부터 읽습니다. 원격 조치는 실측 문제면 명령으로 쌓였다가 차량이 받아 가 응답(applied·failed)하고, 2분 안에 응답이 없거나 실패하면 다시 조치할 수 있게 엽니다. 규칙과 API 형식은 [실차 연결](integration.md)에 있습니다. 시뮬레이션의 위치·문제 일정은 실차 명령의 영향을 받지 않습니다.
+30초 안에 측정값이 들어온 탈것은 시뮬레이션 대신 실측값·GPS·실측 문제를 씁니다. 시뮬레이션처럼 상태는 저장한 기록(측정값, 실측 문제, 명령과 차량 응답)만으로 계산하는 순수 함수(`live.ts`)이고, 수신 API(`ingest.ts`)가 측정값이 올 때마다 실측 문제를 열고·올리고·해결해 저장합니다. 늦게 도착한 측정값은 이력에만 저장하고, 겹친 요청은 문제의 `checked_at`(마지막으로 반영한 측정 시각)이 그대로일 때만 저장해 서로 덮어쓰지 않습니다. 0시 직전에 보낸 명령도 응답·회복을 기다리거나 그 명령으로 해결한 문제가 화면에 남아 있는 동안은 계속 보도록, 조치는 0시 32분 전부터 읽습니다. 원격 조치는 실측 문제면 명령으로 쌓였다가 차량이 받아 가 응답(applied·failed)하고, 2분 안에 응답이 없거나 실패하면 다시 조치할 수 있게 엽니다. 수신 API는 탈것 하나에 묶인 장치 토큰(`devices.ts`, DB에는 SHA-256만)이나 개발·시험용 공용 토큰(`INGEST_TOKEN`)으로 인증하고, 웹훅을 등록한 장치에는 명령을 서명해 바로 보냅니다(`webhook.ts`: https만, 내부망 주소 차단, 리다이렉트 없음, 5초). 규칙과 API 형식은 [실차 연결](integration.md)에 있습니다. 시뮬레이션의 위치·문제 일정은 실차 명령의 영향을 받지 않습니다.
 
 ### 저장소(`server/utils/store/`)
 
-`DATABASE_URL`이 있으면 Neon(`postgres.ts`), 없으면 메모리(`memory.ts`)를 씁니다. 로컬 개발·테스트·미리보기 배포는 메모리 저장소이며 데모 계정이 들어 있습니다. 테이블은 계정(`users`), 원격 조치와 실차 명령 응답(`remote_actions`), 실측 문제(`live_issues`), 측정값·GPS(`telemetry_readings`, 하루 보관), 웹 푸시 구독·발송 기록입니다. 스키마는 `server/db/schema.sql`, 적용은 `pnpm db:migrate`([배포](deploy.md)).
+`DATABASE_URL`이 있으면 Neon(`postgres.ts`), 없으면 메모리(`memory.ts`)를 씁니다. 로컬 개발·테스트·미리보기 배포는 메모리 저장소이며 데모 계정이 들어 있습니다. 테이블은 계정(`users`), 원격 조치와 실차 명령 응답(`remote_actions`), 실측 문제(`live_issues`), 측정값·GPS(`telemetry_readings`, 하루 보관), 실차 장치(`devices`), 웹 푸시 구독·발송 기록입니다. 스키마는 `server/db/schema.sql`, 적용은 `pnpm db:migrate`([배포](deploy.md)).
 
 ### 로그인과 화면 접근
 
@@ -134,7 +134,8 @@ Lighthouse(모바일 조건, GPU, 3회 중앙값)로 잰 결과입니다. 0.7.0 
 | `pnpm db:migrate` | `DATABASE_URL`이 있으면 스키마 적용·데모 계정 맞추기([배포](deploy.md)) |
 | `pnpm build:models` | `assets-src/`의 Sketchfab 원본을 `public/models/*.glb`로 변환(위 미니어처) |
 | `pnpm build:map` | OpenStreetMap으로 서울 지도 데이터와 주행 경로 만들기(위 서울 지도, `--fetch`면 원본부터 다시 받음) |
-| `pnpm live:demo` | 실차 장치 흉내. 측정값·GPS를 보내고 받은 명령에 응답(`--vehicle`, `--fault`, [실차 연결](integration.md#데모-장치)) |
+| `pnpm live:demo` | 실차 장치 흉내. 측정값·GPS를 보내고 받은 명령에 응답(`--vehicle`, `--fault`, `--detour`, [실차 연결](integration.md#데모-장치)) |
+| `pnpm device` | 실차 장치 토큰 만들기·목록·폐기(`add --vehicle <id> [--webhook <https 주소>]`, `list`, `revoke <id>`, 운영 DB) |
 
 ## 테스트
 

@@ -85,8 +85,11 @@ export interface VehicleSnapshot {
   lap: number
   /** gps: 실차 GPS가 경로 위에 있음, simulated: 시뮬레이션 위치 */
   positionSource: 'gps' | 'simulated'
-  /** 최근 30초 안의 실차 GPS 위치. onRoute가 false면 경로에서 150m 넘게 벗어나 있습니다. */
-  gps: { lat: number; lng: number; at: number; onRoute: boolean } | null
+  /**
+   * 최근 30초 안의 실차 GPS 위치. onRoute가 false면 경로에서 150m 넘게 벗어나 있고, 관제 지도는 이 실제 위치에 그립니다.
+   * trail은 최근 2분의 GPS 위치(오래된 것부터, 최대 60점)로, 지나온 길을 그리는 데 씁니다.
+   */
+  gps: { lat: number; lng: number; at: number; onRoute: boolean; trail: Array<[number, number]> } | null
   speed: number
   /** 원격 조치로 걸린 속도 제한(km/h). 없으면 null */
   speedCap: number | null

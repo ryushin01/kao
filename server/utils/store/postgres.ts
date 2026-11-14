@@ -2,7 +2,7 @@ import { neon } from '@neondatabase/serverless'
 import type { ActionCode, Severity, UserRole } from '../../../src/shared/api/contract'
 import { ACK_TIMEOUT } from '../sim/live'
 import type { ActionRecord, AckResult, LiveIssueRecord, LiveReading } from '../sim/types'
-import type { Store, UserRecord } from './types'
+import type { DeviceRecord, Store, UserRecord } from './types'
 
 interface UserRow {
   id: string
@@ -24,6 +24,30 @@ interface ActionRow {
   ack_result: AckResult | null
   ack_message: string | null
 }
+
+interface DeviceRow {
+  id: string
+  vehicle_id: string
+  name: string
+  token_hash: string
+  created_at: string
+  revoked_at: string | null
+  last_seen_at: string | null
+  webhook_url: string | null
+  webhook_secret: string | null
+}
+
+const toDevice = (row: DeviceRow): DeviceRecord => ({
+  id: row.id,
+  vehicleId: row.vehicle_id,
+  name: row.name,
+  tokenHash: row.token_hash,
+  createdAt: Number(row.created_at),
+  revokedAt: row.revoked_at === null ? null : Number(row.revoked_at),
+  lastSeenAt: row.last_seen_at === null ? null : Number(row.last_seen_at),
+  webhookUrl: row.webhook_url,
+  webhookSecret: row.webhook_secret,
+})
 
 interface ReadingRow {
   vehicle_id: string
@@ -126,6 +150,33 @@ export function createPostgresStore(url: string): Store {
         returning id, issue_id, vehicle_id, action, sent_at, delivered_at, acked_at, ack_result, ack_message
       `) as ActionRow[]
       return rows.map(toAction).sort((a, b) => a.sentAt - b.sentAt)
+    },
+    async markCommandDelivered(id, now) {
+      await sql`update remote_actions set delivered_at = coalesce(delivered_at, ${now}) where id = ${id}`
+    },
+    async findDeviceByTokenHash(tokenHash) {
+      const rows = (await sql`select * from devices where token_hash = ${tokenHash} and revoked_at is null`) as DeviceRow[]
+      return rows[0] ? toDevice(rows[0]) : null
+    },
+    async listWebhookDevices(vehicleId) {
+      const rows = (await sql`
+        select * from devices where vehicle_id = ${vehicleId} and revoked_at is null and webhook_url is not null order by created_at
+      `) as DeviceRow[]
+      return rows.map(toDevice)
+    },
+    async touchDevice(id, now) {
+      await sql`update devices set last_seen_at = ${now} where id = ${id}`
+    },
+    async insertDevice(record) {
+      await sql`
+        insert into devices (id, vehicle_id, name, token_hash, created_at, revoked_at, last_seen_at, webhook_url, webhook_secret)
+        values (${record.id}, ${record.vehicleId}, ${record.name}, ${record.tokenHash}, ${record.createdAt}, ${record.revokedAt},
+          ${record.lastSeenAt}, ${record.webhookUrl}, ${record.webhookSecret})
+      `
+    },
+    async revokeDevice(id, now) {
+      const rows = await sql`update devices set revoked_at = ${now} where id = ${id} and revoked_at is null returning id`
+      return rows.length > 0
     },
     async ackCommand({ id, vehicleId, ack, now }) {
       const rows = await sql`

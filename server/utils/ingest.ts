@@ -1,37 +1,26 @@
-import { timingSafeEqual } from 'node:crypto'
-import { createError, getRequestHeader } from 'h3'
-import type { H3Event } from 'h3'
-import { ACTIONS } from '../../src/shared/api/contract'
+import { createError } from 'h3'
 import { findRoute } from '../../src/shared/config/routes'
 import { createRouteGeo } from '../../src/shared/lib/route-geo'
 import type { RouteGeo } from '../../src/shared/lib/route-geo'
 import { VEHICLE_SPECS } from './fleet-specs'
 import type { VehicleSpec } from './fleet-specs'
 import { invalidateLiveCaches, todaysActions } from './fleet'
-import { capValue } from './sim/engine'
-import { ACK_TIMEOUT, evaluateLiveIssues, lapOf, nextOdometer } from './sim/live'
-import type { ActionRecord, LivePosition, LiveReading } from './sim/types'
+import { toCommand } from './command'
+import { evaluateLiveIssues, lapOf, nextOdometer } from './sim/live'
+import type { LivePosition, LiveReading } from './sim/types'
 import { useStore } from './store'
 
 /**
  * 실차 수신 API(/api/ingest/*)가 함께 쓰는 처리. 형식은 docs/integration.md에 있습니다.
  */
 
+export { toCommand } from './command'
+
 /** GPS가 경로에서 이보다 멀면(m) 경로 위 위치로 쓰지 않습니다. */
 export const ROUTE_MATCH_LIMIT = 150
 /** 측정값 보관 기간(하루). 지표 이력은 최근 60분만 씁니다. */
 const READING_RETENTION_MS = 86_400_000
 const PRUNE_INTERVAL_MS = 10 * 60_000
-
-/** Authorization: Bearer $INGEST_TOKEN. 길이가 같을 때 시간이 일정한 비교로 확인합니다. */
-export function requireIngestToken(event: H3Event) {
-  const token = process.env.INGEST_TOKEN
-  const expected = Buffer.from(`Bearer ${token ?? ''}`)
-  const actual = Buffer.from(getRequestHeader(event, 'authorization') ?? '')
-  if (!token || actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
-    throw createError({ statusCode: 401, message: '인증되지 않은 요청입니다.' })
-  }
-}
 
 export function findIngestVehicle(vehicleId: unknown): VehicleSpec {
   const vehicle = VEHICLE_SPECS.find((item) => item.id === vehicleId)
@@ -50,29 +39,6 @@ export function locateOnRoute(vehicle: VehicleSpec, lat: number, lng: number) {
   }
   const match = geo.match(lat, lng)
   return match.distance <= ROUTE_MATCH_LIMIT ? match.progress : null
-}
-
-/**
- * 차량에 보내는 명령. 속도·출력 제한은 적용할 값을 함께 보냅니다. 출력 제한은 출력 비율과 함께,
- * 관제 화면이 '속도 제한 적용 중'으로 보여 줄 최고 속도(capValue)도 담아 차량과 화면이 같은 값을 씁니다.
- */
-export function toCommand(vehicle: VehicleSpec, action: ActionRecord) {
-  const parameters =
-    action.action === 'speed-limit'
-      ? { maxSpeedKmh: capValue(vehicle, 'speed-limit') }
-      : action.action === 'power-limit'
-        ? { powerRatio: 0.6, maxSpeedKmh: capValue(vehicle, 'power-limit') }
-        : undefined
-  return {
-    id: action.id,
-    issueId: action.issueId,
-    action: action.action,
-    label: ACTIONS[action.action].label,
-    description: ACTIONS[action.action].description,
-    sentAt: action.sentAt,
-    expiresAt: action.sentAt + ACK_TIMEOUT,
-    ...(parameters ? { parameters } : {}),
-  }
 }
 
 export interface TelemetryInput {

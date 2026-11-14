@@ -17,7 +17,7 @@ Vercel 프로젝트 `kao` 하나에 화면(Nuxt SSR)과 `/api` 함수를 함께 
 요청마다 다른 인스턴스가 응답할 수 있어 서버 메모리에 상태를 두지 않습니다.
 
 - **시뮬레이션은 시간의 순수 함수**입니다(`server/utils/sim/engine.ts`). 같은 시각이면 어느 인스턴스든 같은 위치·지표·문제를 냅니다.
-- **사람과 차량이 바꾸는 것만 DB에 저장**합니다: 원격 조치와 실차 명령 응답(`remote_actions`), 실측 문제(`live_issues`), 실차 측정값·GPS(`telemetry_readings`), 계정, 웹 푸시 구독, 보낸 알림. 동시에 들어오는 요청은 DB 제약으로 가립니다: 같은 문제에 응답을 기다리는 조치는 하나(`remote_actions_pending_issue`), 같은 탈것·지표에 해결되지 않은 실측 문제는 하나(`live_issues_open`), 실측 문제는 읽은 `checked_at`이 그대로일 때만 바꿈.
+- **사람과 차량이 바꾸는 것만 DB에 저장**합니다: 원격 조치와 실차 명령 응답(`remote_actions`), 실측 문제(`live_issues`), 실차 측정값·GPS(`telemetry_readings`), 실차 장치(`devices`, 토큰은 SHA-256만), 계정, 웹 푸시 구독, 보낸 알림. 동시에 들어오는 요청은 DB 제약으로 가립니다: 같은 문제에 응답을 기다리는 조치는 하나(`remote_actions_pending_issue`), 같은 탈것·지표에 해결되지 않은 실측 문제는 하나(`live_issues_open`), 실측 문제는 읽은 `checked_at`이 그대로일 때만 바꿈.
 - 프레임은 0.5초마다 만들지만 조치·실측 문제·측정값은 1.5초 동안 인스턴스 메모리에 기억합니다. 다른 인스턴스에서 바뀐 것은 길어야 1.5초 뒤에 보입니다.
 
 ## DB와 마이그레이션
@@ -34,7 +34,7 @@ Vercel 프로젝트 `kao` 하나에 화면(Nuxt SSR)과 `/api` 함수를 함께 
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | 운영·미리보기 | 웹 푸시 키 쌍(`web-push`의 `generateVAPIDKeys()`). 없으면 알림 버튼을 숨깁니다 |
 | `VAPID_SUBJECT` | 선택 | 푸시 서비스에 알리는 연락처(URL). 기본값은 운영 주소 |
 | `CRON_SECRET` | 운영 | `/api/cron/notify` 인증. Cloudflare 워커 비밀·GitHub 저장소 비밀에도 같은 값(바꿀 때 세 곳을 함께) |
-| `INGEST_TOKEN` | 운영 | 실차 측정값 수신 API 인증([실차 연결](integration.md)) |
+| `INGEST_TOKEN` | 선택 | 실차 수신 API의 공용 토큰(모든 탈것, 데모 장치·시험용). 실제 장치는 `pnpm device add`로 만든 장치 토큰(`devices` 테이블)을 씁니다([실차 연결](integration.md)) |
 
 비밀 값은 Vercel에 읽을 수 없는 Secret으로 넣었습니다. 바꾸려면 `vercel env rm` 후 다시 `vercel env add`합니다.
 

@@ -1,5 +1,6 @@
 import { createError, defineEventHandler, readBody } from 'h3'
-import { findIngestVehicle, recordTelemetry, requireIngestToken } from '../../utils/ingest'
+import { authenticateIngest, vehicleIdFor } from '../../utils/devices'
+import { findIngestVehicle, recordTelemetry } from '../../utils/ingest'
 import { notifyIfDue } from '../../utils/push'
 
 interface Body {
@@ -15,13 +16,14 @@ const isNumber = (value: unknown): value is number => typeof value === 'number' 
 
 /**
  * 실제 차량(OBD-II 동글, 제조사 커넥티드카 웹훅, 자전거 트래커 등)의 측정값과 GPS를 받습니다.
- * Authorization: Bearer $INGEST_TOKEN. 응답에는 차량이 적용할 원격 조치 명령이 들어 있습니다.
+ * Authorization: Bearer <장치 토큰>(탈것 하나에 묶임, vehicleId를 빼도 됨) 또는 개발·시험용 공용 토큰($INGEST_TOKEN).
+ * 응답에는 차량이 적용할 원격 조치 명령이 들어 있습니다.
  * 자세한 형식은 docs/integration.md를 참고하세요.
  */
 export default defineEventHandler(async (event) => {
-  requireIngestToken(event)
+  const principal = await authenticateIngest(event)
   const body = await readBody<Body>(event)
-  const vehicle = findIngestVehicle(body?.vehicleId)
+  const vehicle = findIngestVehicle(vehicleIdFor(principal, body?.vehicleId))
 
   const known = new Set(vehicle.metrics.map((metric) => metric.key))
   const metrics: Record<string, number> = {}

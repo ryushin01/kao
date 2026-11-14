@@ -1,13 +1,17 @@
 import { ACK_TIMEOUT, isLiveIssueId, isPendingCommand } from '../sim/live'
 import type { ActionRecord, LiveIssueRecord, LiveReading } from '../sim/types'
 import { demoUsers } from './demo-users'
-import type { PushSubscriptionRecord, Store, UserRecord } from './types'
+import type { DeviceRecord, PushSubscriptionRecord, Store, UserRecord } from './types'
 
 /** 지표 이력(최근 60분)과 그 앞 30초를 볼 수 있을 만큼 측정값을 둡니다. */
 const READING_KEEP_MS = 61 * 60_000
 
-/** DB가 없을 때(로컬 개발, 테스트, 미리보기 배포) 쓰는 메모리 저장소. 서버를 다시 켜면 비워집니다. */
-export function createMemoryStore(): Store {
+/**
+ * DB가 없을 때(로컬 개발, 테스트, 미리보기 배포) 쓰는 메모리 저장소. 서버를 다시 켜면 비워집니다.
+ * devices로 실차 장치를 미리 넣어 둘 수 있습니다(테스트용. 운영 장치는 pnpm device로 DB에 넣음).
+ */
+export function createMemoryStore(seed: DeviceRecord[] = []): Store {
+  const devices = seed.map((device) => ({ ...device }))
   const users: UserRecord[] = demoUsers()
   const actions: Array<ActionRecord & { userId: string }> = []
   const subscriptions = new Map<string, PushSubscriptionRecord>()
@@ -44,6 +48,30 @@ export function createMemoryStore(): Store {
       if (!isPendingCommand(action, now)) return 'closed'
       action.ack = ack
       return 'ok'
+    },
+    async markCommandDelivered(id, now) {
+      const action = actions.find((item) => item.id === id)
+      if (action) action.deliveredAt ??= now
+    },
+    async findDeviceByTokenHash(tokenHash) {
+      const device = devices.find((item) => item.tokenHash === tokenHash && item.revokedAt === null)
+      return device ? { ...device } : null
+    },
+    async listWebhookDevices(vehicleId) {
+      return devices.filter((item) => item.vehicleId === vehicleId && item.revokedAt === null && item.webhookUrl).map((item) => ({ ...item }))
+    },
+    async touchDevice(id, now) {
+      const device = devices.find((item) => item.id === id)
+      if (device) device.lastSeenAt = now
+    },
+    async insertDevice(record) {
+      devices.push({ ...record })
+    },
+    async revokeDevice(id, now) {
+      const device = devices.find((item) => item.id === id && item.revokedAt === null)
+      if (!device) return false
+      device.revokedAt = now
+      return true
     },
     async findUserByLogin(login) {
       return users.find((user) => user.login === login) ?? null

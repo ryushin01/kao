@@ -81,3 +81,35 @@ test('실측값이 기준을 넘으면 문제를 열고, 보낸 조치를 차량
     await device
   }
 })
+
+test('경로 밖 GPS는 실제 위치와 지나온 길(최근 2분)로 보여 주고, 등록되지 않은 장치 토큰은 받지 않습니다', async ({ page, request }) => {
+  const device = await request.post('/api/ingest/telemetry', {
+    headers: { Authorization: 'Bearer kaod_not-registered' },
+    data: { vehicleId: 'kao-0004', speed: 15 },
+  })
+  expect(device.status()).toBe(401)
+
+  // 스트라이다를 경로(여의도 한강 자전거길)에서 몇 km 떨어진 강남역 근처로 보냅니다.
+  const points = [
+    { lat: 37.4979, lng: 127.0256 },
+    { lat: 37.4982, lng: 127.0266 },
+    { lat: 37.4985, lng: 127.0276 },
+  ]
+  for (const point of points) {
+    const response = await request.post('/api/ingest/telemetry', { headers, data: { vehicleId: 'kao-0004', speed: 15, metrics: {}, ...point } })
+    expect(response.status(), await response.text()).toBe(200)
+    expect((await response.json()).position).toMatchObject({ onRoute: false })
+  }
+
+  await loginAs(page, 'operator')
+  await page.goto('/fleet')
+  const row = page.getByRole('table', { name: /주행 위치 표/ }).getByRole('row', { name: /STRiDA LT/ })
+  // 3D 지도를 보지 못해도 표에서 실제 위치를 알 수 있게, 지도에 이름이 뜨는 곳 가운데 가장 가까운 곳의 방향·거리로 알립니다.
+  await expect(row.getByRole('cell', { name: 'GPS 경로 밖: 반포대교 남동쪽 약 3.2km' })).toBeVisible()
+  // 경로 밖이면 바퀴 수·진행률(시뮬레이션 값)은 내지 않습니다.
+  await expect(row.getByRole('cell', { name: '—', exact: true })).toHaveCount(2)
+  const frame = (await (await page.request.get('/api/fleet')).json()) as { vehicles: Array<{ id: string; gps: { onRoute: boolean; trail: number[][] } | null }> }
+  const strida = frame.vehicles.find((vehicle) => vehicle.id === 'kao-0004')!
+  expect(strida.gps).toMatchObject({ onRoute: false })
+  expect(strida.gps!.trail.slice(-3)).toEqual(points.map((point) => [point.lat, point.lng]))
+})

@@ -19,6 +19,22 @@ export interface PushSubscriptionRecord {
 
 export type AckOutcome = 'ok' | 'missing' | 'closed'
 
+/** 실차 장치(차량 단말·제조사 연동 하나). 토큰은 탈것 하나에 묶이고, 저장소에는 토큰의 SHA-256만 둡니다. */
+export interface DeviceRecord {
+  id: string
+  vehicleId: string
+  name: string
+  /** 토큰의 SHA-256(16진수). 토큰 자체는 만들 때 한 번만 보여 주고 저장하지 않습니다. */
+  tokenHash: string
+  createdAt: number
+  revokedAt: number | null
+  lastSeenAt: number | null
+  /** 명령을 보낼 제조사 서버 주소(https). 없으면 장치가 명령을 받아 갑니다. */
+  webhookUrl: string | null
+  /** 웹훅 서명(HMAC-SHA256) 비밀 */
+  webhookSecret: string | null
+}
+
 export interface Store {
   readonly kind: 'memory' | 'postgres'
   /** since 뒤로 보낸 원격 조치(실차 명령은 차량 응답까지) */
@@ -34,6 +50,17 @@ export interface Store {
   takeCommands(vehicleId: string, now: number): Promise<ActionRecord[]>
   /** 차량 응답을 남깁니다. 명령이 없으면 missing, 이미 응답했거나 응답 시간이 지났으면 closed */
   ackCommand(input: { id: string; vehicleId: string; ack: CommandAck; now: number }): Promise<AckOutcome>
+  /** 웹훅으로 명령을 전달했으면 '받아 간 시각'을 남깁니다(이미 있으면 그대로). */
+  markCommandDelivered(id: string, now: number): Promise<void>
+  /** 폐기하지 않은 장치를 토큰 해시로 찾습니다. */
+  findDeviceByTokenHash(tokenHash: string): Promise<DeviceRecord | null>
+  /** 이 탈것에서 웹훅 주소가 있는(폐기하지 않은) 장치 */
+  listWebhookDevices(vehicleId: string): Promise<DeviceRecord[]>
+  /** 장치가 마지막으로 요청한 시각을 남깁니다. */
+  touchDevice(id: string, now: number): Promise<void>
+  insertDevice(record: DeviceRecord): Promise<void>
+  /** 장치 토큰을 폐기합니다. 없거나 이미 폐기했으면 false */
+  revokeDevice(id: string, now: number): Promise<boolean>
   findUserByLogin(login: string): Promise<UserRecord | null>
   findUserById(id: string): Promise<UserRecord | null>
   savePushSubscription(record: PushSubscriptionRecord): Promise<void>
