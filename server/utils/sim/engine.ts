@@ -13,6 +13,7 @@ import { createRouteGeo, turnRateAt } from '../../../src/shared/lib/route-geo'
 import type { RouteGeo } from '../../../src/shared/lib/route-geo'
 import { VEHICLE_SPECS } from '../fleet-specs'
 import type { MetricSpec, VehicleSpec } from '../fleet-specs'
+import { createDriveProfile } from './drive'
 import {
   isLiveIssueId,
   lapOf,
@@ -37,7 +38,8 @@ export type { ActionRecord, CommandAck, LiveIssueRecord, LivePosition, LiveReadi
  * 같은 시각이면 어느 인스턴스든 같은 위치·지표·문제를 내도록, 상태는 시각과
  * 사람이 남긴 기록(원격 조치)만으로 계산합니다. 원격 조치는 DB에 저장합니다.
  *
- * - 속도: 사인파의 합이라 거리(적분)를 바로 구할 수 있습니다. 속도 제한 구간만 수치 적분으로 뺍니다.
+ * - 속도·위치: 경로 위치마다 낼 수 있는 속도(제한속도·굽이·신호·가감속, drive.ts) × 교통 흐름 배수(사인파).
+ *   배수의 적분(유효 시간)으로 위치를 바로 구하고, 속도 제한 구간만 수치 적분으로 뺍니다.
  * - 문제: 45초 칸마다 시드 난수로 '문제 후보'를 뽑고, 하루 시작(KST 0시)부터 차례로 받아들일지 정합니다.
  *   같은 지표에 진행 중인 문제가 있거나 동시에 2건이면 건너뜁니다. 문제는 조치하거나 15분이 지나면 끝납니다.
  * - 지표: 기준값 + 문제로 생긴 치우침(선형으로 커지고, 끝나면 지수로 회복) + 시각으로 정한 잡음
@@ -114,9 +116,13 @@ export function dayStartOf(time: number) {
 
 // ── 속도와 위치 ────────────────────────────────────────────────────────────
 
-function speedWave(vehicle: VehicleSpec) {
+/**
+ * 교통 흐름에 따른 속도 배수 m(t): 주행 속도 표(제한속도·굽이·신호)의 몇 배로 달리는지(VehicleSpec.pace 범위).
+ * 사인파 두 개의 합이라 적분(유효 시간 E(t) = ∫m dt)을 식으로 바로 구합니다(drive.ts 설명 참고).
+ */
+function paceWave(vehicle: VehicleSpec) {
   const seed = random(hash('speed', vehicle.id))
-  const [low, high] = vehicle.cruise
+  const [low, high] = vehicle.pace
   const mid = (low + high) / 2
   const amp = (high - low) / 2
   const w1 = (2 * Math.PI) / (70 + seed() * 50)
@@ -124,20 +130,37 @@ function speedWave(vehicle: VehicleSpec) {
   const p1 = seed() * Math.PI * 2
   const p2 = seed() * Math.PI * 2
   return {
-    /** km/h */
     at: (seconds: number) => mid + amp * (0.65 * Math.sin(w1 * seconds + p1) + 0.35 * Math.sin(w2 * seconds + p2)),
-    /** ∫v dt (km/h·s) */
+    /** ∫m dt(유효 시간 초) */
     integral: (seconds: number) =>
       mid * seconds - amp * ((0.65 / w1) * Math.cos(w1 * seconds + p1) + (0.35 / w2) * Math.cos(w2 * seconds + p2)),
   }
 }
 
-const waves = new Map(VEHICLE_SPECS.map((vehicle) => [vehicle.id, speedWave(vehicle)]))
+/** 신호마다 서는 시간(유효 시간 초). 열에 셋은 녹색이라 서지 않고, 나머지는 8~40초. 같은 신호는 늘 같은 시간입니다. */
+function signalDwell(routeId: string, index: number) {
+  const value = random(hash('signal', routeId, index))()
+  return value < 0.3 ? 0 : 8 + ((value - 0.3) / 0.7) * 32
+}
+
+const waves = new Map(VEHICLE_SPECS.map((vehicle) => [vehicle.id, paceWave(vehicle)]))
+const drives = new Map(
+  VEHICLE_SPECS.map((vehicle) => [
+    vehicle.id,
+    createDriveProfile(findRoute(vehicle.routeId), {
+      topSpeed: vehicle.cruise[1],
+      handling: vehicle.handling,
+      dwell: (index) => signalDwell(vehicle.routeId, index),
+    }),
+  ]),
+)
+
+const isCapAction = (action: ActionRecord) => action.action === 'speed-limit' || action.action === 'power-limit'
 
 function speedCapAt(vehicle: VehicleSpec, actions: ActionRecord[], time: number): number | null {
   let cap: number | null = null
   for (const action of actions) {
-    if (action.vehicleId !== vehicle.id || (action.action !== 'speed-limit' && action.action !== 'power-limit')) continue
+    if (action.vehicleId !== vehicle.id || !isCapAction(action)) continue
     if (time < action.sentAt || time >= action.sentAt + SPEED_CAP_DURATION) continue
     const value = capValue(vehicle, action.action)
     cap = cap === null ? value : Math.min(cap, value)
@@ -155,8 +178,7 @@ export function capValue(vehicle: VehicleSpec, action: ActionCode) {
 function liveSpeedCap(vehicle: VehicleSpec, actions: ActionRecord[], now: number): number | null {
   let cap: number | null = null
   for (const action of actions) {
-    if (action.vehicleId !== vehicle.id || action.ack?.result !== 'applied') continue
-    if (action.action !== 'speed-limit' && action.action !== 'power-limit') continue
+    if (action.vehicleId !== vehicle.id || action.ack?.result !== 'applied' || !isCapAction(action)) continue
     if (now < action.ack.at || now >= action.ack.at + SPEED_CAP_DURATION) continue
     const value = capValue(vehicle, action.action)
     cap = cap === null ? value : Math.min(cap, value)
@@ -164,41 +186,72 @@ function liveSpeedCap(vehicle: VehicleSpec, actions: ActionRecord[], now: number
   return cap
 }
 
+/** 거리 기준 시각. 위치가 끊기지 않도록 고정된 시각부터 잽니다. */
+const DISTANCE_EPOCH = Date.UTC(2026, 0, 1)
+/** 속도 제한 구간을 수치 적분하는 칸(ms) */
+const CAP_STEP = 500
+
+const wrap = (value: number, size: number) => ((value % size) + size) % size
+
+/**
+ * 고정 시각부터 지금까지의 유효 시간(초). 속도·출력 제한이 걸린 구간(조치마다 90초, 겹치면 더 낮은 제한)은
+ * 제한 때문에 덜 달린 만큼을 500ms 칸으로 적분해 뺍니다. 제한 아래에서는 유효 시간이 min(m, 제한 / 표의 속도)로 흐릅니다.
+ */
+function effectiveTime(vehicle: VehicleSpec, actions: ActionRecord[], time: number) {
+  const wave = waves.get(vehicle.id)!
+  const drive = drives.get(vehicle.id)!
+  const base = (at: number) => wave.integral(at / 1000) - wave.integral(DISTANCE_EPOCH / 1000)
+  const windows = actions
+    .filter((action) => action.vehicleId === vehicle.id && isCapAction(action) && action.sentAt < time)
+    .map((action) => ({ start: action.sentAt, end: action.sentAt + SPEED_CAP_DURATION, cap: capValue(vehicle, action.action) / 3.6 }))
+    .sort((a, b) => a.start - b.start)
+  let deficit = 0
+  let at = windows[0]?.start ?? time
+  for (const window of windows) {
+    at = Math.max(at, window.start)
+    const until = Math.min(window.end, time)
+    for (; at < until; at += CAP_STEP) {
+      const dt = Math.min(CAP_STEP, until - at) / 1000
+      const cap = Math.min(...windows.filter((item) => item.start <= at && at < item.end).map((item) => item.cap))
+      const pace = wave.at(at / 1000)
+      const { speed } = drive.at(wrap(base(at) - deficit, drive.lapTime))
+      const rate = speed * pace > cap ? cap / speed : pace
+      deficit += (pace - rate) * dt
+    }
+  }
+  return base(time) - deficit
+}
+
+/** 시각 time의 실제 속도(km/h): 주행 속도 표 × 교통 흐름 배수, 속도·출력 제한이 걸려 있으면 그 이하 */
 function speedAt(vehicle: VehicleSpec, actions: ActionRecord[], time: number) {
-  const raw = waves.get(vehicle.id)!.at(time / 1000)
+  const drive = drives.get(vehicle.id)!
+  const { speed } = drive.at(wrap(effectiveTime(vehicle, actions, time), drive.lapTime))
+  const raw = speed * 3.6 * waves.get(vehicle.id)!.at(time / 1000)
   const cap = speedCapAt(vehicle, actions, time)
   return cap === null ? raw : Math.min(raw, cap)
 }
 
-/** 거리 기준 시각. 위치가 끊기지 않도록 고정된 시각부터 잽니다. */
-const DISTANCE_EPOCH = Date.UTC(2026, 0, 1)
-
 /**
- * 경로 위 위치. 바퀴 수(매시 정각부터)와 진행률은 실제 속도로 달린 거리로 셉니다.
- * 관제 지도 위치(mapProgress)는 같은 거리를 TIME_SCALE배 해서 구하므로, 실제로 한 바퀴를 돌면 지도에서는 정확히 TIME_SCALE바퀴를 돕니다.
+ * 경로 위 위치. 바퀴 수(매시 정각부터)와 진행률은 실제로 달린 위치입니다. 관제 지도 위치(mapProgress)는 유효 시간을
+ * TIME_SCALE배 한 위치라, 실제로 한 바퀴를 돌면 지도에서는 정확히 TIME_SCALE바퀴를 돌고, 지도에서도 굽이·신호에서 느려집니다.
+ * mapSpeed는 지도 위치에서의 속도(km/h, 지도는 이것의 TIME_SCALE배로 움직임)입니다.
  */
 function positionAt(vehicle: VehicleSpec, actions: ActionRecord[], time: number) {
-  const wave = waves.get(vehicle.id)!
-  const length = findRoute(vehicle.routeId).lengthKm
-  /** 실제 속도로 달린 바퀴 수(소수) */
-  const lapsAt = (at: number) => {
-    let distance = wave.integral(at / 1000) - wave.integral(DISTANCE_EPOCH / 1000)
-    // 속도 제한이 걸린 구간은 제한을 넘은 만큼 덜 달렸습니다(오늘 보낸 조치만 반영).
-    for (const action of actions) {
-      if (action.vehicleId !== vehicle.id || (action.action !== 'speed-limit' && action.action !== 'power-limit')) continue
-      const to = Math.min(action.sentAt + SPEED_CAP_DURATION, at)
-      const cap = capValue(vehicle, action.action)
-      for (let t = action.sentAt; t < to; t += 500) distance -= (Math.max(0, wave.at(t / 1000) - cap) * Math.min(500, to - t)) / 1000
-    }
-    return distance / 3600 / length
-  }
-  const laps = lapsAt(time)
+  const drive = drives.get(vehicle.id)!
+  const effective = effectiveTime(vehicle, actions, time)
+  const laps = Math.floor(effective / drive.lapTime)
+  const here = drive.at(effective - laps * drive.lapTime)
+  const there = drive.at(wrap(effective * TIME_SCALE, drive.lapTime))
   const hourStart = Math.floor(time / 3600_000) * 3600_000
-  const mapLaps = laps * TIME_SCALE
+  // 지금 유효 시간이 흐르는 빠르기: 교통 흐름 배수, 속도·출력 제한이 걸려 있으면 제한 / 실제 위치의 표 속도까지
+  const pace = waves.get(vehicle.id)!.at(time / 1000)
+  const cap = speedCapAt(vehicle, actions, time)
+  const rate = cap !== null && here.speed * pace > cap / 3.6 ? cap / 3.6 / here.speed : pace
   return {
-    lap: Math.floor(laps) - Math.floor(lapsAt(hourStart)) + 1,
-    progress: laps - Math.floor(laps),
-    mapProgress: mapLaps - Math.floor(mapLaps),
+    lap: laps - Math.floor(effectiveTime(vehicle, actions, hourStart) / drive.lapTime) + 1,
+    progress: here.distance / drive.length,
+    mapProgress: there.distance / drive.length,
+    mapSpeed: there.speed * 3.6 * rate,
   }
 }
 
@@ -411,12 +464,12 @@ export function computeFrame({ now, actions, readings = [], liveIssues = [], veh
       .slice(-RESOLVED_KEEP)
     const gps = live?.position
     const onRoute = gps !== undefined && gps.progress !== null
-    const simulatedPosition = positionAt(vehicle, simulated, now)
+    const speed = live?.speed ?? speedAt(vehicle, simulated, now)
+    // 실차 GPS가 경로 위면 지도에서도 실제 위치·속도 그대로 둡니다(배속 없음).
     const position =
       gps && gps.progress !== null
-        ? { progress: gps.progress, mapProgress: gps.progress, lap: lapOf(gps) }
-        : simulatedPosition
-    const speed = live?.speed ?? speedAt(vehicle, simulated, now)
+        ? { progress: gps.progress, mapProgress: gps.progress, lap: lapOf(gps), mapSpeed: speed }
+        : positionAt(vehicle, simulated, now)
     const metrics = vehicle.metrics.map((metric) => {
       if (metric.key === 'speed') return reading(metric, clamp(speed, metric.min, metric.max))
       const liveValue = live?.metrics[metric.key]
@@ -442,6 +495,7 @@ export function computeFrame({ now, actions, readings = [], liveIssues = [], veh
       source: live ? 'live' : 'simulated',
       progress: round(position.progress, 5),
       mapProgress: round(position.mapProgress, 5),
+      mapSpeed: round(position.mapSpeed, 1),
       lap: position.lap,
       positionSource: onRoute ? 'gps' : 'simulated',
       gps: gps ? { lat: gps.lat, lng: gps.lng, at: gps.at, onRoute } : null,

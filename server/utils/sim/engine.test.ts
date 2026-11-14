@@ -33,11 +33,13 @@ describe('computeFrame', () => {
     expect(computeFrame({ now, actions: [] })).toEqual(computeFrame({ now, actions: [] }))
   })
 
-  it('시간이 지나면 위치가 앞으로 가고, 볼 수 있는 탈것만 돌려줍니다', () => {
+  it('시간이 지나면 위치가 뒤로 가지 않고(신호에서는 멈춤) 2분이면 앞으로 가며, 볼 수 있는 탈것만 돌려줍니다', () => {
     const now = DAY + 3600_000
     const before = computeFrame({ now, actions: [] }).vehicles
-    const after = computeFrame({ now: now + 10_000, actions: [] }).vehicles
-    after.forEach((vehicle, i) => expect(vehicle.lap + vehicle.progress).toBeGreaterThan(before[i]!.lap + before[i]!.progress))
+    const soon = computeFrame({ now: now + 10_000, actions: [] }).vehicles
+    const later = computeFrame({ now: now + 120_000, actions: [] }).vehicles
+    soon.forEach((vehicle, i) => expect(vehicle.lap + vehicle.progress).toBeGreaterThanOrEqual(before[i]!.lap + before[i]!.progress))
+    later.forEach((vehicle, i) => expect(vehicle.lap + vehicle.progress).toBeGreaterThan(before[i]!.lap + before[i]!.progress))
     expect(computeFrame({ now, actions: [], vehicleIds: ['kao-0002'] }).vehicles.map((v) => v.id)).toEqual(['kao-0002'])
   })
 
@@ -54,20 +56,22 @@ describe('computeFrame', () => {
     expect(computeFrame({ now: hourStart + 3600_000, actions: [] }).vehicles.every((vehicle) => vehicle.lap === 1)).toBe(true)
   })
 
-  it('지도 위치는 같은 거리를 TIME_SCALE배 한 값이라, 실제 진행률의 TIME_SCALE배로 움직입니다', () => {
-    const circular = (a: number, b: number) => Math.min(Math.abs(a - b), 1 - Math.abs(a - b))
-    const now = DAY + 7 * 3600_000 + 123_456
-    for (const vehicle of computeFrame({ now, actions: [] }).vehicles) {
-      // 실제 진행률을 TIME_SCALE배 한 값의 소수부가 지도 위치입니다(반올림 오차만 허용).
-      expect(circular((vehicle.progress * TIME_SCALE) % 1, vehicle.mapProgress), vehicle.id).toBeLessThan(1e-3)
+  it('실제 위치는 실제 속도로, 지도 위치는 지도 속도(mapSpeed)의 TIME_SCALE배로 움직입니다', () => {
+    const step = 200
+    for (let now = DAY + 7 * 3600_000; now < DAY + 7 * 3600_000 + 600_000; now += 61_000) {
+      const a = computeFrame({ now, actions: [] }).vehicles
+      const b = computeFrame({ now: now + step, actions: [] }).vehicles
+      a.forEach((vehicle, i) => {
+        const meters = findRoute(vehicle.routeId).lengthKm * 1000
+        const moved = (from: number, to: number) => ((to - from + 1) % 1) * meters
+        const expectMoved = (actual: number, speed: number, label: string) => {
+          const expected = (speed / 3.6) * (step / 1000)
+          expect(Math.abs(actual - expected), `${vehicle.id} ${label}`).toBeLessThanOrEqual(expected * 0.15 + 0.1)
+        }
+        expectMoved(moved(vehicle.progress, b[i]!.progress), (vehicle.speed + b[i]!.speed) / 2, 'real')
+        expectMoved(moved(vehicle.mapProgress, b[i]!.mapProgress) / TIME_SCALE, (vehicle.mapSpeed + b[i]!.mapSpeed) / 2, 'map')
+      })
     }
-    const a = computeFrame({ now, actions: [] }).vehicles
-    const b = computeFrame({ now: now + 1000, actions: [] }).vehicles
-    a.forEach((vehicle, i) => {
-      const real = (b[i]!.progress - vehicle.progress + 1) % 1
-      const map = (b[i]!.mapProgress - vehicle.mapProgress + 1) % 1
-      expect(map, vehicle.id).toBeCloseTo(real * TIME_SCALE, 3)
-    })
   })
 
   it('하루 중 문제가 생기고 동시에 2건을 넘지 않습니다', () => {
@@ -230,18 +234,61 @@ describe('computeHistory', () => {
 })
 
 describe('도로에 맞는 속도와 기울기', () => {
-  /** 경로 도로의 제한속도(OpenStreetMap maxspeed). 자전거길은 태그가 없어 자전거에 맞게 */
-  const LIMITS: Record<string, number> = { downtown: 50, 'han-river': 80, namsan: 50, yeouido: 20 }
+  /** 위치(한 바퀴 비율)의 제한속도(routes.ts의 구간별 제한속도) */
+  const limitAt = (routeId: string, at: number) => {
+    const zones = findRoute(routeId).speedLimits
+    return [...zones].reverse().find(([from]) => from <= ((at % 1) + 1) % 1)?.[1] ?? zones[0]![1]
+  }
+  /** 한 시간 동안 7초 간격으로 본 프레임 */
+  const hour = (id: string) =>
+    Array.from({ length: Math.floor(3600 / 7) }, (_, i) => computeFrame({ now: DAY + 4 * 3600_000 + i * 7000, actions: [], vehicleIds: [id] }).vehicles[0]!)
 
-  it('탈것마다 속도가 경로 도로의 제한속도를 넘지 않습니다', () => {
+  it('속도는 그 위치의 제한속도와 탈것 최고 속도를 넘지 않습니다(구간이 바뀌는 곳은 감속 중이라 15m 앞까지 봄)', () => {
     for (const spec of VEHICLE_SPECS) {
-      expect(spec.cruise[1], spec.id).toBeLessThanOrEqual(LIMITS[spec.routeId]!)
-      for (let t = DAY; t < DAY + 3600_000; t += 37_000) {
-        const vehicle = computeFrame({ now: t, actions: [], vehicleIds: [spec.id] }).vehicles[0]!
-        expect(vehicle.speed, `${spec.id} ${t}`).toBeLessThanOrEqual(LIMITS[spec.routeId]!)
-        expect(vehicle.speed).toBeGreaterThanOrEqual(spec.cruise[0] - 0.1)
+      const meters = findRoute(spec.routeId).lengthKm * 1000
+      for (const vehicle of hour(spec.id)) {
+        const limit = Math.max(limitAt(spec.routeId, vehicle.progress), limitAt(spec.routeId, vehicle.progress - 15 / meters))
+        expect(vehicle.speed, `${spec.id} ${vehicle.progress}`).toBeLessThanOrEqual(Math.min(limit, spec.cruise[1]) + 0.1)
+        expect(vehicle.speed).toBeGreaterThanOrEqual(0)
       }
     }
+  })
+
+  it('신호가 있는 도심·남산 경로에서는 신호에서 서고, 강변북로·올림픽대로에서는 시속 64km 넘게 달립니다', () => {
+    for (const id of ['kao-0001', 'kao-0003']) {
+      const stopped = hour(id).filter((vehicle) => vehicle.speed < 1)
+      expect(stopped.length, id).toBeGreaterThan(5)
+    }
+    const aventador = hour('kao-0002')
+    expect(Math.max(...aventador.map((vehicle) => vehicle.speed))).toBeGreaterThan(64)
+    expect(aventador.every((vehicle) => vehicle.speed > 0)).toBe(true)
+  })
+
+  it('속도 제한이 걸린 동안에도 지도 위치는 지도 속도(mapSpeed)의 TIME_SCALE배로 움직입니다', () => {
+    const sentAt = DAY + 4 * 3600_000
+    const capped: ActionRecord = { id: 'cap', issueId: 'x', vehicleId: 'kao-0002', action: 'speed-limit', sentAt }
+    const meters = findRoute('han-river').lengthKm * 1000
+    for (let t = sentAt + 3000; t < sentAt + SPEED_CAP_DURATION - 1000; t += 9000) {
+      const a = computeFrame({ now: t, actions: [capped], vehicleIds: ['kao-0002'] }).vehicles[0]!
+      const b = computeFrame({ now: t + 200, actions: [capped], vehicleIds: ['kao-0002'] }).vehicles[0]!
+      const moved = (((b.mapProgress - a.mapProgress + 1) % 1) * meters) / TIME_SCALE
+      const expected = ((a.mapSpeed + b.mapSpeed) / 2 / 3.6) * 0.2
+      expect(Math.abs(moved - expected)).toBeLessThanOrEqual(expected * 0.15 + 0.1)
+    }
+  })
+
+  it('속도 제한 조치가 걸린 90초는 제한 아래로 달리고, 그만큼 뒤처집니다', () => {
+    const sentAt = DAY + 4 * 3600_000
+    const capped: ActionRecord = { id: 'cap', issueId: 'x', vehicleId: 'kao-0002', action: 'speed-limit', sentAt }
+    for (let t = sentAt + 1000; t < sentAt + SPEED_CAP_DURATION; t += 7000) {
+      const vehicle = computeFrame({ now: t, actions: [capped], vehicleIds: ['kao-0002'] }).vehicles[0]!
+      expect(vehicle.speed).toBeLessThanOrEqual(48 + 0.1)
+    }
+    const after = sentAt + SPEED_CAP_DURATION + 60_000
+    const slow = computeFrame({ now: after, actions: [capped], vehicleIds: ['kao-0002'] }).vehicles[0]!
+    const free = computeFrame({ now: after, actions: [], vehicleIds: ['kao-0002'] }).vehicles[0]!
+    const behind = (free.lap + free.progress - (slow.lap + slow.progress)) * findRoute('han-river').lengthKm * 1000
+    expect(behind).toBeGreaterThan(10)
   })
 
   it('슈퍼바이크 기울기는 굽은 길과 속도로 정하고(atan(v²κ/g)) 급한 굽이에서도 35°에서 멈춥니다', () => {
