@@ -426,9 +426,17 @@ const LITE_SMALL_TRIANGLES = 1500
 /** sRGB(0~1) → 선형 */
 const toLinear = (value) => (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
 
-/** 텍스처를 평균 색으로 바꿔 재질의 기본 색에 곱하고, 텍스처와 UV를 지웁니다. */
+/**
+ * 텍스처를 평균 색으로 바꿔 재질의 기본 색에 곱하고, 텍스처와 UV를 지웁니다.
+ * 텍스처 알파로 비치는 곳을 정하는 재질(BLEND·MASK: 스티커, 세라믹 점 무늬 유리)은 그대로 둡니다(평균 색으로 바꾸면 투명한 곳이 막힘).
+ */
 async function flattenTextures(document) {
+  const kept = new Set()
   for (const material of document.getRoot().listMaterials()) {
+    if (material.getAlphaMode() !== 'OPAQUE' && material.getBaseColorTexture()) {
+      kept.add(material)
+      continue
+    }
     const image = material.getBaseColorTexture()?.getImage()
     if (image) {
       const { channels } = await sharp(image).stats()
@@ -444,6 +452,7 @@ async function flattenTextures(document) {
       .setEmissiveTexture(null)
   }
   for (const prim of document.getRoot().listMeshes().flatMap((mesh) => mesh.listPrimitives())) {
+    if (kept.has(prim.getMaterial())) continue
     for (const semantic of prim.listSemantics()) if (semantic.startsWith('TEXCOORD_')) prim.setAttribute(semantic, null)
   }
 }
