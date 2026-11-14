@@ -152,8 +152,8 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
       holder,
       miniature,
       ring,
-      shown: vehicle.progress,
-      target: vehicle.progress,
+      shown: vehicle.mapProgress,
+      target: vehicle.mapProgress,
       speed: vehicle.speed,
       lean: 0,
       health: vehicle.health,
@@ -177,7 +177,7 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
     for (const vehicle of next.vehicles) {
       if (!markers.has(vehicle.id)) addMarker(vehicle)
       const marker = markers.get(vehicle.id)!
-      marker.target = vehicle.progress
+      marker.target = vehicle.mapProgress
       marker.speed = vehicle.speed
       marker.lean = vehicle.metrics.find((metric) => metric.key === 'lean')?.value ?? (vehicle.kind === 'bicycle' ? 8 : 0)
       if (marker.health !== vehicle.health) {

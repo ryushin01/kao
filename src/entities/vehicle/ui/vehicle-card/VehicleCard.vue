@@ -32,8 +32,8 @@ const issues = computed(() => activeIssues(props.vehicle))
         </dd>
       </div>
       <div>
-        <dt>{{ route.name }}</dt>
-        <dd class="tabular">{{ vehicle.lap }}바퀴 · {{ formatPercent(vehicle.progress) }}</dd>
+        <dt>{{ route.name }} · 정각부터</dt>
+        <dd class="tabular">{{ vehicle.lap }}바퀴째 · {{ formatPercent(vehicle.progress) }}</dd>
       </div>
       <div>
         <dt>열린 문제</dt>

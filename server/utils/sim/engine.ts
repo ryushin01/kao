@@ -25,7 +25,7 @@ import type { MetricSpec, VehicleSpec } from '../fleet-specs'
  * - 지표: 기준값 + 문제로 생긴 치우침(선형으로 커지고, 끝나면 지수로 회복) + 시각으로 정한 잡음
  */
 
-/** 위치 이동에만 쓰는 배속 */
+/** 관제 지도에서 움직임이 보이도록 지도 위치(mapProgress)만 빠르게 돌리는 배속. 바퀴 수와 진행률은 실제 속도 기준입니다. */
 export const TIME_SCALE = 12
 /** 원격 조치를 보낸 뒤 차량이 응답하기까지(ms) */
 export const ACTION_LATENCY = 2400
@@ -166,10 +166,14 @@ function speedAt(vehicle: VehicleSpec, actions: ActionRecord[], time: number) {
 /** 거리 기준 시각. 위치가 끊기지 않도록 고정된 시각부터 잽니다. */
 const DISTANCE_EPOCH = Date.UTC(2026, 0, 1)
 
-/** 경로 위 위치와, 매시 정각부터 센 바퀴 수 */
+/**
+ * 경로 위 위치. 바퀴 수(매시 정각부터)와 진행률은 실제 속도로 달린 거리로 셉니다.
+ * 관제 지도 위치(mapProgress)는 같은 거리를 TIME_SCALE배 해서 구하므로, 실제로 한 바퀴를 돌면 지도에서는 정확히 TIME_SCALE바퀴를 돕니다.
+ */
 function positionAt(vehicle: VehicleSpec, actions: ActionRecord[], time: number) {
   const wave = waves.get(vehicle.id)!
   const length = findRoute(vehicle.routeId).lengthKm
+  /** 실제 속도로 달린 바퀴 수(소수) */
   const lapsAt = (at: number) => {
     let distance = wave.integral(at / 1000) - wave.integral(DISTANCE_EPOCH / 1000)
     // 속도 제한이 걸린 구간은 제한을 넘은 만큼 덜 달렸습니다(오늘 보낸 조치만 반영).
@@ -179,11 +183,16 @@ function positionAt(vehicle: VehicleSpec, actions: ActionRecord[], time: number)
       const cap = capValue(vehicle, action.action)
       for (let t = action.sentAt; t < to; t += 500) distance -= (Math.max(0, wave.at(t / 1000) - cap) * Math.min(500, to - t)) / 1000
     }
-    return (distance / 3600) * TIME_SCALE / length
+    return distance / 3600 / length
   }
   const laps = lapsAt(time)
   const hourStart = Math.floor(time / 3600_000) * 3600_000
-  return { lap: Math.floor(laps) - Math.floor(lapsAt(hourStart)) + 1, progress: laps - Math.floor(laps) }
+  const mapLaps = laps * TIME_SCALE
+  return {
+    lap: Math.floor(laps) - Math.floor(lapsAt(hourStart)) + 1,
+    progress: laps - Math.floor(laps),
+    mapProgress: mapLaps - Math.floor(mapLaps),
+  }
 }
 
 // ── 문제(고장) 에피소드 ─────────────────────────────────────────────────────
@@ -371,6 +380,7 @@ export function computeFrame({ now, actions, readings = [], vehicleIds }: FrameI
       routeId: vehicle.routeId,
       source: live ? 'live' : 'simulated',
       progress: round(position.progress, 5),
+      mapProgress: round(position.mapProgress, 5),
       lap: position.lap,
       speed: round(speed, 1),
       speedCap: speedCapAt(vehicle, todays, now),
