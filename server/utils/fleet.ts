@@ -28,8 +28,8 @@ export async function todaysActions(now: number, fresh = false) {
 }
 
 /** 최근 1분 안에 실제 차량에서 들어온 측정값 */
-export async function recentReadings(now: number) {
-  if (readingCache && now - readingCache.fetchedAt < CACHE_MS) return readingCache.readings
+export async function recentReadings(now: number, fresh = false) {
+  if (!fresh && readingCache && now - readingCache.fetchedAt < CACHE_MS) return readingCache.readings
   const readings = await useStore().listReadingsSince(now - 60_000)
   readingCache = { fetchedAt: now, readings }
   return readings
@@ -48,7 +48,7 @@ export async function recentLiveIssues(now: number, fresh = false) {
 
 /** 프레임 계산에 필요한 기록을 한 번에 모읍니다. */
 export async function frameInput(now: number, fresh = false): Promise<Omit<FrameInput, 'vehicleIds'>> {
-  const [actions, readings, liveIssues] = await Promise.all([todaysActions(now, fresh), recentReadings(now), recentLiveIssues(now, fresh)])
+  const [actions, readings, liveIssues] = await Promise.all([todaysActions(now, fresh), recentReadings(now, fresh), recentLiveIssues(now, fresh)])
   return { now, actions, readings, liveIssues }
 }
 

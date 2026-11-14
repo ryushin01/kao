@@ -8,9 +8,9 @@
  * - src/shared/config/routes.ts: 탈것 4대의 주행 경로. 실제 도로를 따라 닫힌 경로(위도·경도)
  * - public/maps/seoul.json: 관제 지도에 그리는 도로·한강·공원(지도 중심 기준 m 좌표, 정수)
  *
- * 경로는 경유점(도로 이름·진행 방향)을 잇는 최단 경로입니다. 간선 도로는 일방통행을 지키고, 진출입로(_link)는
- * 양방향으로 두어 교차로 구조 때문에 크게 돌지 않게 합니다. 그래도 교차로에서 나갔다 되돌아오는 짧은 구간이
- * 생기면 잘라 냅니다(removeSpurs). Node 22.18 이상이 TS 파일을 그대로 불러와 앱과 같은 좌표 변환을 씁니다.
+ * 경로는 경유점(도로 이름·진행 방향·태그)을 잇는 최단 경로이고, 진출입로를 포함해 일방통행을 모두 지킵니다
+ * (실제로 달릴 수 있는 길만). 교차로 구조 때문에 크게 돌아가는 조합은 경유점과 방향을 바꿔 고릅니다.
+ * Node 22.18 이상이 TS 파일을 그대로 불러와 앱과 같은 좌표 변환을 씁니다.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { parseArgs } from 'node:util'
@@ -89,8 +89,9 @@ const minorWays = minorRaw.elements.filter((el) => el.type === 'way')
 const edges = new Map()
 for (const way of roadWays) {
   const t = way.tags
-  // 진출입로는 양방향으로 둡니다(지도 축척에서는 차이가 보이지 않고, 교차로마다 크게 돌아가는 것을 막음).
-  const oneway = !t.highway.endsWith('_link') && (t.oneway === 'yes' || t.oneway === '1' || t.junction === 'roundabout' || t.highway === 'motorway')
+  // 일방통행: oneway=yes·1, 회전교차로, 고속도로, 그리고 OSM 관례대로 진출입로(_link)는 oneway=no가 아니면 한 방향입니다.
+  const oneway =
+    t.oneway === 'yes' || t.oneway === '1' || t.junction === 'roundabout' || t.highway === 'motorway' || (t.highway.endsWith('_link') && t.oneway !== 'no')
   const reverse = t.oneway === '-1'
   for (let i = 0; i < way.nodes.length - 1; i += 1) {
     const a = nodes.get(way.nodes[i])
@@ -193,30 +194,19 @@ function shortestPath(from, to, allow, cost) {
   return path
 }
 
-/** 교차로에서 나갔다가 60m 안으로 되돌아오는 구간(250m 이상, 한 바퀴의 40% 미만)을 잘라 냅니다. */
-function removeSpurs(path) {
-  for (let changed = true; changed; ) {
-    changed = false
-    const points = path.map((id) => nodes.get(id))
-    const cumulative = [0]
-    for (let i = 1; i < points.length; i += 1) cumulative[i] = cumulative[i - 1] + distance(points[i - 1], points[i])
-    const total = cumulative.at(-1) + distance(points.at(-1), points[0])
-    search: for (let i = 0; i < points.length; i += 1) {
-      for (let j = points.length - 1; j > i + 2; j -= 1) {
-        const along = cumulative[j] - cumulative[i]
-        if (along > total * 0.4 || along < 250) continue
-        if (distance(points[i], points[j]) < 60) {
-          path.splice(i + 1, j - i - 1)
-          changed = true
-          break search
-        }
-      }
-    }
-  }
-  return path
+/** 점 p에서 선분 a–b까지의 거리(선분 밖으로 나가면 가까운 끝점까지) */
+function segmentDistance(p, a, b) {
+  const dx = b.x - a.x
+  const dz = b.z - a.z
+  const span = dx * dx + dz * dz
+  const t = span === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / span))
+  return Math.hypot(a.x + dx * t - p.x, a.z + dz * t - p.z)
 }
 
-/** Douglas–Peucker. points는 {x, z}, 처음과 끝 점은 남깁니다. */
+/**
+ * Douglas–Peucker. points는 {x, z}, 처음과 끝 점은 남깁니다. 오차는 무한한 직선이 아니라 바꿔 넣을 선분까지 재므로,
+ * 갔다가 되돌아오는 구간(되돌이)이나 닫힌 고리도 지워지지 않습니다.
+ */
 function simplify(points, tolerance) {
   if (points.length < 3) return points
   const keep = new Uint8Array(points.length)
@@ -227,14 +217,10 @@ function simplify(points, tolerance) {
     const [first, last] = stack.pop()
     const a = points[first]
     const b = points[last]
-    const dx = b.x - a.x
-    const dz = b.z - a.z
-    const span = Math.hypot(dx, dz)
     let index = -1
     let max = tolerance
     for (let i = first + 1; i < last; i += 1) {
-      // 처음과 끝이 같은 점(닫힌 고리)이면 선까지가 아니라 그 점까지의 거리로 잽니다.
-      const d = span === 0 ? distance(a, points[i]) : Math.abs(dx * (a.z - points[i].z) - dz * (a.x - points[i].x)) / span
+      const d = segmentDistance(points[i], a, b)
       if (d > max) {
         max = d
         index = i
@@ -269,15 +255,14 @@ const ROUTE_PLANS = [
   },
   {
     id: 'han-river',
-    name: '반포·동작 한강 순환',
-    via: '강변북로 → 반포대교 → 올림픽대로 → 동작대교',
+    name: '동작·한남 한강 순환',
+    via: '강변북로 → 한남대교 → 올림픽대로 → 동작대교',
     allow: car,
-    removeSpurs: true,
     waypoints: [
-      { name: '강변북로', lat: 37.5178, lng: 126.991, heading: 52 },
-      { name: '반포대로', lat: 37.5126, lng: 126.9975, heading: 160, tags: { layer: '2' } },
-      { name: '올림픽대로', lat: 37.508, lng: 126.99, heading: 260 },
+      { name: '한남대로', lat: 37.528, lng: 127.012, heading: 150 },
+      { name: '올림픽대로', lat: 37.508, lng: 126.997, heading: 270 },
       { name: '동작대로', lat: 37.512, lng: 126.9822, heading: 15, tags: { 'bridge:name': '동작대교' } },
+      { name: '강변북로', lat: 37.52, lng: 126.997, heading: 90 },
     ],
   },
   {
@@ -317,7 +302,6 @@ function buildRoute(plan) {
     path.push(...(path.length ? part.slice(1) : part))
   }
   path.pop() // 닫힌 경로라 마지막(첫 점과 같음)은 뺍니다.
-  if (plan.removeSpurs) removeSpurs(path)
   // 1.5m보다 작은 굽이는 줄입니다(닫힌 경로라 첫 점을 끝에 붙였다가 뺍니다).
   const points = simplify([...path, path[0]].map((id) => nodes.get(id)), 1.5).slice(0, -1)
   let length = 0

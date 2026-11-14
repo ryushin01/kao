@@ -45,7 +45,8 @@ async function deliver(subscription: PushSubscriptionRecord, payload: PushPayloa
     await sendNotification(
       { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },
       JSON.stringify(payload),
-      { TTL: 600, urgency: 'high' },
+      // 푸시 서비스가 응답하지 않으면 5초 뒤 실패로 보고 다음 검사 때 다시 보냅니다(수신 API 응답이 함수 제한 시간까지 끌리지 않게).
+      { TTL: 600, urgency: 'high', timeout: 5000 },
     )
     return 'sent'
   } catch (error) {
@@ -78,7 +79,8 @@ export async function sendTestPush(userId: string) {
 export async function notifyCriticalIssues(now = Date.now()) {
   if (!ensureConfigured()) return { sent: 0, issues: 0 }
   const store = useStore()
-  const issues = criticalIssues(await frameInput(now))
+  // 알림 검사는 기억해 둔 값이 아니라 DB를 새로 읽습니다(방금 열린 위험 문제를 놓치지 않게).
+  const issues = criticalIssues(await frameInput(now, true))
   if (issues.length === 0) return { sent: 0, issues: 0 }
   const subscriptions = await store.listPushSubscriptions()
   let sent = 0

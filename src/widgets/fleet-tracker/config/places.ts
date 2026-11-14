@@ -10,5 +10,6 @@ export const MAP_PLACES: ReadonlyArray<{ id: string; name: string; lat: number; 
   { id: 'nodeul', name: '노들섬', lat: 37.5176, lng: 126.9586 },
   { id: 'yeouido', name: '여의도', lat: 37.5253, lng: 126.9282 },
   { id: 'banpo', name: '반포대교', lat: 37.5143, lng: 126.9966 },
+  { id: 'hannam', name: '한남대교', lat: 37.5262, lng: 127.0128 },
   { id: 'dongjak', name: '동작대교', lat: 37.5115, lng: 126.9822 },
 ]
