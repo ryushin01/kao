@@ -44,6 +44,11 @@ onMounted(() => {
       stage?.setUniform('uTime', time)
       stage?.setUniform('uProgress', current)
     },
+    onFailure() {
+      stage?.dispose()
+      stage = null
+      supported.value = false
+    },
   })
   if (!stage) {
     supported.value = false

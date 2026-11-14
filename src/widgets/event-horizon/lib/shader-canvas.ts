@@ -21,6 +21,8 @@ export interface ShaderCanvasOptions {
   maxPixelRatio?: number
   /** 그리기 직전마다 부릅니다. delta는 초 단위입니다. uResolution은 무대가 넣습니다. */
   onFrame?: (delta: number) => void
+  /** 브라우저가 거둬 간 컨텍스트를 되찾은 뒤 셰이더를 다시 만들지 못하면 부릅니다(화면은 대체 배경을 씁니다). */
+  onFailure?: () => void
 }
 
 export interface ShaderCanvas {
@@ -42,12 +44,15 @@ function compile(gl: WebGLRenderingContext, type: number, source: string) {
   return null
 }
 
-/** WebGL을 쓸 수 없거나 셰이더를 만들지 못하면 null을 돌려줍니다(화면은 대체 배경을 씁니다). */
-export function createShaderCanvas({ canvas, fragmentShader, maxPixelRatio = 1, onFrame }: ShaderCanvasOptions): ShaderCanvas | null {
-  const attributes: WebGLContextAttributes = { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' }
-  const gl = (canvas.getContext('webgl2', attributes) ?? canvas.getContext('webgl', attributes)) as WebGLRenderingContext | null
-  if (!gl) return null
+interface Resources {
+  program: WebGLProgram
+  vertex: WebGLShader
+  fragment: WebGLShader
+  buffer: WebGLBuffer | null
+}
 
+/** 셰이더 프로그램과 화면을 덮는 삼각형 버퍼를 만듭니다. */
+function build(gl: WebGLRenderingContext, fragmentShader: string): Resources | null {
   const vertex = compile(gl, gl.VERTEX_SHADER, VERTEX_SHADER)
   const fragment = compile(gl, gl.FRAGMENT_SHADER, fragmentShader)
   const program = gl.createProgram()
@@ -68,11 +73,22 @@ export function createShaderCanvas({ canvas, fragmentShader, maxPixelRatio = 1, 
   const position = gl.getAttribLocation(program, 'aPosition')
   gl.enableVertexAttribArray(position)
   gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0)
+  return { program, vertex, fragment, buffer }
+}
+
+/** WebGL을 쓸 수 없거나 셰이더를 만들지 못하면 null을 돌려줍니다(화면은 대체 배경을 씁니다). */
+export function createShaderCanvas({ canvas, fragmentShader, maxPixelRatio = 1, onFrame, onFailure }: ShaderCanvasOptions): ShaderCanvas | null {
+  const attributes: WebGLContextAttributes = { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' }
+  const gl = (canvas.getContext('webgl2', attributes) ?? canvas.getContext('webgl', attributes)) as WebGLRenderingContext | null
+  if (!gl) return null
+
+  let resources = build(gl, fragmentShader)
+  if (!resources) return null
 
   const uniforms = new Map<string, UniformValue>()
   const locations = new Map<string, WebGLUniformLocation | null>()
   const locationOf = (name: string) => {
-    if (!locations.has(name)) locations.set(name, gl.getUniformLocation(program, name))
+    if (!locations.has(name)) locations.set(name, resources ? gl.getUniformLocation(resources.program, name) : null)
     return locations.get(name) ?? null
   }
 
@@ -164,14 +180,27 @@ export function createShaderCanvas({ canvas, fragmentShader, maxPixelRatio = 1, 
   }
   document.addEventListener('visibilitychange', onVisibility)
 
-  // 브라우저가 컨텍스트를 거둬 가면 그리기를 멈춥니다(화면에는 마지막 그림이 남습니다).
+  // 브라우저가 컨텍스트를 거둬 가면 그리기를 멈춥니다. preventDefault()를 불러야 브라우저가 되돌려 줍니다.
   const onLost = (event: Event) => {
     event.preventDefault()
     lost = true
     if (frameId) cancelAnimationFrame(frameId)
     frameId = 0
   }
+  // 되찾은 컨텍스트에서는 이전 프로그램·버퍼·uniform 위치가 모두 무효라 다시 만듭니다.
+  const onRestored = () => {
+    resources = build(gl, fragmentShader)
+    locations.clear()
+    if (!resources) {
+      onFailure?.()
+      return
+    }
+    lost = false
+    resize()
+    start()
+  }
   canvas.addEventListener('webglcontextlost', onLost)
+  canvas.addEventListener('webglcontextrestored', onRestored)
 
   start()
 
@@ -193,11 +222,12 @@ export function createShaderCanvas({ canvas, fragmentShader, maxPixelRatio = 1, 
       ratioQuery?.removeEventListener('change', onRatioChange)
       document.removeEventListener('visibilitychange', onVisibility)
       canvas.removeEventListener('webglcontextlost', onLost)
-      if (!lost) {
-        gl.deleteBuffer(buffer)
-        gl.deleteProgram(program)
-        gl.deleteShader(vertex)
-        gl.deleteShader(fragment)
+      canvas.removeEventListener('webglcontextrestored', onRestored)
+      if (!lost && resources) {
+        gl.deleteBuffer(resources.buffer)
+        gl.deleteProgram(resources.program)
+        gl.deleteShader(resources.vertex)
+        gl.deleteShader(resources.fragment)
       }
       // 컨텍스트를 바로 돌려줍니다(브라우저가 한 번에 열어 두는 WebGL 컨텍스트 수에는 한도가 있습니다).
       gl.getExtension('WEBGL_lose_context')?.loseContext()

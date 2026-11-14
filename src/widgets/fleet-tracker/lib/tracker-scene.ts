@@ -87,8 +87,7 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
     onFrame: (delta) => update(delta),
   })
   const { scene, camera, renderer } = stage
-  // 지도에서는 미니어처가 작게 보여 반사 지도를 64로 낮춰도 차이가 없습니다(256의 1/16 계산).
-  const disposeEnvironment = applyStudioEnvironment(renderer, scene, 0.6, 64)
+  const disposeEnvironment = applyStudioEnvironment(renderer, scene, 0.6)
   scene.fog = null
 
   camera.position.copy(OVERVIEW_CAMERA)

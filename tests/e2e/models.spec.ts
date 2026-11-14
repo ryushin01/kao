@@ -7,7 +7,12 @@ test.describe('실제 3D 모델', () => {
     test.slow()
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
+    // 요청을 시작했는지(requested)와 다 받았는지(loaded)를 따로 셉니다. 응답이 늦게 오는 요청도 '미리 받지 않음' 검사에 걸리게 합니다.
+    const requested: string[] = []
     const loaded: string[] = []
+    page.on('request', (request) => {
+      if (request.url().endsWith('.glb')) requested.push(new URL(request.url()).pathname)
+    })
     page.on('response', (response) => {
       if (response.url().endsWith('.glb') && response.status() < 400) loaded.push(new URL(response.url()).pathname)
     })
@@ -18,7 +23,7 @@ test.describe('실제 3D 모델', () => {
     // CPU로 그리는 CI에서는 three.js를 불러와 첫 모델을 그리는 데 몇 초 걸립니다.
     await expect.poll(() => loaded, { timeout: 30_000 }).toContain('/models/lamborghini-aventador.glb')
     // 관제 지도는 화면 아래쪽에 있어, 다가가기 전에는 지도용 모델을 받지 않습니다.
-    expect(loaded).not.toContain('/models/lamborghini-aventador.lite.glb')
+    expect(requested).not.toContain('/models/lamborghini-aventador.lite.glb')
     await page.getByRole('img', { name: /관제 지도/ }).scrollIntoViewIfNeeded()
     await expect.poll(() => loaded, { timeout: 45_000 }).toContain('/models/lamborghini-aventador.lite.glb')
     await expect(page.getByRole('img', { name: /Lamborghini Aventador 미니어처/ })).toBeVisible()
@@ -29,14 +34,18 @@ test.describe('실제 3D 모델', () => {
 
   test('소개 화면은 미니어처 챕터에 다가가기 전에는 3D 모델을 받지 않습니다', async ({ page }) => {
     test.slow()
+    const requested: string[] = []
     const loaded: string[] = []
+    page.on('request', (request) => {
+      if (request.url().endsWith('.glb')) requested.push(new URL(request.url()).pathname)
+    })
     page.on('response', (response) => {
       if (response.url().endsWith('.glb') && response.status() < 400) loaded.push(new URL(response.url()).pathname)
     })
     await page.goto('/')
     await page.waitForFunction(() => (window as Window & { useNuxtApp?: () => { isHydrating?: boolean } }).useNuxtApp?.().isHydrating === false)
     await page.waitForTimeout(2000)
-    expect(loaded).toEqual([])
+    expect(requested).toEqual([])
     await page.locator('#miniature').scrollIntoViewIfNeeded()
     // 분류 기본값은 슈퍼카(아벤타도르)입니다.
     await expect.poll(() => loaded, { timeout: 30_000 }).toContain('/models/lamborghini-aventador.glb')
