@@ -98,9 +98,10 @@ export function postWebhook(url: string, secret: string, body: string, now = Dat
         lookup: safeLookup,
       },
       (response) => {
-        response.resume()
+        // 본문은 쓰지 않으므로 상태만 읽고 바로 닫습니다(본문을 열어 둔 채 끌어도 연결이 남지 않게).
         const status = response.statusCode ?? 0
         clearTimeout(deadline)
+        response.destroy()
         resolve({ ok: status >= 200 && status < 300, status })
       },
     )

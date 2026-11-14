@@ -68,6 +68,26 @@ describe('장치 토큰 인증', () => {
     expect(await status(authenticateToken(undefined))).toBe(401)
   })
 
+  it('공용 토큰 값이 장치 토큰 앞머리로 시작해도 공용 토큰으로 받습니다', async () => {
+    process.env.INGEST_TOKEN = 'kaod_fleet-secret'
+    expect(await authenticateToken('Bearer kaod_fleet-secret')).toEqual({ kind: 'fleet' })
+  })
+
+  it('마지막 요청 시각을 기록하지 못해도 장치 요청은 받습니다', async () => {
+    const store = useStore()
+    const token = createDeviceToken()
+    await store.insertDevice(device(token))
+    const original = store.touchDevice
+    store.touchDevice = async () => {
+      throw new Error('DB 쓰기 실패')
+    }
+    try {
+      expect(await authenticateToken(`Bearer ${token}`, 5_000)).toMatchObject({ kind: 'device' })
+    } finally {
+      store.touchDevice = original
+    }
+  })
+
   it('공용 토큰이 설정되지 않았으면 장치 토큰만 받습니다', async () => {
     delete process.env.INGEST_TOKEN
     expect(await status(authenticateToken('Bearer fleet-secret'))).toBe(401)

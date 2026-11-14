@@ -123,7 +123,8 @@ function acknowledge(command) {
   }, Number(args['ack-delay']))
 }
 
-const detourSeconds = Number(args.detour) || 0
+const detourSeconds = Number(args.detour)
+if (args.detour.trim() === '' || !Number.isFinite(detourSeconds) || detourSeconds < 0) fail(`--detour는 0 이상의 초(숫자)로 주세요: ${args.detour}`)
 /** 경로 옆으로 벗어난 거리(m) */
 function detourOffset(t) {
   const start = 10

@@ -105,6 +105,8 @@ test('경로 밖 GPS는 실제 위치와 지나온 길(최근 2분)로 보여 �
   await page.goto('/fleet')
   const row = page.getByRole('table', { name: /주행 위치 표/ }).getByRole('row', { name: /STRiDA LT/ })
   await expect(row.getByRole('cell', { name: 'GPS 경로 밖(실제 위치)' })).toBeVisible()
+  // 경로 밖이면 바퀴 수·진행률(시뮬레이션 값)은 내지 않습니다.
+  await expect(row.getByRole('cell', { name: '—', exact: true })).toHaveCount(2)
   const frame = (await (await page.request.get('/api/fleet')).json()) as { vehicles: Array<{ id: string; gps: { onRoute: boolean; trail: number[][] } | null }> }
   const strida = frame.vehicles.find((vehicle) => vehicle.id === 'kao-0004')!
   expect(strida.gps).toMatchObject({ onRoute: false })

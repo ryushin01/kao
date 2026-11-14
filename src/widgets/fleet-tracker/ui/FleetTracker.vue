@@ -31,6 +31,8 @@ const description = computed(
     (gpsCount.value > 0 ? `실차 GPS로 위치를 받는 ${gpsCount.value}대는 실제 위치에, 나머지는 ` : '') +
     `움직임이 보이도록 실제보다 ${props.frame.timeScale}배 빠르게 움직이며, 실제 위치와 상태는 지도 아래 표에 있습니다.`,
 )
+/** 실차 GPS가 경로 밖이면 바퀴 수·진행률은 시뮬레이션 값이라 표에 내지 않습니다. */
+const offRoute = (vehicle: FleetFrame['vehicles'][number]) => vehicle.gps !== null && !vehicle.gps.onRoute
 const positionLabel = (vehicle: FleetFrame['vehicles'][number]) => {
   if (vehicle.positionSource === 'gps') return 'GPS'
   return vehicle.gps ? 'GPS 경로 밖(실제 위치)' : '시뮬레이션'
@@ -193,8 +195,8 @@ onBeforeUnmount(() => {
             <th scope="row">{{ MODEL_PROFILES[vehicle.modelId].displayName }}</th>
             <td>{{ findRoute(vehicle.routeId).name }}</td>
             <td>{{ positionLabel(vehicle) }}</td>
-            <td class="tabular">{{ vehicle.lap }}</td>
-            <td class="tabular">{{ formatPercent(vehicle.progress) }}</td>
+            <td class="tabular">{{ offRoute(vehicle) ? '—' : vehicle.lap }}</td>
+            <td class="tabular">{{ offRoute(vehicle) ? '—' : formatPercent(vehicle.progress) }}</td>
             <td class="tabular">
               {{ formatNumber(vehicle.speed) }} km/h
               <span v-if="vehicle.speedCap" class="tracker__cap">(제한 {{ vehicle.speedCap }})</span>

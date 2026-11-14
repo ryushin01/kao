@@ -395,6 +395,8 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
       placeOffRoute(marker, delta)
       return
     }
+    // 경로 밖에서 돌아오면 옛 경로 위치에서 미끄러져 오지 않게 새 위치에서 시작합니다.
+    if (marker.gpsShown) marker.shown = marker.target
     marker.gpsShown = null
     if (playing && delta > 0) {
       // 속도로 앞으로 내다보고, 서버 위치와의 차이는 천천히 메웁니다.

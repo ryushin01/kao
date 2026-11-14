@@ -30,6 +30,9 @@ const touched = new Map<string, number>()
 /** Authorization 헤더 값으로 인증합니다. 맞지 않으면 401 */
 export async function authenticateToken(authorization: string | undefined, now = Date.now()): Promise<IngestPrincipal> {
   const token = authorization?.startsWith('Bearer ') ? authorization.slice(7).trim() : ''
+  // 공용 토큰을 먼저 봅니다(공용 토큰 값이 장치 토큰 앞머리로 시작해도 공용 토큰으로 인정).
+  const fleetToken = process.env.INGEST_TOKEN
+  if (fleetToken && token && sameText(token, fleetToken)) return { kind: 'fleet' }
   if (token.startsWith(DEVICE_TOKEN_PREFIX)) {
     const store = useStore()
     const device = await store.findDeviceByTokenHash(hashToken(token))
@@ -37,13 +40,11 @@ export async function authenticateToken(authorization: string | undefined, now =
       const last = touched.get(device.id)
       if (last === undefined || now - last >= TOUCH_INTERVAL_MS) {
         touched.set(device.id, now)
-        await store.touchDevice(device.id, now)
+        // 마지막 요청 시각은 덤이라, 기록하지 못해도 요청은 받습니다(1분 뒤 다시 기록).
+        await store.touchDevice(device.id, now).catch(() => undefined)
       }
       return { kind: 'device', device }
     }
-  } else {
-    const fleetToken = process.env.INGEST_TOKEN
-    if (fleetToken && token && sameText(token, fleetToken)) return { kind: 'fleet' }
   }
   throw createError({ statusCode: 401, message: '인증되지 않은 요청입니다. 장치 토큰(Authorization: Bearer kaod_…)을 확인해 주세요.' })
 }
