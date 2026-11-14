@@ -6,6 +6,7 @@ import { findRoute } from '@shared/config'
 import { formatNumber, formatPercent, isWebGLAvailable, useMotion, whenNearViewport } from '@shared/lib'
 import { HudPanel, StatusBadge } from '@shared/ui'
 import { MODEL_PROFILES } from '@entities/vehicle'
+import { MAP_PLACES } from '../config/places'
 import type { TrackerScene } from '../lib/tracker-scene'
 
 const props = withDefaults(defineProps<{ frame: FleetFrame; initialFollow?: string; title?: string }>(), {
@@ -25,7 +26,7 @@ const vehicles = computed(() => props.frame.vehicles)
 const gpsCount = computed(() => vehicles.value.filter((vehicle) => vehicle.positionSource === 'gps').length)
 const description = computed(
   () =>
-    `관제 지도. ${vehicles.value.length}대의 미니어처가 각자의 경로를 달리고 있습니다. ` +
+    `서울 도심 관제 지도. 광화문·남산·한강·여의도의 실제 도로 위를 ${vehicles.value.length}대의 미니어처가 각자의 경로로 달리고 있습니다. ` +
     (gpsCount.value > 0 ? `실차 GPS로 위치를 받는 ${gpsCount.value}대는 실제 위치에, 나머지는 ` : '') +
     `움직임이 보이도록 실제보다 ${props.frame.timeScale}배 빠르게 움직이며, 실제 위치와 상태는 지도 아래 표에 있습니다.`,
 )
@@ -52,7 +53,9 @@ async function start() {
     onProject(vehicleId, x, y, visible) {
       const label = labels.value[vehicleId]
       if (!label) return
-      label.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -100%)`
+      // 탈것 이름표는 미니어처 위에, 지명은 그 자리 한가운데에 둡니다.
+      const anchor = vehicleId.startsWith('place:') ? 'translate(-50%, -50%)' : 'translate(-50%, -100%)'
+      label.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) ${anchor}`
       label.style.opacity = visible ? '1' : '0'
     },
     onPick(vehicleId) {
@@ -111,6 +114,7 @@ onBeforeUnmount(() => {
         이 브라우저에서는 3D 지도를 그릴 수 없습니다(WebGL 미지원). 아래 표에서 위치를 확인해 주세요.
       </p>
       <div v-if="supported" class="tracker__labels" aria-hidden="true">
+        <span v-for="place in MAP_PLACES" :key="place.id" :ref="setLabel(`place:${place.id}`)" class="tracker__place">{{ place.name }}</span>
         <div
           v-for="vehicle in vehicles"
           :key="vehicle.id"
@@ -272,6 +276,19 @@ onBeforeUnmount(() => {
   opacity: 0;
   transition: opacity 0.2s;
   will-change: transform;
+}
+
+.tracker__place {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 0 var(--space-1);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  text-shadow: 0 0 4px #000, 0 0 2px #000;
+  white-space: nowrap;
+  opacity: 0;
 }
 
 .tracker__label strong {

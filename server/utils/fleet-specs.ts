@@ -80,7 +80,7 @@ export const VEHICLE_SPECS: VehicleSpec[] = [
     plate: 'K-0001',
     member: '가상 회원 01',
     paint: { name: 'Vik Black', hex: '#0e0f11' },
-    routeId: 'urban-loop',
+    routeId: 'downtown',
     cruise: [38, 92],
     metrics: [
       speedMetric(240),
@@ -120,7 +120,7 @@ export const VEHICLE_SPECS: VehicleSpec[] = [
     plate: 'K-0002',
     member: '가상 회원 02',
     paint: { name: 'Rosso Mars', hex: '#a3141c' },
-    routeId: 'coastal-highway',
+    routeId: 'han-river',
     cruise: [80, 210],
     metrics: [
       speedMetric(355),
@@ -160,7 +160,7 @@ export const VEHICLE_SPECS: VehicleSpec[] = [
     plate: 'K-0003',
     member: '가상 회원 03',
     paint: { name: 'Ducati Red', hex: '#b5121b' },
-    routeId: 'circuit',
+    routeId: 'namsan',
     cruise: [70, 230],
     metrics: [
       speedMetric(300),
@@ -201,7 +201,7 @@ export const VEHICLE_SPECS: VehicleSpec[] = [
     plate: 'K-0004',
     member: '가상 회원 04',
     paint: { name: 'Aluminium', hex: '#c9ccd1' },
-    routeId: 'riverside',
+    routeId: 'yeouido',
     cruise: [11, 21],
     metrics: [
       speedMetric(40),

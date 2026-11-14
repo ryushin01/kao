@@ -1,4 +1,4 @@
-import { sendNotification, setVapidDetails } from 'web-push'
+import { generateRequestDetails, setVapidDetails } from 'web-push'
 import { criticalIssues } from './sim/engine'
 import { frameInput } from './fleet'
 import { useStore } from './store'
@@ -38,24 +38,45 @@ export interface PushPayload {
   tag: string
 }
 
-/** 보냈으면 'sent', 구독이 사라졌으면 'gone', 일시적으로 실패하면 'failed' */
+/** 푸시 요청 한 건의 전체 마감(ms) */
+export const PUSH_DEADLINE_MS = 8000
+
+/**
+ * 보냈으면 'sent', 구독이 사라졌으면 'gone', 일시적으로 실패하면 'failed'.
+ * web-push로 암호화한 요청(VAPID 서명 포함)만 만들고, 전송은 fetch로 해서 마감을 넘기면 요청 자체를 끊습니다
+ * (수신 API 응답이 함수 제한 시간까지 끌리지 않게). 실패는 다음 검사 때 다시 보냅니다. 푸시 서비스가 이미 받은 알림은
+ * 되돌릴 수 없어 드물게 두 번 갈 수 있지만, 알림의 tag(문제 id)가 같아 화면에는 하나로 겹칩니다.
+ */
 async function deliver(subscription: PushSubscriptionRecord, payload: PushPayload): Promise<'sent' | 'gone' | 'failed'> {
   if (!isPushEndpoint(subscription.endpoint)) return 'gone'
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(new Error('push deadline')), PUSH_DEADLINE_MS)
   try {
-    await sendNotification(
+    const request = generateRequestDetails(
       { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },
       JSON.stringify(payload),
       { TTL: 600, urgency: 'high' },
     )
-    return 'sent'
-  } catch (error) {
-    const status = (error as { statusCode?: number }).statusCode
+    // 리다이렉트는 따라가지 않습니다(허용한 푸시 서비스 밖으로 요청이 나가지 않게, SSRF 방지).
+    const response = await fetch(request.endpoint, {
+      method: request.method,
+      headers: request.headers as Record<string, string>,
+      body: request.body ? new Uint8Array(request.body) : null,
+      redirect: 'error',
+      signal: controller.signal,
+    })
+    await response.body?.cancel()
+    if (response.ok) return 'sent'
     // 브라우저에서 구독을 지웠으면(404·410) 우리 쪽 기록도 지웁니다.
-    if (status === 404 || status === 410) {
+    if (response.status === 404 || response.status === 410) {
       await useStore().deletePushSubscription(subscription.endpoint, subscription.userId)
       return 'gone'
     }
     return 'failed'
+  } catch {
+    return 'failed'
+  } finally {
+    clearTimeout(timer)
   }
 }
 
@@ -78,35 +99,50 @@ export async function sendTestPush(userId: string) {
 export async function notifyCriticalIssues(now = Date.now()) {
   if (!ensureConfigured()) return { sent: 0, issues: 0 }
   const store = useStore()
-  const issues = criticalIssues(await frameInput(now))
+  // 알림 검사는 기억해 둔 값이 아니라 DB를 새로 읽습니다(방금 열린 위험 문제를 놓치지 않게).
+  const issues = criticalIssues(await frameInput(now, true))
   if (issues.length === 0) return { sent: 0, issues: 0 }
   const subscriptions = await store.listPushSubscriptions()
   let sent = 0
-  for (const { vehicle, issue } of issues) {
-    const targets = subscriptions.filter((item) => item.role === 'operator' || item.vehicleIds.includes(vehicle.id))
-    const payload: PushPayload = {
-      title: `위험: ${vehicle.maker} ${vehicle.model}`,
-      body: `${issue.title} — ${issue.detail}`,
-      url: `/fleet/${vehicle.id}`,
-      tag: issue.id,
-    }
-    await Promise.all(
-      targets.map(async (target) => {
-        if (!(await store.claimDelivery(issue.id, target.endpoint))) return
-        const result = await deliver(target, payload)
-        if (result === 'sent') sent += 1
-        else if (result === 'failed') await store.releaseDelivery(issue.id, target.endpoint)
-      }),
-    )
-  }
+  // 문제·구독마다 동시에 보내, 전체 시간도 요청 한 건의 마감(PUSH_DEADLINE_MS) 안팎으로 묶습니다.
+  await Promise.all(
+    issues.flatMap(({ vehicle, issue }) => {
+      const payload: PushPayload = {
+        title: `위험: ${vehicle.maker} ${vehicle.model}`,
+        body: `${issue.title} — ${issue.detail}`,
+        url: `/fleet/${vehicle.id}`,
+        tag: issue.id,
+      }
+      return subscriptions
+        .filter((item) => item.role === 'operator' || item.vehicleIds.includes(vehicle.id))
+        .map(async (target) => {
+          if (!(await store.claimDelivery(issue.id, target.endpoint))) return
+          const result = await deliver(target, payload)
+          if (result === 'sent') sent += 1
+          else if (result === 'failed') await store.releaseDelivery(issue.id, target.endpoint)
+        })
+    }),
+  )
   return { sent, issues: issues.length }
 }
 
 let lastOpportunistic = 0
 
-/** 관제 스트림이 열려 있을 때 30초에 한 번씩 알림을 검사합니다(인스턴스마다). */
-export function maybeNotify(now = Date.now()) {
-  if (!ensureConfigured() || now - lastOpportunistic < 30_000) return
+const isDue = (now: number) => {
+  if (!ensureConfigured() || now - lastOpportunistic < 30_000) return false
   lastOpportunistic = now
-  void notifyCriticalIssues(now).catch(() => {})
+  return true
+}
+
+/** 관제 스트림이 열려 있을 때 30초에 한 번씩 알림을 검사합니다(인스턴스마다). 스트림이 열려 있는 동안이라 기다리지 않습니다. */
+export function maybeNotify(now = Date.now()) {
+  if (isDue(now)) void notifyCriticalIssues(now).catch(() => {})
+}
+
+/**
+ * 실차 측정값을 받을 때도 30초에 한 번 알림을 검사합니다(인스턴스마다). 관제 화면을 보는 사람이 없고 예약 검사가 늦어도
+ * 실측 위험 문제는 바로 알리기 위해서입니다. 서버리스 함수가 응답 뒤 멈추지 않도록 끝날 때까지 기다립니다.
+ */
+export async function notifyIfDue(now = Date.now()) {
+  if (isDue(now)) await notifyCriticalIssues(now).catch(() => {})
 }

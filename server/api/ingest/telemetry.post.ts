@@ -1,5 +1,6 @@
 import { createError, defineEventHandler, readBody } from 'h3'
 import { findIngestVehicle, recordTelemetry, requireIngestToken } from '../../utils/ingest'
+import { notifyIfDue } from '../../utils/push'
 
 interface Body {
   vehicleId?: unknown
@@ -44,5 +45,6 @@ export default defineEventHandler(async (event) => {
   const at = isNumber(body?.at) && body.at <= now + 5_000 && body.at >= now - 60_000 ? Math.min(body.at, now) : now
   const speed = isNumber(body?.speed) ? body.speed : undefined
   const result = await recordTelemetry(vehicle, { at, speed, metrics, gps }, now)
+  await notifyIfDue(now)
   return { ok: true, vehicleId: vehicle.id, at, ...result }
 })
