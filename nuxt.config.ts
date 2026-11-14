@@ -28,7 +28,10 @@ export default defineNuxtConfig({
         { name: 'theme-color', content: '#000000' },
         { name: 'color-scheme', content: 'dark' },
       ],
-      link: [{ rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
+      link: [
+        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+        { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
+      ],
     },
   },
   eslint: { config: { stylistic: false } },

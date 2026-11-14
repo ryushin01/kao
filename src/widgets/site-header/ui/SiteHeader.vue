@@ -37,7 +37,7 @@ async function onLoggedOut() {
   <header class="site-header">
     <div class="site-header__inner">
       <NuxtLink to="/" class="site-header__brand">
-        <span class="site-header__mark" aria-hidden="true" />
+        <img class="site-header__mark" src="/favicon.svg" alt="" width="28" height="28">
         <span class="site-header__name">KAO</span>
         <span class="site-header__full">Kinetic Aero One</span>
       </NuxtLink>
@@ -95,14 +95,12 @@ async function onLoggedOut() {
   text-decoration: none;
 }
 
+/* 파비콘과 같은 눈금 타코미터. 링크 이름은 옆 글자(KAO)가 맡아 그림은 꾸밈입니다. */
 .site-header__mark {
-  width: 1.25rem;
-  height: 1.25rem;
-  border: 3px solid var(--color-crimson);
-  border-radius: 50%;
-  box-shadow:
-    inset 0 0 0 2px #000,
-    inset 0 0 0 3px var(--color-crimson-text);
+  display: block;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.375rem;
 }
 
 .site-header__name {
