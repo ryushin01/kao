@@ -159,6 +159,9 @@ describe('liveIssueView', () => {
     const resolved = view(T + 30_000, [applied], openIssue({ clearedAt: T + 12_000, resolvedAt: T + 22_000 }))
     expect(resolved).toMatchObject({ status: 'resolved', resolvedBy: 'cooling-mode', resolvedAt: T + 22_000 })
     expect(view(T + 30_000, [], openIssue({ resolvedAt: T + 22_000 })).resolvedBy).toBeUndefined()
+    // 적용하고 회복 대기 시간이 지난 뒤에야 저절로 돌아왔으면 그 조치로 해결한 것이 아닙니다.
+    const late = openIssue({ resolvedAt: T + 8_000 + RECOVERY_TIMEOUT + 60_000 })
+    expect(view(T + 9_000 + RECOVERY_TIMEOUT + 60_000, [applied], late).resolvedBy).toBeUndefined()
   })
 
   it('마지막 명령만 상태를 정합니다', () => {

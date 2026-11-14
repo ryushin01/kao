@@ -2,21 +2,19 @@ import { randomUUID } from 'node:crypto'
 import type { ActionCode, RemoteActionResponse, SessionUser } from '../../src/shared/api/contract'
 import { checkAction, computeFrame, dayStartOf } from './sim/engine'
 import type { FrameInput } from './sim/engine'
-import { COMMAND_WINDOW, isLiveIssueId } from './sim/live'
+import { COMMAND_WINDOW, isLiveIssueId, RESOLVED_VISIBLE_MS } from './sim/live'
 import type { ActionRecord, LiveIssueRecord, LiveReading } from './sim/types'
 import { useStore } from './store'
 
 const CACHE_MS = 1500
-/** 해결한 문제를 화면에 남겨 두는 시간(엔진의 RESOLVED_VISIBLE_MS와 같음) */
-const RESOLVED_VISIBLE_MS = 20 * 60_000
 
 let actionCache: { fetchedAt: number; dayStart: number; actions: ActionRecord[] } | null = null
 let readingCache: { fetchedAt: number; readings: LiveReading[] } | null = null
 let liveIssueCache: { fetchedAt: number; since: number; issues: LiveIssueRecord[] } | null = null
 
 /**
- * 오늘(KST) 보낸 원격 조치. 0시 직전에 보내 아직 차량 응답·지표 회복을 기다릴 수 있는 실차 명령도 보도록
- * 0시보다 COMMAND_WINDOW(12분) 앞부터 읽습니다(시뮬레이션과 조치 기록은 엔진이 오늘 것만 씀).
+ * 오늘(KST) 보낸 원격 조치. 0시 직전에 보내 아직 차량 응답·지표 회복을 기다리거나, 그 명령으로 해결한 문제가
+ * 화면에 남아 있는 실차 명령도 보도록 0시보다 COMMAND_WINDOW(32분) 앞부터 읽습니다(시뮬레이션과 조치 기록은 엔진이 오늘 것만 씀).
  * 0.5초마다 프레임을 만들 때마다 DB를 읽지 않도록 1.5초 동안 기억합니다. 다른 인스턴스에서 보낸 조치와 차량 응답도 길어야 1.5초 뒤에 반영됩니다.
  */
 export async function todaysActions(now: number, fresh = false) {

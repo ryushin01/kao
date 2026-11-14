@@ -20,8 +20,13 @@ export const CLEAR_HOLD = 10_000
 export const ACK_TIMEOUT = 120_000
 /** 명령을 적용한 뒤 지표가 기준 안으로 돌아오기를 기다리는 시간(ms) */
 export const RECOVERY_TIMEOUT = 10 * 60_000
-/** 명령이 상태에 영향을 주는 최대 시간: 응답 대기 + 회복 대기. 0시 직전에 보낸 명령도 이만큼은 계속 봅니다. */
-export const COMMAND_WINDOW = ACK_TIMEOUT + RECOVERY_TIMEOUT
+/** 해결한 문제를 화면에 남겨 두는 시간(ms) */
+export const RESOLVED_VISIBLE_MS = 20 * 60_000
+/**
+ * 명령이 화면 상태에 영향을 주는 최대 시간: 응답 대기 + 회복 대기 + 해결한 문제를 보여 주는 시간("…로 해결").
+ * 0시 직전에 보낸 명령도 이만큼은 계속 봅니다.
+ */
+export const COMMAND_WINDOW = ACK_TIMEOUT + RECOVERY_TIMEOUT + RESOLVED_VISIBLE_MS
 
 export const SEVERITY_RANK: Record<HealthState, number> = { nominal: 0, warning: 1, critical: 2 }
 
@@ -200,7 +205,9 @@ export function liveIssueView(record: LiveIssueRecord, metric: MetricSpec, actio
   if (record.resolvedAt !== null) {
     issue.status = 'resolved'
     issue.resolvedAt = record.resolvedAt
-    if (last?.ack?.result === 'applied' && last.ack.at <= record.resolvedAt) issue.resolvedBy = last.action
+    // 적용한 뒤 회복을 기다리는 동안(RECOVERY_TIMEOUT) 해결됐을 때만 그 조치로 해결한 것으로 봅니다.
+    const ack = last?.ack
+    if (ack?.result === 'applied' && ack.at <= record.resolvedAt && record.resolvedAt - ack.at <= RECOVERY_TIMEOUT) issue.resolvedBy = last!.action
     return issue
   }
   const stage = commandStage(last, now)

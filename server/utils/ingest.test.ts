@@ -5,8 +5,9 @@ import type { SessionUser } from '../../src/shared/api/contract'
 import { findRoute } from '../../src/shared/config/routes'
 import { createRouteGeo } from '../../src/shared/lib/route-geo'
 import { VEHICLE_SPECS } from './fleet-specs'
-import { frameFor, sendRemoteAction } from './fleet'
+import { frameFor, sendRemoteAction, todaysActions } from './fleet'
 import { locateOnRoute, recordTelemetry } from './ingest'
+import { dayStartOf } from './sim/engine'
 import { CLEAR_HOLD } from './sim/live'
 import { useStore } from './store'
 
@@ -110,15 +111,28 @@ describe('실차 수신(메모리 저장소)', () => {
     expect(after.position).toMatchObject({ onRoute: true, lap: 2 })
     const vehicle = (await frameFor(operator, tick(100))).vehicles.find((item) => item.id === G80.id)!
     expect(vehicle).toMatchObject({ positionSource: 'gps', lap: 2 })
-    // 측정값으로는 늦었지만(지표만 담은 더 새 측정값이 먼저 옴) 가장 최근 GPS보다 새 위치면 바퀴 수를 이어 갑니다.
-    const t1 = now
-    await recordTelemetry(G80, { at: tick(2000), metrics: { battery: 14.1 } }, now)
-    const delayed = await recordTelemetry(G80, { at: t1 + 1000, metrics: {}, gps: at(0.05) }, tick(100))
-    expect(delayed).toMatchObject({ stale: true, position: { onRoute: true, lap: 2 } })
-    const next = await recordTelemetry(G80, { at: tick(1000), metrics: {}, gps: at(0.07) }, now)
-    expect(next.position).toMatchObject({ lap: 2 })
-    expect(next.position!.progress).toBeCloseTo(0.07, 2)
     // 경로에서 1km쯤 떨어진 곳은 경로 위 위치로 쓰지 않습니다.
     expect(locateOnRoute(G80, at(0.5).lat + 0.01, at(0.5).lng)).toBeNull()
+  })
+  it('측정값으로는 늦었어도 가장 최근 GPS보다 새 위치면 바퀴 수를 이어 갑니다(출발선을 늦은 측정값에서 지남)', async () => {
+    const ducati = VEHICLE_SPECS.find((vehicle) => vehicle.id === 'kao-0003')!
+    const geo = createRouteGeo(findRoute(ducati.routeId))
+    const t1 = tick(60_000)
+    await recordTelemetry(ducati, { at: t1, metrics: {}, gps: geo.toLatLng(0.97) }, now)
+    // 지표만 담은 더 새 측정값(t1+2초)이 먼저 오고, 출발선을 지난 GPS(t1+1초)가 늦게 옵니다.
+    await recordTelemetry(ducati, { at: t1 + 2000, metrics: { coolant: 90 } }, tick(2000))
+    const late = await recordTelemetry(ducati, { at: t1 + 1000, metrics: {}, gps: geo.toLatLng(0.02) }, tick(100))
+    expect(late).toMatchObject({ stale: true, position: { onRoute: true, lap: 2 } })
+    const next = await recordTelemetry(ducati, { at: t1 + 3000, metrics: {}, gps: geo.toLatLng(0.04) }, tick(900))
+    expect(next.position).toMatchObject({ onRoute: true, lap: 2 })
+  })
+
+  it('0시 직전에 보낸 명령도 그 명령으로 해결한 문제가 보이는 동안(0시 32분 전부터) 함께 읽습니다', async () => {
+    const midnight = dayStartOf(now) + 86_400_000
+    await useStore().insertAction({
+      id: 'before-midnight', issueId: 'live-kao-0002-oil-1', vehicleId: 'kao-0002', action: 'cooling-mode', sentAt: midnight - 26 * 60_000, userId: operator.id,
+    })
+    const actions = await todaysActions(midnight + 5 * 60_000, true)
+    expect(actions.map((action) => action.id)).toContain('before-midnight')
   })
 })

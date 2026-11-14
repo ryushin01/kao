@@ -20,6 +20,7 @@ import {
   liveIssueView,
   liveStateOf,
   metricState,
+  RESOLVED_VISIBLE_MS,
   worse,
 } from './live'
 import type { ActionRecord, LiveIssueRecord, LiveReading } from './types'
@@ -63,7 +64,6 @@ const FAULT_PROBABILITY = PROFILE.probability
 const MAX_ACTIVE_FAULTS = PROFILE.maxActive
 const RECOVERY_PER_SECOND = 0.35
 const RESOLVED_KEEP = 3
-const RESOLVED_VISIBLE_MS = 20 * 60_000
 const LOG_KEEP = 30
 const KST_OFFSET = 9 * 3600_000
 
