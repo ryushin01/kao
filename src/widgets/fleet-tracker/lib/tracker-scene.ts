@@ -3,7 +3,7 @@ import type { Object3D, PerspectiveCamera } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { FleetFrame, HealthState, VehicleSnapshot } from '@shared/api'
 import { ROUTES, findRoute } from '@shared/config'
-import { applyStudioEnvironment, createRouteGeo, createStage, disposeObject, toLocal } from '@shared/lib'
+import { applyStudioEnvironment, createRouteGeo, createStage, disposeObject, leanAngle, toLocal, turnRateAt } from '@shared/lib'
 import type { RouteGeo } from '@shared/lib'
 import { createMiniature, loadModelMiniature, preloadModel, rollWheels } from '@entities/vehicle'
 import type { Miniature } from '@entities/vehicle'
@@ -30,6 +30,8 @@ const toScene = (lat: number, lng: number) => {
 
 /** 미니어처 길이 비율(세단 기준 1). 화면 크기는 카메라 거리로 정합니다. */
 const MINIATURE_LENGTH = { sedan: 1, supercar: 1, superbike: 0.72, bicycle: 0.6 } as const
+/** 이륜차가 지도 위 굽은 길에서 눕는 최대 각도(°). 급한 굽이에서는 속도를 줄인다고 봅니다. */
+const MAX_LEAN = { superbike: 35, bicycle: 20 } as const
 /** 세단 미니어처가 화면 높이에서 차지하는 비율. 가까이 따라갈수록(카메라 거리 8 미만) 키워 주행이 잘 보이게 합니다. */
 const MINIATURE_SCREEN = 0.075
 const FOV = 38
@@ -69,7 +71,8 @@ interface Marker {
   /** 실차 GPS 위치는 실제 속도로, 시뮬레이션 위치는 FleetFrame.timeScale배로 내다봅니다. */
   gps: boolean
   speed: number
-  lean: number
+  /** 이륜차가 눕는 최대 각도(°). 사륜차는 0 */
+  maxLean: number
   health: HealthState
 }
 
@@ -201,7 +204,7 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
       target: vehicle.mapProgress,
       gps: vehicle.positionSource === 'gps',
       speed: vehicle.speed,
-      lean: 0,
+      maxLean: vehicle.kind === 'superbike' || vehicle.kind === 'bicycle' ? MAX_LEAN[vehicle.kind] : 0,
       health: vehicle.health,
     })
 
@@ -226,7 +229,6 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
       marker.target = vehicle.mapProgress
       marker.gps = vehicle.positionSource === 'gps'
       marker.speed = vehicle.speed
-      marker.lean = vehicle.metrics.find((metric) => metric.key === 'lean')?.value ?? (vehicle.kind === 'bicycle' ? 8 : 0)
       if (marker.health !== vehicle.health) {
         marker.health = vehicle.health
         marker.ring.material.color.set(HEALTH_COLORS[vehicle.health])
@@ -261,12 +263,11 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
 
     const pivot = marker.miniature.leanPivot
     if (pivot) {
-      // 굽은 쪽(곡선 안쪽)으로 기울입니다. 60m 앞의 진행 방향과 비교합니다.
-      const ahead = marker.geo.directionAt(u + 60 / marker.geo.length)
-      const turn = direction.x * ahead.z - direction.z * ahead.x
-      const side = Math.sign(turn) || 1
-      const angle = (Math.min(marker.lean, 62) * Math.PI) / 180
-      pivot.rotation.x += (side * angle - pivot.rotation.x) * (playing ? Math.min(1, delta * 4) : 1)
+      // 지도 위 굽은 길과 실제 속도로 눕는 각도(atan(v²κ/g))를 정하고, 굽은 쪽(곡선 안쪽)으로 기울입니다.
+      // 지도는 빠르게 돌아도 각도는 실제 속도 기준이라, 직선에서는 서고 굽이에서만 눕습니다.
+      const turn = turnRateAt(marker.geo, u)
+      const angle = (Math.min(leanAngle(marker.speed, turn), marker.maxLean) * Math.PI) / 180
+      pivot.rotation.x += ((Math.sign(turn) || 1) * angle - pivot.rotation.x) * (playing ? Math.min(1, delta * 4) : 1)
     }
 
     if (marker.health === 'critical' && playing) {

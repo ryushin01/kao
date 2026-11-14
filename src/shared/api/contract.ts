@@ -122,7 +122,7 @@ export interface RemoteActionResponse {
 export const ACTIONS: Record<ActionCode, { label: string; description: string }> = {
   'cooling-mode': { label: '냉각 모드', description: '냉각 팬과 펌프를 최대로 돌리고 엔진 회전수를 낮춥니다.' },
   'power-limit': { label: '출력 제한', description: 'ECU 출력 지도를 보호 모드로 바꿔 최고 출력을 60%로 묶습니다.' },
-  'speed-limit': { label: '속도 제한', description: '최고 속도를 80km/h로 묶고 계기판에 안내를 띄웁니다.' },
+  'speed-limit': { label: '속도 제한', description: '최고 속도를 평소의 60%로 묶고(도심이면 시속 30km) 계기판에 안내를 띄웁니다.' },
   'tpms-recalibrate': { label: 'TPMS 재보정', description: '타이어 공기압 센서를 다시 맞춰 잘못된 경보를 걸러 냅니다.' },
   'notify-rider': { label: '운전자 알림', description: '계기판과 운전자 휴대폰으로 점검 안내를 보냅니다.' },
   'traction-boost': { label: '트랙션 강화', description: '트랙션·윌리 컨트롤 단계를 올려 미끄러짐을 줄입니다.' },

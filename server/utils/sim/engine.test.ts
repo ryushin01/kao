@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { findRoute } from '../../../src/shared/config/routes'
+import { createRouteGeo, turnRateAt } from '../../../src/shared/lib/route-geo'
 import { VEHICLE_SPECS } from '../fleet-specs'
 import { ACTION_LATENCY, checkAction, computeFrame, computeHistory, criticalIssues, dayStartOf, metricState, SPEED_CAP_DURATION, TIME_SCALE } from './engine'
 import type { ActionRecord, LiveIssueRecord, LiveReading } from './engine'
@@ -140,7 +141,8 @@ describe('실차 신호', () => {
       ack: { at: now - 3000, result: 'applied', message: null },
     }
     const live = computeFrame({ now, actions: [applied], readings: hot, liveIssues: [record], vehicleIds: ['kao-0001'] }).vehicles[0]!
-    expect(live.speedCap).toBe(80)
+    // 속도 제한은 평소 최고 속도(G80 50km/h)의 60%
+    expect(live.speedCap).toBe(30)
     const simulated = computeFrame({ now: now + 60_000, actions: [applied], vehicleIds: ['kao-0001'] }).vehicles[0]!
     const plain = computeFrame({ now: now + 60_000, actions: [], vehicleIds: ['kao-0001'] }).vehicles[0]!
     expect(simulated).toEqual(plain)
@@ -224,5 +226,60 @@ describe('computeHistory', () => {
     expect(live.every((sample) => sample.value === 101.5)).toBe(true)
     expect(history.liveSamples).toBe(live.length)
     expect(history.samples[0]!.value).not.toBe(101.5)
+  })
+})
+
+describe('도로에 맞는 속도와 기울기', () => {
+  /** 경로 도로의 제한속도(OpenStreetMap maxspeed). 자전거길은 태그가 없어 자전거에 맞게 */
+  const LIMITS: Record<string, number> = { downtown: 50, 'han-river': 80, namsan: 50, yeouido: 20 }
+
+  it('탈것마다 속도가 경로 도로의 제한속도를 넘지 않습니다', () => {
+    for (const spec of VEHICLE_SPECS) {
+      expect(spec.cruise[1], spec.id).toBeLessThanOrEqual(LIMITS[spec.routeId]!)
+      for (let t = DAY; t < DAY + 3600_000; t += 37_000) {
+        const vehicle = computeFrame({ now: t, actions: [], vehicleIds: [spec.id] }).vehicles[0]!
+        expect(vehicle.speed, `${spec.id} ${t}`).toBeLessThanOrEqual(LIMITS[spec.routeId]!)
+        expect(vehicle.speed).toBeGreaterThanOrEqual(spec.cruise[0] - 0.1)
+      }
+    }
+  })
+
+  it('슈퍼바이크 기울기는 굽은 길과 속도로 정하고(atan(v²κ/g)) 급한 굽이에서도 35°에서 멈춥니다', () => {
+    const lean = VEHICLE_SPECS.find((spec) => spec.id === 'kao-0003')!.metrics.find((metric) => metric.key === 'lean')!
+    const derive = (speed: number, curvature: number) => lean.derive!({ speed, curvature, progress: 0, elapsed: 0 })
+    expect(derive(50, 0)).toBe(0)
+    expect(derive(50, 1 / 60)).toBeCloseTo(18.2, 0)
+    expect(derive(50, 1 / 5)).toBe(35)
+    // 평소에는 경고 기준(42°) 아래이고, 문제가 생겨 치우침이 더해지면 넘습니다.
+    expect(35).toBeLessThan(lean.warn!)
+    expect(lean.baseline! + Math.abs(lean.fault!.target - lean.nominal)).toBeGreaterThanOrEqual(lean.crit!)
+  })
+  it('실차 신호인데 기울기·회전수 측정값이 빠지면 실차의 속도와 위치로 채웁니다(서 있으면 기울기 0, 공회전)', () => {
+    const now = DAY + 9 * 3600_000 + 777_000
+    const readings: LiveReading[] = [{ vehicleId: 'kao-0003', at: now - 1000, speed: 0, metrics: { coolant: 88 } }]
+    const ducati = computeFrame({ now, actions: [], readings, vehicleIds: ['kao-0003'] }).vehicles[0]!
+    const lean = ducati.metrics.find((metric) => metric.key === 'lean')!.value
+    const rpm = ducati.metrics.find((metric) => metric.key === 'rpm')!.value
+    expect(lean).toBeLessThanOrEqual(0.6)
+    expect(Math.abs(rpm - 1300)).toBeLessThanOrEqual(60)
+    // 이력도 그 시각 실차의 속도로 채웁니다.
+    const history = computeHistory({ vehicleId: 'kao-0003', metricKey: 'lean', from: now - 20_000, to: now, points: 5, actions: [], readings })!
+    expect(history.samples.at(-1)!.value).toBeLessThanOrEqual(0.6)
+  })
+  it('이력과 관제 프레임은 같은 시각에 같은 실차 위치를 씁니다(가장 새 GPS가 경로 밖이면 둘 다 시뮬레이션 위치)', () => {
+    const now = DAY + 9 * 3600_000 + 888_000
+    // 오래된 경로 위 위치는 남산 순환에서 가장 급한 굽이로 둡니다(그 위치를 쓰면 기울기가 35° 가까이 나옴).
+    const geo = createRouteGeo(findRoute('namsan'))
+    let bend = 0
+    for (let p = 0; p < 1; p += 0.001) if (Math.abs(turnRateAt(geo, p)) > Math.abs(turnRateAt(geo, bend))) bend = p
+    const onRoute = { lat: 37.55, lng: 126.99, progress: bend, odometer: bend }
+    const readings: LiveReading[] = [
+      { vehicleId: 'kao-0003', at: now - 6000, speed: 45, metrics: { coolant: 88 }, position: onRoute },
+      { vehicleId: 'kao-0003', at: now - 2000, speed: 45, metrics: { coolant: 88 }, position: { ...onRoute, progress: null } },
+    ]
+    const frameLean = computeFrame({ now, actions: [], readings, vehicleIds: ['kao-0003'] }).vehicles[0]!.metrics.find((metric) => metric.key === 'lean')!.value
+    const history = computeHistory({ vehicleId: 'kao-0003', metricKey: 'lean', from: now - 20_000, to: now, points: 5, actions: [], readings })!
+    expect(history.samples.at(-1)!.value).toBe(frameLean)
+    expect(frameLean).toBeLessThan(30)
   })
 })

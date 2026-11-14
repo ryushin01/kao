@@ -4,6 +4,8 @@ export interface DeriveContext {
   speed: number
   progress: number
   elapsed: number
+  /** 지금 위치에서 경로가 굽은 정도(1/m, 0 이상). 직선이면 0 */
+  curvature: number
 }
 
 export interface FaultSpec {
@@ -45,7 +47,10 @@ export interface VehicleSpec {
   member: string
   paint: { name: string; hex: string }
   routeId: string
-  /** 순항 속도 범위(km/h) */
+  /**
+   * 순항 속도 범위(km/h). 최고 속도는 경로 도로의 제한속도(OpenStreetMap maxspeed)에 맞춥니다:
+   * 도심(세종대로·남대문로) 50, 강변북로·올림픽대로 80, 남산(퇴계로·장충단로·소월로) 50. 자전거길은 태그가 없어 자전거에 맞게.
+   */
   cruise: readonly [number, number]
   metrics: MetricSpec[]
 }
@@ -81,7 +86,7 @@ export const VEHICLE_SPECS: VehicleSpec[] = [
     member: '가상 회원 01',
     paint: { name: 'Vik Black', hex: '#0e0f11' },
     routeId: 'downtown',
-    cruise: [38, 92],
+    cruise: [15, 50],
     metrics: [
       speedMetric(240),
       {
@@ -121,7 +126,7 @@ export const VEHICLE_SPECS: VehicleSpec[] = [
     member: '가상 회원 02',
     paint: { name: 'Rosso Mars', hex: '#a3141c' },
     routeId: 'han-river',
-    cruise: [80, 210],
+    cruise: [45, 80],
     metrics: [
       speedMetric(355),
       {
@@ -161,7 +166,7 @@ export const VEHICLE_SPECS: VehicleSpec[] = [
     member: '가상 회원 03',
     paint: { name: 'Ducati Red', hex: '#b5121b' },
     routeId: 'namsan',
-    cruise: [70, 230],
+    cruise: [20, 50],
     metrics: [
       speedMetric(300),
       {
@@ -170,11 +175,12 @@ export const VEHICLE_SPECS: VehicleSpec[] = [
         derive: ({ speed }) => 1300 + speed * 52,
       },
       {
+        // 굽은 길을 도는 기울기 atan(v²κ/g). 급한 굽이에서는 속도를 줄인다고 보고 35°에서 멈춥니다(평소에는 경고 기준 아래).
         key: 'lean', label: '기울기 각도', unit: '°', min: 0, max: 65, nominal: 0, noise: 0.6,
-        warn: 55, crit: 60, direction: 'high', precision: 1, baseline: 40,
-        derive: ({ progress, speed }) => Math.abs(Math.sin(progress * Math.PI * 8)) * 44 * Math.min(1, speed / 180),
+        warn: 42, crit: 50, direction: 'high', precision: 1, baseline: 25,
+        derive: ({ speed, curvature }) => Math.min(35, (Math.atan(((speed / 3.6) ** 2 * curvature) / 9.81) * 180) / Math.PI),
         fault: {
-          target: 22, rate: 0.7, actions: ['traction-boost', 'notify-rider'],
+          target: 30, rate: 0.7, actions: ['traction-boost', 'notify-rider'],
           title: '과도한 기울기',
           detail: '코너마다 접지 한계에 가까운 기울기가 반복됩니다. 미끄러질 위험이 큽니다.',
         },
@@ -202,7 +208,7 @@ export const VEHICLE_SPECS: VehicleSpec[] = [
     member: '가상 회원 04',
     paint: { name: 'Aluminium', hex: '#c9ccd1' },
     routeId: 'yeouido',
-    cruise: [11, 21],
+    cruise: [10, 20],
     metrics: [
       speedMetric(40),
       {

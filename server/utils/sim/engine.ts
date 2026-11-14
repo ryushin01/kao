@@ -9,6 +9,8 @@ import type {
   VehicleSnapshot,
 } from '../../../src/shared/api/contract'
 import { findRoute } from '../../../src/shared/config/routes'
+import { createRouteGeo, turnRateAt } from '../../../src/shared/lib/route-geo'
+import type { RouteGeo } from '../../../src/shared/lib/route-geo'
 import { VEHICLE_SPECS } from '../fleet-specs'
 import type { MetricSpec, VehicleSpec } from '../fleet-specs'
 import {
@@ -143,9 +145,10 @@ function speedCapAt(vehicle: VehicleSpec, actions: ActionRecord[], time: number)
   return cap
 }
 
+/** 속도 제한은 평소 최고 속도의 60%(도심이면 시속 30km), 출력 제한은 80%로 묶습니다. */
 export function capValue(vehicle: VehicleSpec, action: ActionCode) {
   const [, high] = vehicle.cruise
-  return action === 'speed-limit' ? Math.min(80, high) : Math.round(high * 0.6)
+  return Math.round(high * (action === 'speed-limit' ? 0.6 : 0.8))
 }
 
 /** 실차가 적용했다고 응답한 속도·출력 제한(응답 시각부터 SPEED_CAP_DURATION 동안) */
@@ -304,16 +307,41 @@ function issueOf(episode: Episode, time: number): Issue | null {
 
 // ── 지표 ───────────────────────────────────────────────────────────────────
 
-function metricValue(vehicle: VehicleSpec, metric: MetricSpec, episodes: Episode[], actions: ActionRecord[], time: number, withNoise = true) {
-  const speed = speedAt(vehicle, actions, time)
-  const base = metric.derive
-    ? metric.derive({ speed, progress: positionAt(vehicle, actions, time).progress, elapsed: time / 1000 })
-    : metric.nominal
+const geos = new Map<string, RouteGeo>()
+/** 경로의 좌표 계산(경로마다 한 번 만들어 둠) */
+function routeGeo(routeId: string) {
+  let geo = geos.get(routeId)
+  if (!geo) {
+    geo = createRouteGeo(findRoute(routeId))
+    geos.set(routeId, geo)
+  }
+  return geo
+}
+
+/**
+ * 지표 값. state를 주면(실차 신호가 있는데 그 지표의 측정값이 빠졌을 때) 시뮬레이션 대신 실차의 속도와
+ * 경로 위치로 계산합니다. 예: 서 있는 실차 오토바이의 기울기는 0, 엔진 회전수는 공회전 값.
+ */
+function metricValue(
+  vehicle: VehicleSpec,
+  metric: MetricSpec,
+  episodes: Episode[],
+  actions: ActionRecord[],
+  time: number,
+  state: { speed?: number; progress?: number } = {},
+) {
+  const speed = state.speed ?? speedAt(vehicle, actions, time)
+  let base = metric.nominal
+  if (metric.derive) {
+    const progress = state.progress ?? positionAt(vehicle, actions, time).progress
+    const curvature = Math.abs(turnRateAt(routeGeo(vehicle.routeId), progress))
+    base = metric.derive({ speed, progress, elapsed: time / 1000, curvature })
+  }
   let offset = 0
   for (const episode of episodes) {
     if (episode.vehicle.id === vehicle.id && episode.metric.key === metric.key) offset += offsetAt(episode, time)
   }
-  const noise = withNoise ? (random(hash('noise', vehicle.id, metric.key, Math.floor(time / 500)))() - 0.5) * 2 * metric.noise : 0
+  const noise = (random(hash('noise', vehicle.id, metric.key, Math.floor(time / 500)))() - 0.5) * 2 * metric.noise
   return clamp(base + offset + noise, metric.min, metric.max)
 }
 
@@ -392,7 +420,9 @@ export function computeFrame({ now, actions, readings = [], liveIssues = [], veh
     const metrics = vehicle.metrics.map((metric) => {
       if (metric.key === 'speed') return reading(metric, clamp(speed, metric.min, metric.max))
       const liveValue = live?.metrics[metric.key]
-      return reading(metric, typeof liveValue === 'number' ? clamp(liveValue, metric.min, metric.max) : metricValue(vehicle, metric, mine, simulated, now))
+      if (typeof liveValue === 'number') return reading(metric, clamp(liveValue, metric.min, metric.max))
+      // 실차 신호가 있으면 빠진 지표도 실차의 속도와 위치(GPS가 경로 위면 그 위치)로 채웁니다.
+      return reading(metric, metricValue(vehicle, metric, mine, simulated, now, live ? { speed, progress: position.progress } : {}))
     })
     const states: HealthState[] = live
       ? [...metrics.map((metric) => metric.state), ...active.map((issue) => issue.severity)]
@@ -501,9 +531,20 @@ export function computeHistory({ vehicleId, metricKey, from, to, points, actions
     while (cursor < mine.length && mine[cursor]!.at <= at) cursor += 1
     let live = false
     let liveValue: number | undefined
+    // 이 지표의 측정값이 없을 때 쓸, 그 시각 실차의 가장 새 속도와 위치. 가장 새 GPS가 경로 밖이면
+    // 더 오래된 경로 위 위치를 찾지 않고 시뮬레이션 위치를 씁니다(관제 프레임과 같게).
+    let liveSpeed: number | undefined
+    let liveProgress: number | undefined
+    let positionSeen = false
     for (let j = cursor - 1; j >= 0 && at - mine[j]!.at <= LIVE_READING_MAX_AGE; j -= 1) {
       live = true
-      const value = metric.key === 'speed' ? mine[j]!.speed : mine[j]!.metrics[metric.key]
+      const item = mine[j]!
+      liveSpeed ??= item.speed
+      if (!positionSeen && item.position) {
+        positionSeen = true
+        liveProgress = item.position.progress ?? undefined
+      }
+      const value = metric.key === 'speed' ? item.speed : item.metrics[metric.key]
       if (typeof value === 'number') {
         liveValue = value
         break
@@ -517,7 +558,10 @@ export function computeHistory({ vehicleId, metricKey, from, to, points, actions
       const dayStart = dayStartOf(at)
       const todays = actions.filter((action) => action.sentAt >= dayStart && action.sentAt <= at && !isLiveIssueId(action.issueId))
       const episodes = live ? [] : episodesNear(episodesFor(dayStart, todays), at).filter((episode) => episode.vehicle.id === vehicleId)
-      value = metric.key === 'speed' ? speedAt(vehicle, todays, at) : metricValue(vehicle, metric, episodes, todays, at)
+      value =
+        metric.key === 'speed'
+          ? speedAt(vehicle, todays, at)
+          : metricValue(vehicle, metric, episodes, todays, at, live ? { speed: liveSpeed, progress: liveProgress } : {})
     }
     samples.push({ at, value: round(value, metric.precision) })
   }

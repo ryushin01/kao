@@ -23,7 +23,7 @@ import { VEHICLE_SPECS } from '../server/utils/fleet-specs.ts'
 import { metricState } from '../server/utils/sim/live.ts'
 import { HEALTH_LABELS } from '../src/shared/api/contract.ts'
 import { findRoute } from '../src/shared/config/routes.ts'
-import { createRouteGeo } from '../src/shared/lib/route-geo.ts'
+import { createRouteGeo, turnRateAt } from '../src/shared/lib/route-geo.ts'
 
 const { values: args } = parseArgs({
   options: {
@@ -109,8 +109,8 @@ function acknowledge(command) {
       console.log(`  ↳ 명령 ${command.label}: ${result === 'applied' ? '적용으로' : '실패로'} 응답했습니다.`)
       if (result === 'applied') {
         recovering = true
+        // 속도·출력 제한은 명령에 담긴 최고 속도를 따릅니다(관제 화면과 같은 값).
         if (command.parameters?.maxSpeedKmh) speedCap = command.parameters.maxSpeedKmh
-        if (command.parameters?.powerRatio) speedCap = Math.round(high * command.parameters.powerRatio)
       }
     } catch (error) {
       // 이미 응답했거나 시간이 지난 명령(409), 없는 명령(404)이 아니면 다음에 다시 응답합니다.
@@ -135,7 +135,7 @@ async function tick() {
   const metrics = {}
   for (const metric of vehicle.metrics) {
     if (metric.key === 'speed') continue
-    const value = metric.derive ? metric.derive({ speed, progress, elapsed }) : metric.nominal
+    const value = metric.derive ? metric.derive({ speed, progress, elapsed, curvature: Math.abs(turnRateAt(geo, progress)) }) : metric.nominal
     const shifted = value + (metric === faulty ? offset : 0) + noise(metric.noise)
     metrics[metric.key] = Number(Math.min(metric.max, Math.max(metric.min, shifted)).toFixed(metric.precision))
   }
