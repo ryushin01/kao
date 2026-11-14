@@ -1,4 +1,4 @@
-import { sendNotification, setVapidDetails } from 'web-push'
+import { generateRequestDetails, setVapidDetails } from 'web-push'
 import { criticalIssues } from './sim/engine'
 import { frameInput } from './fleet'
 import { useStore } from './store'
@@ -38,36 +38,42 @@ export interface PushPayload {
   tag: string
 }
 
-/** 푸시 요청 한 건의 전체 마감(ms). web-push의 timeout은 소켓이 조용할 때만 걸리므로 따로 둡니다. */
-const PUSH_DEADLINE_MS = 8000
+/** 푸시 요청 한 건의 전체 마감(ms) */
+export const PUSH_DEADLINE_MS = 8000
 
 /**
  * 보냈으면 'sent', 구독이 사라졌으면 'gone', 일시적으로 실패하면 'failed'.
- * 마감을 넘기면 실패로 보고 다음 검사 때 다시 보냅니다(수신 API 응답이 함수 제한 시간까지 끌리지 않게).
- * 늦게라도 처음 요청이 닿으면 같은 문제를 두 번 받을 수 있지만, 알림의 tag(문제 id)가 같아 화면에는 하나로 겹칩니다.
+ * web-push로 암호화한 요청(VAPID 서명 포함)만 만들고, 전송은 fetch로 해서 마감을 넘기면 요청 자체를 끊습니다
+ * (수신 API 응답이 함수 제한 시간까지 끌리지 않게). 실패는 다음 검사 때 다시 보냅니다. 푸시 서비스가 이미 받은 알림은
+ * 되돌릴 수 없어 드물게 두 번 갈 수 있지만, 알림의 tag(문제 id)가 같아 화면에는 하나로 겹칩니다.
  */
 async function deliver(subscription: PushSubscriptionRecord, payload: PushPayload): Promise<'sent' | 'gone' | 'failed'> {
   if (!isPushEndpoint(subscription.endpoint)) return 'gone'
-  let timer: ReturnType<typeof setTimeout> | undefined
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(new Error('push deadline')), PUSH_DEADLINE_MS)
   try {
-    await Promise.race([
-      sendNotification(
-        { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },
-        JSON.stringify(payload),
-        { TTL: 600, urgency: 'high', timeout: 5000 },
-      ),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error('push deadline')), PUSH_DEADLINE_MS)
-      }),
-    ])
-    return 'sent'
-  } catch (error) {
-    const status = (error as { statusCode?: number }).statusCode
+    const request = generateRequestDetails(
+      { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },
+      JSON.stringify(payload),
+      { TTL: 600, urgency: 'high' },
+    )
+    // 리다이렉트는 따라가지 않습니다(허용한 푸시 서비스 밖으로 요청이 나가지 않게, SSRF 방지).
+    const response = await fetch(request.endpoint, {
+      method: request.method,
+      headers: request.headers as Record<string, string>,
+      body: request.body ? new Uint8Array(request.body) : null,
+      redirect: 'error',
+      signal: controller.signal,
+    })
+    await response.body?.cancel()
+    if (response.ok) return 'sent'
     // 브라우저에서 구독을 지웠으면(404·410) 우리 쪽 기록도 지웁니다.
-    if (status === 404 || status === 410) {
+    if (response.status === 404 || response.status === 410) {
       await useStore().deletePushSubscription(subscription.endpoint, subscription.userId)
       return 'gone'
     }
+    return 'failed'
+  } catch {
     return 'failed'
   } finally {
     clearTimeout(timer)
