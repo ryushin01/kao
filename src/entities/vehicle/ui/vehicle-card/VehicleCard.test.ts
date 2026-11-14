@@ -10,7 +10,8 @@ describe('VehicleCard', () => {
     expect(text).toContain('경고')
     expect(text).toContain('72km/h')
     expect(text).toContain('도심 순환로')
-    expect(text).toContain('3바퀴 · 42%')
+    expect(text).toContain('도심 순환로 · 정각부터')
+    expect(text).toContain('3바퀴째 · 42%')
     expect(text).toContain('1건')
   })
 

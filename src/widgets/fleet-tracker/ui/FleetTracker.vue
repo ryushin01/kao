@@ -25,7 +25,7 @@ const vehicles = computed(() => props.frame.vehicles)
 const description = computed(
   () =>
     `관제 지도. ${vehicles.value.length}대의 미니어처가 각자의 경로를 달리고 있습니다. ` +
-    '정확한 위치와 상태는 지도 아래 표에 있습니다.',
+    `움직임이 보이도록 실제보다 ${props.frame.timeScale}배 빠르게 움직이며, 실제 속도 기준 위치와 상태는 지도 아래 표에 있습니다.`,
 )
 
 const setLabel = (vehicleId: string) => (el: unknown) => {
@@ -74,7 +74,7 @@ onBeforeUnmount(() => {
   <HudPanel class="tracker" :labelledby="`${id}-title`">
     <div class="tracker__head">
       <div>
-        <p class="hud-label">Live Tracking · ×{{ frame.timeScale }}</p>
+        <p class="hud-label">Live Tracking · 지도 {{ frame.timeScale }}배속</p>
         <h2 :id="`${id}-title`" class="tracker__title">{{ title }}</h2>
       </div>
       <fieldset class="tracker__follow">
@@ -114,12 +114,12 @@ onBeforeUnmount(() => {
 
     <div class="tracker__table-wrap" role="region" :aria-labelledby="`${id}-caption`" tabindex="0">
       <table class="tracker__table">
-        <caption :id="`${id}-caption`" class="hud-label">주행 위치 표</caption>
+        <caption :id="`${id}-caption`" class="hud-label">주행 위치 표(실제 속도 기준)</caption>
         <thead>
           <tr>
             <th scope="col">탈것</th>
             <th scope="col">경로</th>
-            <th scope="col">바퀴</th>
+            <th scope="col">바퀴(정각부터)</th>
             <th scope="col">진행</th>
             <th scope="col">속도</th>
             <th scope="col">상태</th>

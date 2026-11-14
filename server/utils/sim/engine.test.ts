@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { ACTION_LATENCY, checkAction, computeFrame, computeHistory, dayStartOf, metricState, SPEED_CAP_DURATION } from './engine'
+import { findRoute } from '../../../src/shared/config/routes'
+import { VEHICLE_SPECS } from '../fleet-specs'
+import { ACTION_LATENCY, checkAction, computeFrame, computeHistory, dayStartOf, metricState, SPEED_CAP_DURATION, TIME_SCALE } from './engine'
 import type { ActionRecord } from './engine'
 
 const DAY = dayStartOf(Date.UTC(2026, 10, 12, 3))
@@ -35,6 +37,35 @@ describe('computeFrame', () => {
     const after = computeFrame({ now: now + 10_000, actions: [] }).vehicles
     after.forEach((vehicle, i) => expect(vehicle.lap + vehicle.progress).toBeGreaterThan(before[i]!.lap + before[i]!.progress))
     expect(computeFrame({ now, actions: [], vehicleIds: ['kao-0002'] }).vehicles.map((v) => v.id)).toEqual(['kao-0002'])
+  })
+
+  it('바퀴 수는 실제 속도 기준이라 정각부터 한 시간 동안 최고 속도로 달려도 넘을 수 없는 값이 나오지 않습니다', () => {
+    const hourStart = DAY + 5 * 3600_000
+    const frame = computeFrame({ now: hourStart + 59 * 60_000, actions: [] })
+    for (const vehicle of frame.vehicles) {
+      const spec = VEHICLE_SPECS.find((item) => item.id === vehicle.id)!
+      const maxLaps = Math.ceil(spec.cruise[1] / findRoute(spec.routeId).lengthKm)
+      expect(vehicle.lap, vehicle.id).toBeGreaterThanOrEqual(1)
+      expect(vehicle.lap, vehicle.id).toBeLessThanOrEqual(maxLaps + 1)
+    }
+    // 정각이 되면 1바퀴째부터 다시 셉니다.
+    expect(computeFrame({ now: hourStart + 3600_000, actions: [] }).vehicles.every((vehicle) => vehicle.lap === 1)).toBe(true)
+  })
+
+  it('지도 위치는 같은 거리를 TIME_SCALE배 한 값이라, 실제 진행률의 TIME_SCALE배로 움직입니다', () => {
+    const circular = (a: number, b: number) => Math.min(Math.abs(a - b), 1 - Math.abs(a - b))
+    const now = DAY + 7 * 3600_000 + 123_456
+    for (const vehicle of computeFrame({ now, actions: [] }).vehicles) {
+      // 실제 진행률을 TIME_SCALE배 한 값의 소수부가 지도 위치입니다(반올림 오차만 허용).
+      expect(circular((vehicle.progress * TIME_SCALE) % 1, vehicle.mapProgress), vehicle.id).toBeLessThan(1e-3)
+    }
+    const a = computeFrame({ now, actions: [] }).vehicles
+    const b = computeFrame({ now: now + 1000, actions: [] }).vehicles
+    a.forEach((vehicle, i) => {
+      const real = (b[i]!.progress - vehicle.progress + 1) % 1
+      const map = (b[i]!.mapProgress - vehicle.mapProgress + 1) % 1
+      expect(map, vehicle.id).toBeCloseTo(real * TIME_SCALE, 3)
+    })
   })
 
   it('하루 중 문제가 생기고 동시에 2건을 넘지 않습니다', () => {

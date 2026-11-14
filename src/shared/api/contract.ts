@@ -68,8 +68,11 @@ export interface VehicleSnapshot {
   routeId: string
   /** live: 실제 차량에서 30초 안에 측정값이 들어옴, simulated: 시뮬레이션 */
   source: 'live' | 'simulated'
-  /** 경로 위 위치(0 이상 1 미만) */
+  /** 경로 위 위치(0 이상 1 미만, 실제 속도 기준) */
   progress: number
+  /** 관제 지도 위 위치(0 이상 1 미만). 움직임이 보이도록 FleetFrame.timeScale배 빠르게 돕니다. */
+  mapProgress: number
+  /** 매시 정각부터 센 바퀴 수(실제 속도 기준) */
   lap: number
   speed: number
   /** 원격 조치로 걸린 속도 제한(km/h). 없으면 null */
@@ -91,7 +94,7 @@ export interface ActionLogEntry {
 
 export interface FleetFrame {
   at: number
-  /** 위치 계산에 쓰는 시뮬레이션 배속 */
+  /** 관제 지도 위치(mapProgress)의 배속. 바퀴 수와 진행률은 실제 속도 기준입니다. */
   timeScale: number
   vehicles: VehicleSnapshot[]
   log: ActionLogEntry[]

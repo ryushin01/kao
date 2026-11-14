@@ -40,6 +40,7 @@ export const vehicleFixture: VehicleSnapshot = {
   routeId: 'urban-loop',
   source: 'simulated',
   progress: 0.42,
+  mapProgress: 0.04,
   lap: 3,
   speed: 72,
   speedCap: null,
