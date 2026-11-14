@@ -1,4 +1,20 @@
-import { AmbientLight, DirectionalLight, Fog, Group, Mesh, MeshBasicMaterial, PlaneGeometry, Raycaster, RingGeometry, Vector2, Vector3 } from 'three'
+import {
+  AmbientLight,
+  BufferAttribute,
+  BufferGeometry,
+  DirectionalLight,
+  DoubleSide,
+  DynamicDrawUsage,
+  Fog,
+  Group,
+  Mesh,
+  MeshBasicMaterial,
+  PlaneGeometry,
+  Raycaster,
+  RingGeometry,
+  Vector2,
+  Vector3,
+} from 'three'
 import type { Object3D, PerspectiveCamera } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { FleetFrame, HealthState, VehicleSnapshot } from '@shared/api'
@@ -8,11 +24,13 @@ import type { RouteGeo } from '@shared/lib'
 import { createMiniature, loadModelMiniature, preloadModel, rollWheels } from '@entities/vehicle'
 import type { Miniature } from '@entities/vehicle'
 import { MAP_PLACES } from '../config/places'
-import { buildSeoulMap, flatLayer, loadSeoulMap, ribbon } from './seoul-map'
+import type { LabelSize, ProjectedPoint } from './label-layout'
+import { buildSeoulMap, edgeFade, flatLayer, loadSeoulMap, ribbon } from './seoul-map'
 
 /**
- * 서울 도심 관제 지도. OpenStreetMap 도로·한강 위를 미니어처가 실제 경로를 따라 달립니다.
+ * 서울 도심 관제 지도. OpenStreetMap 도로·한강·높은 건물 사이를 미니어처가 실제 경로를 따라 달립니다.
  * 장면 좌표 1은 실제 200m이고, 미니어처는 멀리서도 보이도록 카메라 거리에 맞춰 화면 크기를 일정하게 둡니다.
+ * 미니어처·상태 고리·주행 꼬리는 지도 위에 겹쳐 그리는 장면(stage.overlay)에 두어 건물에 가려지지 않습니다.
  */
 
 const HEALTH_COLORS: Record<HealthState, string> = {
@@ -20,6 +38,29 @@ const HEALTH_COLORS: Record<HealthState, string> = {
   warning: '#f5b544',
   critical: '#ff3b2b',
 }
+
+/** 주행 꼬리 색: 상태 색을 밝게 해 붉은 경로 위에서도 보이게 합니다. */
+const TRAIL_COLORS: Record<HealthState, string> = {
+  nominal: '#f2ece6',
+  warning: '#ffd58a',
+  critical: '#ffb2a8',
+}
+
+/** 경로 색: 평소, 따라가는 탈것의 경로(강조), 다른 탈것을 따라갈 때 나머지 경로(흐리게) */
+const ROUTE_STYLE = {
+  normal: { band: '#4a0a07', line: '#ff4a36', arrows: '#ffb3a6' },
+  focus: { band: '#5e0d09', line: '#ff4a36', arrows: '#ffe0da' },
+  dim: { band: '#2b1311', line: '#6a2820', arrows: '#6a2820' },
+} as const
+/** 진행 방향 화살표(V자) 간격·길이·폭·선 굵기(m) */
+const ARROW = { spacing: 220, length: 22, width: 34, stroke: 8 } as const
+/** 바닥(지도 밖 지면)과 지도 끝을 묻는 색 */
+const GROUND_COLOR = '#060404'
+/** 지도 끝에서 바닥색으로 흐려지는 너비(m) */
+const EDGE_FADE = 3000
+/** 주행 꼬리의 점 수. 꼬리는 미니어처 뒤끝부터 미니어처 길이 × 속도(km/h) / 20(최대 3배)만큼입니다. */
+const TRAIL_SAMPLES = 24
+const TRAIL_MAX_ALPHA = 0.7
 
 /** 장면 좌표 1이 나타내는 실제 거리(m) */
 const METERS_PER_UNIT = 200
@@ -49,7 +90,8 @@ const OVERVIEW_TARGET = new Vector3((routeBounds.minX + routeBounds.maxX) / 2, 0
 /** 전체 보기 방향: 남쪽 위에서 비스듬히(약 51°) 내려다봅니다. */
 const OVERVIEW_DIRECTION = new Vector3(0, 41, 33).normalize()
 const OVERVIEW_PITCH = Math.atan2(41, 33)
-const FOLLOW_OFFSET = new Vector3(-1.1, 1.3, 1.6)
+/** 따라가기 카메라 위치(탈것 기준). 약 45° 위에서 내려다봐 높은 건물에 덜 가립니다. */
+const FOLLOW_OFFSET = new Vector3(-1, 1.65, 1.35)
 
 /** 화면 비율에 맞춰 네 경로가 다 들어오는 카메라 거리(세로 화면이면 더 멀리) */
 function overviewDistance(aspect: number) {
@@ -61,11 +103,16 @@ function overviewDistance(aspect: number) {
 
 interface Marker {
   id: string
+  routeId: string
   geo: RouteGeo
   lengthKm: number
   holder: Group
   miniature: Miniature
   ring: Mesh<RingGeometry, MeshBasicMaterial>
+  /** 지나온 길에 남는 꼬리(지도 좌표 그대로, holder 밖) */
+  trail: Mesh<BufferGeometry, MeshBasicMaterial>
+  /** 미니어처 길이 비율(MINIATURE_LENGTH) */
+  bodyLength: number
   shown: number
   target: number
   /** 실차 GPS 위치는 실제 속도로, 시뮬레이션 위치는 FleetFrame.timeScale배로 내다봅니다. */
@@ -80,8 +127,8 @@ export interface TrackerSceneOptions {
   canvas: HTMLCanvasElement
   frame: FleetFrame
   playing: boolean
-  /** 매 프레임 화면 좌표(픽셀)를 알려 줍니다. 이름표 위치에 씁니다(탈것은 id, 지명은 place:id). */
-  onProject: (id: string, x: number, y: number, visible: boolean) => void
+  /** 매 프레임 탈것과 지명의 화면 좌표와 캔버스 크기(px)를 한꺼번에 알려 줍니다(이름표를 서로 겹치지 않게 놓는 데 씀). */
+  onProject: (points: ProjectedPoint[], view: LabelSize) => void
   onPick: (id: string) => void
 }
 
@@ -95,9 +142,51 @@ function geoFor(routeId: string) {
   return geo
 }
 
+/** 경로를 따라 ARROW.spacing마다 진행 방향(경로 점 순서)을 가리키는 V자 선들 */
+function arrowLines(geo: RouteGeo) {
+  const count = Math.max(1, Math.round(geo.length / ARROW.spacing))
+  const lines: number[][] = []
+  for (let i = 0; i < count; i += 1) {
+    const u = (i + 0.5) / count
+    const p = geo.pointAt(u)
+    const d = geo.directionAt(u)
+    const back = { x: p.x - (d.x * ARROW.length) / 2, z: p.z - (d.z * ARROW.length) / 2 }
+    const side = { x: (-d.z * ARROW.width) / 2, z: (d.x * ARROW.width) / 2 }
+    lines.push([back.x + side.x, back.z + side.z, p.x + (d.x * ARROW.length) / 2, p.z + (d.z * ARROW.length) / 2, back.x - side.x, back.z - side.z])
+  }
+  return lines
+}
+
+/** 주행 꼬리 메시: 점마다 양옆 꼭짓점 두 개, 색은 상태 색(재질) × 꼭짓점 투명도 */
+function createTrail() {
+  const geometry = new BufferGeometry()
+  const positions = new BufferAttribute(new Float32Array(TRAIL_SAMPLES * 2 * 3), 3)
+  positions.setUsage(DynamicDrawUsage)
+  const colors = new Float32Array(TRAIL_SAMPLES * 2 * 4).fill(1)
+  const index: number[] = []
+  for (let i = 0; i < TRAIL_SAMPLES; i += 1) {
+    // 꼬리 끝(0)은 투명하고 탈것 쪽으로 갈수록 진해집니다.
+    const alpha = TRAIL_MAX_ALPHA * (i / (TRAIL_SAMPLES - 1)) ** 1.6
+    colors[i * 8 + 3] = alpha
+    colors[i * 8 + 7] = alpha
+    if (i < TRAIL_SAMPLES - 1) index.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 2, i * 2 + 1, i * 2 + 3)
+  }
+  geometry.setAttribute('position', positions)
+  geometry.setAttribute('color', new BufferAttribute(colors, 4))
+  geometry.setIndex(index)
+  const mesh = new Mesh(
+    geometry,
+    new MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, side: DoubleSide }),
+  )
+  // 매 프레임 모양이 바뀌어 화면 밖 판정(경계 구)을 쓰지 않습니다.
+  mesh.frustumCulled = false
+  mesh.renderOrder = -1
+  return mesh
+}
+
 export function createTrackerScene({ canvas, frame, playing, onProject, onPick }: TrackerSceneOptions) {
-  // 조명 환경 계산(GPU)보다 먼저 지도 데이터와 지도용 3D 모델 다운로드를 걸어 둡니다.
-  const mapRequest = loadSeoulMap()
+  // 조명 환경 계산(GPU)보다 먼저 지도 데이터(워커에서 도형까지 만듦)와 지도용 3D 모델 다운로드를 걸어 둡니다.
+  const mapRequest = loadSeoulMap(METERS_PER_UNIT)
   for (const vehicle of frame.vehicles) preloadModel(vehicle.modelId, 'lite')
   let disposed = false
   let timeScale = frame.timeScale
@@ -114,11 +203,13 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
     far: 400,
     onFrame: (delta) => update(delta),
   })
-  const { scene, camera, renderer } = stage
-  const disposeEnvironment = applyStudioEnvironment(renderer, scene, 0.6)
-  // 지도 끝이 툭 끊겨 보이지 않도록 멀리 있는 곳은 어둠에 묻습니다(거리는 전체 보기에 맞춰 정함).
+  const { scene, overlay, camera, renderer } = stage
+  // 지도 레이어와 건물은 조명 없이 칠한 색(MeshBasicMaterial)이라, 조명과 반사 환경은 미니어처가 있는 overlay에만 둡니다.
+  const disposeEnvironment = applyStudioEnvironment(renderer, overlay, 0.6)
+  // 멀리 있는 곳은 어둠에 묻습니다(거리는 전체 보기에 맞춰 정함). 지도 끝은 edgeFade가 따로 흐립니다.
   const fog = new Fog('#050303', 55, 120)
   scene.fog = fog
+  overlay.fog = fog
 
   const controls = new OrbitControls(camera, canvas)
   controls.enableDamping = true
@@ -144,39 +235,62 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
   }
   showOverview()
 
-  scene.add(new AmbientLight('#ffffff', 0.35))
+  overlay.add(new AmbientLight('#ffffff', 0.35))
+  // 건물 벽 색(map-geometry의 SUN_DIRECTION·RIM_DIRECTION)도 이 두 조명 방향에 맞춰 칠합니다.
   const sun = new DirectionalLight('#ffffff', 1.6)
   sun.position.set(-12, 30, 18)
-  scene.add(sun)
+  overlay.add(sun)
   const rim = new DirectionalLight('#ff4030', 1.1)
   rim.position.set(20, 8, -25)
-  scene.add(rim)
+  overlay.add(rim)
 
   // 바닥: 지도 데이터를 받기 전에도 경로와 미니어처가 놓일 어두운 지면
-  const ground = flatLayer(new PlaneGeometry(200, 200).rotateX(-Math.PI / 2), '#060404', -50)
+  const ground = flatLayer(new PlaneGeometry(200, 200).rotateX(-Math.PI / 2), GROUND_COLOR, -50)
   ground.position.copy(OVERVIEW_TARGET)
   scene.add(ground)
 
-  // 서울 도로·한강·공원(OpenStreetMap). 받는 동안에는 경로만 보입니다.
+  // 서울 도로·한강·공원·높은 건물(OpenStreetMap). 받는 동안에는 경로만 보입니다.
   let seoul: Group | null = null
-  void mapRequest.then((data) => {
-    if (disposed || !data) return
-    seoul = buildSeoulMap(data, METERS_PER_UNIT)
-    scene.add(seoul)
+  let fade: ReturnType<typeof edgeFade> | null = null
+  void mapRequest.then((layers) => {
+    if (disposed || !layers) return
+    seoul = buildSeoulMap(layers)
+    fade = edgeFade(layers.bounds, EDGE_FADE, METERS_PER_UNIT, GROUND_COLOR)
+    scene.add(seoul, fade.mesh)
     stage.invalidate()
   })
 
-  // 경로: 어두운 진홍 띠 + 밝은 중앙선(도로 위에 겹쳐 그림). 겹치는 이음매가 얼룩지지 않게 둘 다 불투명합니다.
+  // 경로: 어두운 진홍 띠 + 밝은 중앙선 + 진행 방향 V자(도로 위에 겹쳐 그림). 겹치는 이음매가 얼룩지지 않게 모두 불투명합니다.
   const routeLayers = new Group()
+  const routeMeshes = new Map<string, Record<keyof (typeof ROUTE_STYLE)['normal'], Mesh<BufferGeometry, MeshBasicMaterial>>>()
   for (const route of ROUTES) {
     const line = route.path.flatMap(([lat, lng]) => {
       const { x, z } = toLocal(lat, lng)
       return [x, z]
     })
-    routeLayers.add(flatLayer(ribbon([line], 70, METERS_PER_UNIT, true), '#4a0a07', -20))
-    routeLayers.add(flatLayer(ribbon([line], 16, METERS_PER_UNIT, true), '#ff4a36', -19))
+    const meshes = {
+      band: flatLayer(ribbon([line], 70, METERS_PER_UNIT, true), ROUTE_STYLE.normal.band, -20),
+      line: flatLayer(ribbon([line], 16, METERS_PER_UNIT, true), ROUTE_STYLE.normal.line, -19),
+      arrows: flatLayer(ribbon(arrowLines(geoFor(route.id)), ARROW.stroke, METERS_PER_UNIT), ROUTE_STYLE.normal.arrows, -18),
+    }
+    routeLayers.add(meshes.band, meshes.line, meshes.arrows)
+    routeMeshes.set(route.id, meshes)
   }
   scene.add(routeLayers)
+
+  /** 따라가는 탈것의 경로를 밝히고 나머지는 흐리게 합니다(null이면 모두 평소대로). 강조한 경로는 다른 경로 위에 그립니다. */
+  function emphasize(routeId: string | null) {
+    for (const [id, meshes] of routeMeshes) {
+      const style = routeId === null ? ROUTE_STYLE.normal : id === routeId ? ROUTE_STYLE.focus : ROUTE_STYLE.dim
+      const lift = id === routeId ? 3 : 0
+      meshes.band.material.color.set(style.band)
+      meshes.line.material.color.set(style.line)
+      meshes.arrows.material.color.set(style.arrows)
+      meshes.band.renderOrder = -20 + lift
+      meshes.line.renderOrder = -19 + lift
+      meshes.arrows.renderOrder = -18 + lift
+    }
+  }
 
   function addMarker(vehicle: VehicleSnapshot) {
     const size = MINIATURE_LENGTH[vehicle.kind]
@@ -192,14 +306,19 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
     ring.rotation.x = -Math.PI / 2
     ring.position.y = 0.02
     holder.add(ring)
-    scene.add(holder)
+    const trail = createTrail()
+    trail.material.color.set(TRAIL_COLORS[vehicle.health])
+    overlay.add(holder, trail)
     markers.set(vehicle.id, {
       id: vehicle.id,
+      routeId: vehicle.routeId,
       geo: geoFor(vehicle.routeId),
       lengthKm: findRoute(vehicle.routeId).lengthKm,
       holder,
       miniature,
       ring,
+      trail,
+      bodyLength: size,
       shown: vehicle.mapProgress,
       target: vehicle.mapProgress,
       gps: vehicle.positionSource === 'gps',
@@ -232,6 +351,7 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
       if (marker.health !== vehicle.health) {
         marker.health = vehicle.health
         marker.ring.material.color.set(HEALTH_COLORS[vehicle.health])
+        marker.trail.material.color.set(TRAIL_COLORS[vehicle.health])
       }
     }
     stage.invalidate()
@@ -270,11 +390,41 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
       pivot.rotation.x += ((Math.sign(turn) || 1) * angle - pivot.rotation.x) * (playing ? Math.min(1, delta * 4) : 1)
     }
 
+    updateTrail(marker)
+
     if (marker.health === 'critical' && playing) {
       marker.ring.material.opacity = 0.55 + 0.45 * Math.abs(Math.sin(performance.now() / 260))
     } else {
       marker.ring.material.opacity = 0.9
     }
+  }
+
+  /**
+   * 지나온 길을 따라 꼬리를 그립니다. 미니어처 뒤끝에서 시작해 화면에 보이는 미니어처 길이에 속도를 곱한 만큼 남기므로,
+   * 빠를수록 길고 멈추면 사라집니다. 폭은 꼬리 끝으로 갈수록 가늘어집니다.
+   */
+  function updateTrail(marker: Marker) {
+    const size = marker.holder.scale.x
+    const length = size * Math.min(3, marker.speed / 20)
+    marker.trail.visible = length > 0.001
+    if (!marker.trail.visible) return
+    const toProgress = METERS_PER_UNIT / marker.geo.length
+    // 미니어처 가운데에서 뒤끝까지(반 길이)는 비웁니다.
+    const head = marker.shown - ((size * marker.bodyLength) / 2) * toProgress
+    const span = Math.min(0.5, length * toProgress)
+    const positions = marker.trail.geometry.getAttribute('position') as BufferAttribute
+    for (let i = 0; i < TRAIL_SAMPLES; i += 1) {
+      const t = i / (TRAIL_SAMPLES - 1)
+      const u = head - span * (1 - t)
+      const point = marker.geo.pointAt(u)
+      const direction = marker.geo.directionAt(u)
+      const half = size * 0.16 * (0.25 + 0.75 * t)
+      const x = point.x / METERS_PER_UNIT
+      const z = point.z / METERS_PER_UNIT
+      positions.setXYZ(i * 2, x - direction.z * half, 0.01, z + direction.x * half)
+      positions.setXYZ(i * 2 + 1, x + direction.z * half, 0.01, z - direction.x * half)
+    }
+    positions.needsUpdate = true
   }
 
   function followCamera(delta: number) {
@@ -287,12 +437,16 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
     camera.position.add(controls.target.clone().sub(previousTarget))
   }
 
-  function project(id: string, position: Vector3, lift: number) {
+  function project(id: string, position: Vector3, lift: number, view: LabelSize): ProjectedPoint {
     projected.copy(position)
     projected.y += lift
     projected.project(camera)
-    const visible = projected.z < 1 && Math.abs(projected.x) <= 1.1 && Math.abs(projected.y) <= 1.1
-    onProject(id, ((projected.x + 1) / 2) * canvas.clientWidth, ((1 - projected.y) / 2) * canvas.clientHeight, visible)
+    return {
+      id,
+      x: ((projected.x + 1) / 2) * view.width,
+      y: ((1 - projected.y) / 2) * view.height,
+      visible: projected.z < 1 && Math.abs(projected.x) <= 1.1 && Math.abs(projected.y) <= 1.1,
+    }
   }
 
   function update(delta: number) {
@@ -300,20 +454,25 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
     for (const marker of markers.values()) place(marker, delta)
     followCamera(delta)
     controls.update()
-    for (const marker of markers.values()) project(marker.id, marker.holder.position, marker.holder.scale.x * 0.55)
-    for (const item of places) project(item.id, item.position, 0)
+    const view = { width: canvas.clientWidth, height: canvas.clientHeight }
+    const points: ProjectedPoint[] = []
+    for (const marker of markers.values()) {
+      const top = project(marker.id, marker.holder.position, marker.holder.scale.x * 0.55, view)
+      points.push({ ...top, baseY: project(marker.id, marker.holder.position, 0, view).y })
+    }
+    for (const item of places) points.push(project(item.id, item.position, 0, view))
+    onProject(points, view)
   }
 
   function setFollow(id: string | null) {
     followId = id
+    const marker = id === null ? undefined : markers.get(id)
+    emphasize(marker?.routeId ?? null)
     if (id === null) {
       showOverview()
-    } else {
-      const marker = markers.get(id)
-      if (marker) {
-        controls.target.copy(marker.holder.position)
-        camera.position.copy(marker.holder.position).add(FOLLOW_OFFSET)
-      }
+    } else if (marker) {
+      controls.target.copy(marker.holder.position)
+      camera.position.copy(marker.holder.position).add(FOLLOW_OFFSET)
     }
     stage.invalidate()
   }
@@ -355,6 +514,7 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
       controls.dispose()
       disposeEnvironment()
       if (seoul) disposeObject(seoul)
+      fade?.dispose()
       disposeObject(routeLayers)
       disposeObject(ground)
       stage.dispose()

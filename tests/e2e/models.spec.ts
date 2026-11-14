@@ -17,6 +17,8 @@ test.describe('실제 3D 모델', () => {
     page.on('response', (response) => {
       if (tracked(response.url()) && response.status() < 400) loaded.push(new URL(response.url()).pathname)
     })
+    const workers: string[] = []
+    page.on('worker', (worker) => workers.push(worker.url()))
 
     const login = await page.request.post('/api/auth/login', { data: { login: 'operator', password: 'kao-demo-2026' } })
     expect(login.ok()).toBe(true)
@@ -29,6 +31,8 @@ test.describe('실제 3D 모델', () => {
     await page.getByRole('img', { name: /관제 지도/ }).scrollIntoViewIfNeeded()
     await expect.poll(() => loaded, { timeout: 45_000 }).toContain('/models/lamborghini-aventador.lite.glb')
     await expect.poll(() => loaded, { timeout: 45_000 }).toContain('/maps/seoul.json')
+    // 서울 지도 데이터는 웹 워커가 받아 도형으로 만듭니다(메인 스레드를 막지 않음).
+    expect(workers.some((url) => url.includes('seoul-map.worker'))).toBe(true)
     await expect(page.getByRole('img', { name: /Lamborghini Aventador 미니어처/ })).toBeVisible()
     // 모델(CC BY 4.0)과 지도 데이터(ODbL) 출처는 README 표에 있고, 바닥글은 그 표로 잇습니다.
     await expect(page.getByRole('contentinfo').getByRole('link', { name: '3D 모델·지도 데이터 출처 (README)' })).toHaveAttribute(

@@ -1,147 +1,71 @@
-import { BufferAttribute, BufferGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, Path, Shape, ShapeGeometry, Vector2 } from 'three'
+import { BufferAttribute, BufferGeometry, DataTexture, DoubleSide, Group, LessEqualDepth, LinearFilter, Mesh, MeshBasicMaterial, PlaneGeometry } from 'three'
+import { buildMapLayers, ribbonArrays, ROAD_STYLE } from './map-geometry'
+import type { MapBounds, MeshArrays, SeoulMapData, SeoulMapLayers } from './map-geometry'
 
 /**
- * 관제 지도의 서울 도심 바탕(도로·한강·공원). scripts/build-seoul-map.mjs가 OpenStreetMap으로 만든
- * public/maps/seoul.json을 받아, 지면에 붙은 평면 도형으로 그립니다. 지도 데이터 © OpenStreetMap 기여자(ODbL).
+ * 관제 지도의 서울 도심 바탕(도로·한강·공원·높은 건물). scripts/build-seoul-map.mjs가 OpenStreetMap으로 만든
+ * public/maps/seoul.json을 웹 워커가 받아 도형(typed array)으로 만들고, 메인 스레드는 그 배열로 메시만 만듭니다.
+ * 워커를 쓸 수 없으면 같은 계산을 메인 스레드에서 합니다. 지도 데이터 © OpenStreetMap 기여자(ODbL).
  */
-
-export type RoadKind = 'minor' | 'cycleway' | 'tertiary' | 'link' | 'secondary' | 'primary' | 'trunk'
-
-interface Polygon {
-  /** [x0, z0, x1, z1, …] 지도 좌표(m) */
-  outer: number[]
-  holes: number[][]
-}
-
-export interface SeoulMapData {
-  attribution: string
-  bounds: { minX: number; maxX: number; minZ: number; maxZ: number }
-  roads: Record<RoadKind, number[][]>
-  water: Polygon[]
-  parks: Polygon[]
-}
 
 export const SEOUL_MAP_URL = '/maps/seoul.json'
 
-let request: Promise<SeoulMapData | null> | null = null
+interface WorkerReply {
+  layers?: SeoulMapLayers
+  error?: string
+}
 
-/** 지도 데이터는 한 번만 받습니다. 받지 못하면 null이고, 관제 지도는 바탕 없이 경로만 그립니다. */
-export function loadSeoulMap() {
-  request ??= fetch(SEOUL_MAP_URL)
-    .then((response) => (response.ok ? (response.json() as Promise<SeoulMapData>) : null))
+function buildInWorker(unit: number) {
+  return new Promise<SeoulMapLayers>((resolve, reject) => {
+    const worker = new Worker(new URL('./seoul-map.worker.ts', import.meta.url), { type: 'module' })
+    worker.addEventListener('message', ({ data }: MessageEvent<WorkerReply>) => {
+      worker.terminate()
+      if (data.layers) resolve(data.layers)
+      else reject(new Error(data.error ?? '지도 도형을 만들지 못했습니다.'))
+    })
+    worker.addEventListener('error', (event) => {
+      worker.terminate()
+      reject(new Error(event.message))
+    })
+    worker.postMessage({ url: new URL(SEOUL_MAP_URL, window.location.href).href, unit })
+  })
+}
+
+async function buildOnMainThread(unit: number) {
+  const response = await fetch(SEOUL_MAP_URL)
+  if (!response.ok) throw new Error(`지도 데이터를 받지 못했습니다(${response.status}).`)
+  return buildMapLayers((await response.json()) as SeoulMapData, unit)
+}
+
+let request: Promise<SeoulMapLayers | null> | null = null
+
+/**
+ * 지도 도형은 한 번만 만들고, 화면을 다시 열 때는 만들어 둔 배열로 메시만 다시 만듭니다.
+ * 받지 못하면 null이고, 관제 지도는 바탕 없이 경로만 그립니다.
+ */
+export function loadSeoulMap(unit: number) {
+  request ??= (typeof Worker === 'function' ? buildInWorker(unit) : Promise.reject(new Error('웹 워커 없음')))
+    .catch(() => buildOnMainThread(unit))
     .catch(() => null)
   return request
 }
 
-/** 도로 등급별 폭(m, 멀리서도 보이게 실제보다 넓게)과 색. 낮은 등급부터 그려 큰길이 위에 옵니다. */
-const ROAD_STYLE: ReadonlyArray<readonly [RoadKind, number, string]> = [
-  ['minor', 9, '#1a1617'],
-  ['cycleway', 7, '#121d25'],
-  ['tertiary', 16, '#272223'],
-  ['link', 14, '#2e2829'],
-  ['secondary', 22, '#353031'],
-  ['primary', 30, '#423b3c'],
-  ['trunk', 40, '#524849'],
-]
-
-/**
- * 선을 따라 폭이 일정한 띠(평면). 꺾이는 점에서는 앞뒤 선분의 법선을 평균 낸 방향(마이터)으로 벌려
- * 바깥선이 매끄럽게 이어지고, 열린 선은 양 끝을 반폭만큼 늘려 다른 길과 만나는 곳이 비지 않게 합니다.
- * lines는 [x0, z0, x1, z1, …](m)이고, unit(m)으로 나눠 장면 좌표로 바꿉니다. closed면 마지막 점이 첫 점으로 이어집니다.
- */
-export function ribbon(lines: ReadonlyArray<ArrayLike<number>>, width: number, unit: number, closed = false) {
-  const half = width / 2
-  const polylines: Array<Array<[number, number]>> = []
-  let vertexCount = 0
-  let indexCount = 0
-  for (const line of lines) {
-    const points: Array<[number, number]> = []
-    for (let i = 0; i + 1 < line.length; i += 2) {
-      const x = line[i]!
-      const z = line[i + 1]!
-      const last = points.at(-1)
-      if (!last || Math.hypot(last[0] - x, last[1] - z) > 0.01) points.push([x, z])
-    }
-    if (closed && points.length > 2 && Math.hypot(points[0]![0] - points.at(-1)![0], points[0]![1] - points.at(-1)![1]) < 0.01) points.pop()
-    if (points.length < 2) continue
-    polylines.push(points)
-    vertexCount += points.length * 2 + (closed ? 2 : 0)
-    indexCount += (points.length - 1 + (closed ? 1 : 0)) * 6
-  }
-  const positions = new Float32Array(vertexCount * 3)
-  const index = new Uint32Array(indexCount)
-  let v = 0
-  let k = 0
-  for (const points of polylines) {
-    const n = points.length
-    const base = v
-    const at = (i: number) => points[closed ? (i + n) % n : Math.min(n - 1, Math.max(0, i))]!
-    const direction = (a: [number, number], b: [number, number]) => {
-      const length = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1
-      return [(b[0] - a[0]) / length, (b[1] - a[1]) / length] as const
-    }
-    const count = closed ? n + 1 : n
-    for (let i = 0; i < count; i += 1) {
-      const point = at(i)
-      const hasPrevious = closed || i > 0
-      const hasNext = closed || i < n - 1
-      const before = hasPrevious ? direction(at(i - 1), point) : direction(point, at(i + 1))
-      const after = hasNext ? direction(point, at(i + 1)) : before
-      // 법선(진행 방향의 왼쪽)의 평균이 마이터 방향입니다. 급하게 꺾이는 곳은 뾰족하게 튀어나오지 않게 2배로 묶습니다.
-      let mx = -(before[1] + after[1])
-      let mz = before[0] + after[0]
-      const ml = Math.hypot(mx, mz)
-      if (ml < 1e-6) {
-        mx = -after[1]
-        mz = after[0]
-      } else {
-        mx /= ml
-        mz /= ml
-      }
-      const dot = mx * -after[1] + mz * after[0]
-      const reach = half / Math.max(dot, 0.5)
-      // 열린 선의 양 끝은 반폭만큼 늘립니다.
-      const extend = !closed && (i === 0 || i === n - 1) ? (i === 0 ? -half : half) : 0
-      const cx = point[0] + after[0] * extend
-      const cz = point[1] + after[1] * extend
-      positions[v * 3] = (cx + mx * reach) / unit
-      positions[v * 3 + 2] = (cz + mz * reach) / unit
-      positions[v * 3 + 3] = (cx - mx * reach) / unit
-      positions[v * 3 + 5] = (cz - mz * reach) / unit
-      v += 2
-    }
-    for (let i = 0; i < count - 1; i += 1) {
-      const a = base + i * 2
-      index.set([a, a + 1, a + 2, a + 2, a + 1, a + 3], k)
-      k += 6
-    }
-  }
+export function toGeometry({ positions, index, colors }: MeshArrays) {
   const geometry = new BufferGeometry()
   geometry.setAttribute('position', new BufferAttribute(positions, 3))
+  if (colors) geometry.setAttribute('color', new BufferAttribute(colors, 3))
   geometry.setIndex(new BufferAttribute(index, 1))
   geometry.computeBoundingSphere()
   return geometry
 }
 
-function polygonGeometry(polygons: readonly Polygon[], unit: number) {
-  const points = (ring: number[]) => {
-    const list: Vector2[] = []
-    for (let i = 0; i + 1 < ring.length; i += 2) list.push(new Vector2(ring[i]! / unit, ring[i + 1]! / unit))
-    return list
-  }
-  const shapes = polygons.map(({ outer, holes }) => {
-    const shape = new Shape(points(outer))
-    shape.holes = holes.map((hole) => new Path(points(hole)))
-    return shape
-  })
-  // ShapeGeometry는 XY 평면에 만들므로 눕혀서 (x, z) 지면에 놓습니다.
-  const geometry = new ShapeGeometry(shapes)
-  geometry.rotateX(Math.PI / 2)
-  return geometry
+/** 선을 따라 폭이 일정한 띠(경로·방향 표시에 씀). 자세한 설명은 ribbonArrays */
+export function ribbon(lines: ReadonlyArray<ArrayLike<number>>, width: number, unit: number, closed = false) {
+  return toGeometry(ribbonArrays(lines, width, unit, closed))
 }
 
 /**
- * 지면 위 평면 레이어. 모두 같은 높이(0)에 있어 깊이 대신 그리는 순서(renderOrder, 음수라 미니어처보다 먼저)로 겹칩니다.
+ * 지면 위 평면 레이어. 모두 같은 높이(0)에 있어 깊이 대신 그리는 순서(renderOrder, 음수라 건물·미니어처보다 먼저)로 겹칩니다.
  */
 export function flatLayer(geometry: BufferGeometry, color: string, order: number, opacity = 1) {
   const mesh = new Mesh(
@@ -152,11 +76,69 @@ export function flatLayer(geometry: BufferGeometry, color: string, order: number
   return mesh
 }
 
-/** 공원 → 한강 → 도로(낮은 등급부터) 순서로 그린 바탕 */
-export function buildSeoulMap(data: SeoulMapData, unit: number) {
+/** 건물 불투명도. 앞면만 이만큼 덮어, 건물 뒤의 길과 주행 경로가 희미하게 비쳐 보입니다. */
+export const BUILDING_OPACITY = 0.82
+
+/** 공원 → 한강 → 도로(낮은 등급부터) 순서로 깐 바탕 위에 높은 건물을 세웁니다. */
+export function buildSeoulMap(layers: SeoulMapLayers) {
   const group = new Group()
-  group.add(flatLayer(polygonGeometry(data.parks, unit), '#0b130d', -40))
-  group.add(flatLayer(polygonGeometry(data.water, unit), '#0a1420', -39))
-  ROAD_STYLE.forEach(([kind, width, color], i) => group.add(flatLayer(ribbon(data.roads[kind] ?? [], width, unit), color, -38 + i)))
+  group.add(flatLayer(toGeometry(layers.parks), '#0b130d', -40))
+  group.add(flatLayer(toGeometry(layers.water), '#0a1420', -39))
+  const colors = new Map(ROAD_STYLE.map(([kind, , color]) => [kind, color]))
+  layers.roads.forEach(({ kind, mesh }, i) => group.add(flatLayer(toGeometry(mesh), colors.get(kind) ?? '#353031', -38 + i)))
+  // 건물은 두 번 그립니다. 먼저 깊이만 써서(불투명 단계) 가장 앞의 면을 정하고, 반투명 단계에서 그 면에만 색을 칠합니다.
+  // 그래서 건물끼리 겹친 안쪽 면은 보이지 않고, 평면 레이어(길·경로)만 건물 너머로 비칩니다.
+  const buildings = toGeometry(layers.buildings)
+  const depth = new Mesh(buildings, new MeshBasicMaterial({ colorWrite: false }))
+  const faces = new Mesh(
+    buildings,
+    new MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: BUILDING_OPACITY, depthWrite: false, depthFunc: LessEqualDepth }),
+  )
+  group.add(depth, faces)
   return group
+}
+
+/**
+ * 지도 끝을 바닥색으로 흐리게 묻는 판. 범위 끝에서 안쪽으로 fade(m)만큼 서서히 진해지고(모서리는 둥글게),
+ * 범위 밖은 바닥색입니다. 투명 메시라 불투명한 지도 레이어 뒤에 그려지고, 깊이 검사로 건물은 덮지 않습니다.
+ */
+export function edgeFade(bounds: MapBounds, fade: number, unit: number, color: string) {
+  const margin = fade / 2
+  const minX = bounds.minX - margin
+  const maxX = bounds.maxX + margin
+  const minZ = bounds.minZ - margin
+  const maxZ = bounds.maxZ + margin
+  const centerX = (bounds.minX + bounds.maxX) / 2
+  const centerZ = (bounds.minZ + bounds.maxZ) / 2
+  const innerX = (bounds.maxX - bounds.minX) / 2 - fade
+  const innerZ = (bounds.maxZ - bounds.minZ) / 2 - fade
+  const size = 128
+  const alpha = new Uint8Array(size * size * 4)
+  for (let row = 0; row < size; row += 1) {
+    // 판을 눕히면 텍스처 아래쪽(v = 0)이 남쪽(maxZ)입니다.
+    const z = maxZ - ((row + 0.5) / size) * (maxZ - minZ)
+    for (let column = 0; column < size; column += 1) {
+      const x = minX + ((column + 0.5) / size) * (maxX - minX)
+      const t = Math.min(1, Math.hypot(Math.max(0, Math.abs(x - centerX) - innerX), Math.max(0, Math.abs(z - centerZ) - innerZ)) / fade)
+      // alphaMap은 초록 채널을 씁니다.
+      alpha[(row * size + column) * 4 + 1] = Math.round(t * t * (3 - 2 * t) * 255)
+    }
+  }
+  const texture = new DataTexture(alpha, size, size)
+  texture.magFilter = LinearFilter
+  texture.minFilter = LinearFilter
+  texture.needsUpdate = true
+  const geometry = new PlaneGeometry((maxX - minX) / unit, (maxZ - minZ) / unit).rotateX(-Math.PI / 2)
+  geometry.translate(centerX / unit, 0, centerZ / unit)
+  const material = new MeshBasicMaterial({ color, alphaMap: texture, transparent: true, depthWrite: false })
+  const mesh = new Mesh(geometry, material)
+  mesh.renderOrder = -30
+  return {
+    mesh,
+    dispose() {
+      geometry.dispose()
+      material.dispose()
+      texture.dispose()
+    },
+  }
 }
