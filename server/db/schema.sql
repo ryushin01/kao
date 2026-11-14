@@ -85,3 +85,18 @@ create table if not exists live_issues (
 create unique index if not exists live_issues_open on live_issues (vehicle_id, metric_key) where resolved_at is null;
 create index if not exists live_issues_resolved_at on live_issues (resolved_at);
 create index if not exists live_issues_vehicle_metric on live_issues (vehicle_id, metric_key);
+
+-- 실차 장치(0.9.0). 토큰은 탈것 하나에 묶이고 SHA-256만 남깁니다(pnpm device add가 만들 때 한 번만 보여 줌).
+-- webhook_url이 있으면 원격 조치 명령을 그 주소로 보냅니다(HMAC-SHA256 서명, https만).
+create table if not exists devices (
+  id text primary key,
+  vehicle_id text not null,
+  name text not null,
+  token_hash text not null unique,
+  created_at bigint not null,
+  revoked_at bigint,
+  last_seen_at bigint,
+  webhook_url text check (webhook_url like 'https://%'),
+  webhook_secret text
+);
+create index if not exists devices_vehicle on devices (vehicle_id) where revoked_at is null;

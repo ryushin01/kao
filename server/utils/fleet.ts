@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import type { ActionCode, RemoteActionResponse, SessionUser } from '../../src/shared/api/contract'
+import { VEHICLE_SPECS } from './fleet-specs'
 import { checkAction, computeFrame, dayStartOf } from './sim/engine'
 import type { FrameInput } from './sim/engine'
 import { COMMAND_WINDOW, isLiveIssueId, RESOLVED_VISIBLE_MS } from './sim/live'
 import type { ActionRecord, LiveIssueRecord, LiveReading } from './sim/types'
 import { useStore } from './store'
+import { deliverCommand } from './webhook'
 
 const CACHE_MS = 1500
 
@@ -27,10 +29,10 @@ export async function todaysActions(now: number, fresh = false) {
   return actions
 }
 
-/** 최근 1분 안에 실제 차량에서 들어온 측정값 */
+/** 최근 2분 안에 실제 차량에서 들어온 측정값(경로 밖 GPS 궤적까지 보도록 2분) */
 export async function recentReadings(now: number, fresh = false) {
   if (!fresh && readingCache && now - readingCache.fetchedAt < CACHE_MS) return readingCache.readings
-  const readings = await useStore().listReadingsSince(now - 60_000)
+  const readings = await useStore().listReadingsSince(now - 120_000)
   readingCache = { fetchedAt: now, readings }
   return readings
 }
@@ -81,6 +83,12 @@ export async function sendRemoteAction(user: SessionUser, vehicleId: string, iss
   const record: ActionRecord = { id: randomUUID(), issueId, vehicleId, action, sentAt: now }
   const inserted = await store.insertAction({ ...record, userId: user.id })
   if (!inserted) throw new RemoteActionError('다른 관제 요원이 먼저 조치했습니다. 목록을 새로 확인해 주세요.', 409)
+  // 실차 명령은 웹훅을 등록한 장치(제조사 서버)에 바로 보냅니다. 받지 못해도 장치가 받아 갈 수 있습니다.
+  const vehicle = VEHICLE_SPECS.find((item) => item.id === vehicleId)
+  if (vehicle && isLiveIssueId(issueId)) {
+    const delivered = await deliverCommand(vehicle, record).catch(() => [])
+    if (delivered.some((result) => result.ok)) record.deliveredAt = Date.now()
+  }
 
   const next = [...input.actions, record]
   actionCache = { fetchedAt: now, dayStart: dayStartOf(now), actions: next }

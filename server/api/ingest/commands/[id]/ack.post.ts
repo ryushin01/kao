@@ -1,6 +1,7 @@
 import { createError, defineEventHandler, getRouterParam, readBody } from 'h3'
 import { invalidateLiveCaches } from '../../../../utils/fleet'
-import { findIngestVehicle, requireIngestToken } from '../../../../utils/ingest'
+import { authenticateIngest, vehicleIdFor } from '../../../../utils/devices'
+import { findIngestVehicle } from '../../../../utils/ingest'
 import { useStore } from '../../../../utils/store'
 
 interface Body {
@@ -14,9 +15,9 @@ interface Body {
  * { "vehicleId": "kao-0001", "result": "applied" | "failed", "message": "실패 이유(선택)" }
  */
 export default defineEventHandler(async (event) => {
-  requireIngestToken(event)
+  const principal = await authenticateIngest(event)
   const body = await readBody<Body>(event)
-  const vehicle = findIngestVehicle(body?.vehicleId)
+  const vehicle = findIngestVehicle(vehicleIdFor(principal, body?.vehicleId))
   if (body?.result !== 'applied' && body?.result !== 'failed') {
     throw createError({ statusCode: 422, message: 'result는 applied 또는 failed로 보내 주세요.' })
   }

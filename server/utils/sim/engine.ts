@@ -49,6 +49,9 @@ export type { ActionRecord, CommandAck, LiveIssueRecord, LivePosition, LiveReadi
 
 /** 관제 지도에서 움직임이 보이도록 지도 위치(mapProgress)만 빠르게 돌리는 배속. 바퀴 수와 진행률은 실제 속도 기준입니다. */
 export const TIME_SCALE = 12
+/** 실차 GPS 궤적: 최근 2분, 최대 60점 */
+const GPS_TRAIL_MS = 120_000
+const GPS_TRAIL_POINTS = 60
 /** 원격 조치를 보낸 뒤 차량이 응답하기까지(ms) */
 export const ACTION_LATENCY = 2400
 export const SPEED_CAP_DURATION = 90_000
@@ -440,6 +443,15 @@ function liveIssuesOf(vehicle: VehicleSpec, records: LiveIssueRecord[], actions:
     })
 }
 
+/** 최근 GPS 위치(오래된 것부터). 경로 밖을 달릴 때 관제 지도가 실제 위치와 지나온 길을 그립니다. */
+function gpsTrail(readings: LiveReading[], vehicleId: string, now: number): Array<[number, number]> {
+  return readings
+    .filter((reading) => reading.vehicleId === vehicleId && reading.position && reading.at <= now && now - reading.at <= GPS_TRAIL_MS)
+    .sort((a, b) => a.at - b.at)
+    .slice(-GPS_TRAIL_POINTS)
+    .map((reading) => [round(reading.position!.lat, 6), round(reading.position!.lng, 6)])
+}
+
 export function computeFrame({ now, actions, readings = [], liveIssues = [], vehicleIds }: FrameInput): FleetFrame {
   const dayStart = dayStartOf(now)
   const sent = actions.filter((action) => action.sentAt <= now)
@@ -498,7 +510,7 @@ export function computeFrame({ now, actions, readings = [], liveIssues = [], veh
       mapSpeed: round(position.mapSpeed, 1),
       lap: position.lap,
       positionSource: onRoute ? 'gps' : 'simulated',
-      gps: gps ? { lat: gps.lat, lng: gps.lng, at: gps.at, onRoute } : null,
+      gps: gps ? { lat: gps.lat, lng: gps.lng, at: gps.at, onRoute, trail: gpsTrail(readings, vehicle.id, now) } : null,
       speed: round(speed, 1),
       speedCap: live ? liveSpeedCap(vehicle, sent, now) : speedCapAt(vehicle, simulated, now),
       health,

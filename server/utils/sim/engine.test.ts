@@ -171,10 +171,26 @@ describe('실차 신호', () => {
     const position = { lat: 37.5665, lng: 126.978, progress: 0.4321, odometer: 2.4321 }
     const onRoute = computeFrame({ now, actions: [], readings: [{ ...hot[0]!, position }], vehicleIds: ['kao-0001'] }).vehicles[0]!
     expect(onRoute).toMatchObject({ positionSource: 'gps', progress: 0.4321, mapProgress: 0.4321, lap: 3 })
-    expect(onRoute.gps).toEqual({ lat: 37.5665, lng: 126.978, at: now - 2000, onRoute: true })
+    expect(onRoute.gps).toEqual({ lat: 37.5665, lng: 126.978, at: now - 2000, onRoute: true, trail: [[37.5665, 126.978]] })
     const off = computeFrame({ now, actions: [], readings: [{ ...hot[0]!, position: { ...position, progress: null } }], vehicleIds: ['kao-0001'] }).vehicles[0]!
     const simulated = computeFrame({ now, actions: [], vehicleIds: ['kao-0001'] }).vehicles[0]!
     expect(off).toMatchObject({ positionSource: 'simulated', progress: simulated.progress, gps: { onRoute: false } })
+  })
+
+  it('GPS 궤적은 최근 2분의 위치를 오래된 것부터 담습니다(관제 지도가 경로 밖 실차의 지나온 길을 그림)', () => {
+    const at = (ms: number, lat: number): LiveReading => ({
+      ...hot[0]!,
+      at: now - ms,
+      position: { lat, lng: 127.05, progress: null, odometer: 0 },
+    })
+    const readings = [at(1000, 37.503), at(150_000, 37.5), at(60_000, 37.502), at(90_000, 37.501)]
+    const vehicle = computeFrame({ now, actions: [], readings, vehicleIds: ['kao-0001'] }).vehicles[0]!
+    expect(vehicle.gps).toMatchObject({ lat: 37.503, onRoute: false })
+    expect(vehicle.gps!.trail).toEqual([
+      [37.501, 127.05],
+      [37.502, 127.05],
+      [37.503, 127.05],
+    ])
   })
 })
 

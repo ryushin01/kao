@@ -24,7 +24,7 @@ const scene = shallowRef<TrackerScene | null>(null)
 const { paused } = useMotion()
 
 const vehicles = computed(() => props.frame.vehicles)
-const gpsCount = computed(() => vehicles.value.filter((vehicle) => vehicle.positionSource === 'gps').length)
+const gpsCount = computed(() => vehicles.value.filter((vehicle) => vehicle.gps !== null).length)
 const description = computed(
   () =>
     `서울 도심 관제 지도. 광화문·남산·한강·여의도의 실제 도로와 높은 건물 사이를 ${vehicles.value.length}대의 미니어처가 각자의 경로로 달리고 있습니다. ` +
@@ -33,7 +33,7 @@ const description = computed(
 )
 const positionLabel = (vehicle: FleetFrame['vehicles'][number]) => {
   if (vehicle.positionSource === 'gps') return 'GPS'
-  return vehicle.gps ? 'GPS 경로 밖(시뮬레이션 위치)' : '시뮬레이션'
+  return vehicle.gps ? 'GPS 경로 밖(실제 위치)' : '시뮬레이션'
 }
 
 /** 이름표 크기(px). 글자(속도·상태)가 바뀌어 크기가 달라질 때만 ResizeObserver로 다시 잽니다. */

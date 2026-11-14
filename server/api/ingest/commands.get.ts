@@ -1,5 +1,6 @@
 import { defineEventHandler, getQuery } from 'h3'
-import { findIngestVehicle, requireIngestToken, toCommand } from '../../utils/ingest'
+import { authenticateIngest, vehicleIdFor } from '../../utils/devices'
+import { findIngestVehicle, toCommand } from '../../utils/ingest'
 import { useStore } from '../../utils/store'
 
 /**
@@ -7,8 +8,8 @@ import { useStore } from '../../utils/store'
  * 응답 시간(2분)이 남은, 아직 응답하지 않은 명령을 돌려주고 받아 간 시각을 남깁니다.
  */
 export default defineEventHandler(async (event) => {
-  requireIngestToken(event)
-  const vehicle = findIngestVehicle(getQuery(event).vehicleId)
+  const principal = await authenticateIngest(event)
+  const vehicle = findIngestVehicle(vehicleIdFor(principal, getQuery(event).vehicleId))
   const commands = await useStore().takeCommands(vehicle.id, Date.now())
   return { vehicleId: vehicle.id, commands: commands.map((command) => toCommand(vehicle, command)) }
 })

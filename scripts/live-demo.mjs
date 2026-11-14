@@ -15,6 +15,7 @@
  *   --interval   보내는 간격(기본 1000ms)
  *   --ack        명령에 할 응답: applied, failed, none(응답 안 함). 기본 applied
  *   --ack-delay  명령을 받은 뒤 응답까지(기본 2000ms)
+ *   --detour     시작 10초 뒤부터 이 시간(초) 동안 경로에서 옆으로 400m 벗어나 달림(경로 밖 GPS와 궤적 시험, 기본 0)
  *
  * Node 22.18 이상은 타입만 쓰는 TS 파일을 그대로 불러올 수 있어, 앱과 같은 탈것 정의·경로·좌표 변환을 씁니다.
  */
@@ -23,7 +24,7 @@ import { VEHICLE_SPECS } from '../server/utils/fleet-specs.ts'
 import { metricState } from '../server/utils/sim/live.ts'
 import { HEALTH_LABELS } from '../src/shared/api/contract.ts'
 import { findRoute } from '../src/shared/config/routes.ts'
-import { createRouteGeo, turnRateAt } from '../src/shared/lib/route-geo.ts'
+import { createRouteGeo, fromLocal, turnRateAt } from '../src/shared/lib/route-geo.ts'
 
 const { values: args } = parseArgs({
   options: {
@@ -35,6 +36,7 @@ const { values: args } = parseArgs({
     interval: { type: 'string', default: '1000' },
     ack: { type: 'string', default: 'applied' },
     'ack-delay': { type: 'string', default: '2000' },
+    detour: { type: 'string', default: '0' },
   },
 })
 
@@ -121,6 +123,15 @@ function acknowledge(command) {
   }, Number(args['ack-delay']))
 }
 
+const detourSeconds = Number(args.detour) || 0
+/** 경로 옆으로 벗어난 거리(m) */
+function detourOffset(t) {
+  const start = 10
+  const end = start + detourSeconds
+  if (!detourSeconds || t < start || t > end) return 0
+  return 400 * Math.min(1, (t - start) / 20, (end - t) / 20)
+}
+
 async function tick() {
   const dt = intervalMs / 1000
   elapsed += dt
@@ -139,8 +150,11 @@ async function tick() {
     const shifted = value + (metric === faulty ? offset : 0) + noise(metric.noise)
     metrics[metric.key] = Number(Math.min(metric.max, Math.max(metric.min, shifted)).toFixed(metric.precision))
   }
-  // GPS는 몇 m씩 흔들립니다.
-  const point = geo.toLatLng(progress)
+  // GPS는 몇 m씩 흔들립니다. --detour면 그동안 경로 옆으로 400m까지(20초에 걸쳐) 벗어났다 돌아옵니다.
+  const here = geo.pointAt(progress)
+  const heading = geo.directionAt(progress)
+  const aside = detourOffset(elapsed)
+  const point = fromLocal(here.x - heading.z * aside, here.z + heading.x * aside)
   const gps = { lat: point.lat + noise(0.00003), lng: point.lng + noise(0.00003) }
 
   const result = await post('/api/ingest/telemetry', { vehicleId: vehicle.id, at: Date.now(), speed: Number(speed.toFixed(1)), metrics, ...gps })

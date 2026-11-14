@@ -122,6 +122,12 @@ interface Marker {
   /** 이륜차가 눕는 최대 각도(°). 사륜차는 0 */
   maxLean: number
   health: HealthState
+  /** 실차 GPS가 경로 밖이면 실제 위치에 그립니다(경로 위치 대신). */
+  offRoute: boolean
+  /** 최근 GPS 위치(지도 좌표 m, 오래된 것부터) */
+  gpsTrail: Array<{ x: number; z: number }>
+  /** 경로 밖일 때 화면에 그리는 위치(m). 새 GPS 위치로 부드럽게 옮겨 갑니다. */
+  gpsShown: { x: number; z: number } | null
 }
 
 export interface TrackerSceneOptions {
@@ -337,6 +343,9 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
       speed: vehicle.mapSpeed,
       maxLean: vehicle.kind === 'superbike' || vehicle.kind === 'bicycle' ? MAX_LEAN[vehicle.kind] : 0,
       health: vehicle.health,
+      offRoute: false,
+      gpsTrail: [],
+      gpsShown: null,
     })
 
     // 실제 3D 모델을 다 받으면 셰이더를 미리 컴파일한 뒤 직접 만든 모형과 바꿔 끼웁니다.
@@ -369,6 +378,9 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
       marker.target = vehicle.mapProgress
       marker.gps = vehicle.positionSource === 'gps'
       marker.speed = vehicle.mapSpeed
+      marker.offRoute = vehicle.gps !== null && !vehicle.gps.onRoute
+      const trail: Array<[number, number]> = vehicle.gps ? (vehicle.gps.trail.length ? vehicle.gps.trail : [[vehicle.gps.lat, vehicle.gps.lng]]) : []
+      marker.gpsTrail = trail.map(([lat, lng]) => toLocal(lat, lng))
       if (marker.health !== vehicle.health) {
         marker.health = vehicle.health
         marker.ring.material.color.set(HEALTH_COLORS[vehicle.health])
@@ -379,6 +391,11 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
   }
 
   function place(marker: Marker, delta: number) {
+    if (marker.offRoute && marker.gpsTrail.length) {
+      placeOffRoute(marker, delta)
+      return
+    }
+    marker.gpsShown = null
     if (playing && delta > 0) {
       // 속도로 앞으로 내다보고, 서버 위치와의 차이는 천천히 메웁니다.
       const rate = ((marker.speed / 3600) * (marker.gps ? 1 : timeScale)) / marker.lengthKm
@@ -418,6 +435,53 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
     } else {
       marker.ring.material.opacity = 0.9
     }
+  }
+
+  /**
+   * 경로 밖 실차: 최근 GPS 위치에 두고(새 위치로 부드럽게 옮김) 최근 이동 방향을 보게 하며,
+   * 꼬리 대신 최근 2분의 실제 궤적을 오래된 쪽이 흐리게 그립니다.
+   */
+  function placeOffRoute(marker: Marker, delta: number) {
+    const points = marker.gpsTrail
+    const target = points.at(-1)!
+    marker.gpsShown ??= { ...target }
+    const follow = playing ? Math.min(1, delta * 3) : 1
+    marker.gpsShown.x += (target.x - marker.gpsShown.x) * follow
+    marker.gpsShown.z += (target.z - marker.gpsShown.z) * follow
+    // 3m 넘게 떨어진 앞 위치에서 지금 위치로 향하는 방향(제자리면 보던 방향 그대로)
+    const from = [...points].reverse().find((point) => Math.hypot(point.x - target.x, point.z - target.z) > 3)
+    if (from) marker.holder.rotation.y = Math.atan2(-(target.z - from.z), target.x - from.x)
+    marker.holder.position.set(marker.gpsShown.x / METERS_PER_UNIT, 0, marker.gpsShown.z / METERS_PER_UNIT)
+    const distance = camera.position.distanceTo(marker.holder.position)
+    marker.holder.scale.setScalar(distance * screenScale(distance))
+    if (playing && delta > 0) rollWheels(marker.miniature, Math.min(marker.speed / 3.6, 9) * delta)
+    if (marker.miniature.leanPivot) marker.miniature.leanPivot.rotation.x *= playing ? 1 - Math.min(1, delta * 4) : 0
+
+    // 궤적: 지나온 GPS 점들을 길이에 따라 TRAIL_SAMPLES개로 다시 나눠 그립니다.
+    const path = [...points.slice(0, -1), marker.gpsShown]
+    const lengths = [0]
+    for (let i = 1; i < path.length; i += 1) lengths.push(lengths[i - 1]! + Math.hypot(path[i]!.x - path[i - 1]!.x, path[i]!.z - path[i - 1]!.z))
+    const total = lengths.at(-1)!
+    marker.trail.visible = total > 1
+    if (!marker.trail.visible) return
+    const positions = marker.trail.geometry.getAttribute('position') as BufferAttribute
+    const half = marker.holder.scale.x * 0.12
+    let segment = 0
+    for (let i = 0; i < TRAIL_SAMPLES; i += 1) {
+      const along = (total * i) / (TRAIL_SAMPLES - 1)
+      while (segment < path.length - 2 && lengths[segment + 1]! < along) segment += 1
+      const a = path[segment]!
+      const b = path[segment + 1] ?? a
+      const span = lengths[segment + 1]! - lengths[segment]! || 1
+      const t = Math.min(1, Math.max(0, (along - lengths[segment]!) / span))
+      const dx = (b.x - a.x) / span
+      const dz = (b.z - a.z) / span
+      const x = (a.x + (b.x - a.x) * t) / METERS_PER_UNIT
+      const z = (a.z + (b.z - a.z) * t) / METERS_PER_UNIT
+      positions.setXYZ(i * 2, x - dz * half, 0.01, z + dx * half)
+      positions.setXYZ(i * 2 + 1, x + dz * half, 0.01, z - dx * half)
+    }
+    positions.needsUpdate = true
   }
 
   /**
