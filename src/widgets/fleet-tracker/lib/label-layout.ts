@@ -37,8 +37,9 @@ const overlaps = (a: Rect, b: Rect) => a.left < b.right && b.left < a.right && a
 /**
  * 탈것 이름표와 지명이 서로 겹치지 않게 놓습니다.
  * - 탈것 이름표의 제자리는 미니어처 바로 위(가운데 맞춤)입니다. 따라가는 탈것을 먼저, 나머지는 화면 아래쪽(카메라에 가까운 쪽)부터
- *   놓고, 먼저 놓인 이름표와 겹치면 그 위나 옆(붙일 곳에 가까운 쪽) 가운데 덜 움직이는 쪽으로 비켜 섭니다. 화면(view) 밖으로
- *   나가는 자리는 고르지 않습니다.
+ *   놓습니다. 제자리가 먼저 놓인 이름표와 겹치면, 먼저 놓인 이름표마다 그 위·왼쪽·오른쪽 자리를 후보로 두고 어느 이름표와도
+ *   겹치지 않는 자리 가운데 덜 움직이고 화면(view) 밖으로 덜 잘리는 곳을 고릅니다. 그런 자리가 없거나 가장 나은 자리도
+ *   4분의 1 넘게 잘리면 제자리에 둡니다(겹쳐도 보이는 편이 잘려 안 보이는 것보다 낫습니다).
  * - 지명은 그 자리 가운데에 두되, 탈것 이름표·미니어처나 먼저 놓인 지명과 겹치면 숨깁니다(지명은 길 찾기를 돕는 꾸밈).
  */
 export function layoutLabels(
@@ -55,24 +56,41 @@ export function layoutLabels(
     .sort((a, b) => Number(b.id === focusId) - Number(a.id === focusId) || b.y - a.y)
   for (const point of vehicles) {
     const { width, height } = sizeOf(point.id)
-    let left = point.x - width / 2
-    let top = point.y - height
+    const home = { left: point.x - width / 2, top: point.y - height }
+    let spot = home
     if (point.visible) {
-      // 비킬 때마다 먼저 놓인 이름표 하나를 넘으므로, 그 수의 두 배만큼 다시 보면 충분합니다.
-      for (let tries = 0; tries <= placed.length * 2; tries += 1) {
-        const rect = { left, top, right: left + width, bottom: top + height }
-        const hit = placed.find((other) => overlaps(other, rect))
-        if (!hit) break
-        const above = hit.top - height - gap
-        const side = point.x < (hit.left + hit.right) / 2 ? hit.left - width - gap : hit.right + gap
-        const aboveFits = above >= 0
-        const sideFits = side >= 0 && side + width <= view.width
-        if (aboveFits && (!sideFits || top - above <= Math.abs(side - left))) top = above
-        else left = side
+      const rectAt = ({ left, top }: { left: number; top: number }) => ({ left, top, right: left + width, bottom: top + height })
+      const free = (candidate: { left: number; top: number }) => !placed.some((other) => overlaps(other, rectAt(candidate)))
+      /** 화면 밖으로 잘리는 넓이 비율(0~1) */
+      const hidden = ({ left, top }: { left: number; top: number }) => {
+        const shownWidth = Math.max(0, Math.min(left + width, view.width) - Math.max(left, 0))
+        const shownHeight = Math.max(0, Math.min(top + height, view.height) - Math.max(top, 0))
+        return 1 - (shownWidth * shownHeight) / (width * height)
       }
-      placed.push({ left, top, right: left + width, bottom: top + height })
+      if (!free(home)) {
+        const candidates = placed.flatMap((other) => [
+          { left: home.left, top: other.top - height - gap },
+          { left: other.left - width - gap, top: home.top },
+          { left: other.right + gap, top: home.top },
+        ])
+        // 움직인 거리(px)에 잘리는 비율만큼 벌점(전부 잘리면 1000px)을 더해, 가장 작은 자리를 고릅니다.
+        const cost = (candidate: { left: number; top: number }) =>
+          Math.hypot(candidate.left - home.left, candidate.top - home.top) + hidden(candidate) * 1000
+        const best = candidates.filter(free).reduce<{ left: number; top: number } | null>(
+          (found, candidate) => (found && cost(found) <= cost(candidate) ? found : candidate),
+          null,
+        )
+        if (best && hidden(best) <= 0.25) spot = best
+      }
+      placed.push(rectAt(spot))
     }
-    result.push({ id: point.id, left, top, leader: { dx: point.x - (left + width / 2), dy: point.y - (top + height) }, shown: point.visible })
+    result.push({
+      id: point.id,
+      left: spot.left,
+      top: spot.top,
+      leader: { dx: point.x - (spot.left + width / 2), dy: point.y - (spot.top + height) },
+      shown: point.visible,
+    })
   }
   // 미니어처와 상태 고리 자리: 이름표가 붙는 곳(미니어처 위)부터 바닥 아래 고리까지, 폭은 그 높이에 비례해 어림합니다.
   for (const point of vehicles) {

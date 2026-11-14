@@ -40,6 +40,28 @@ describe('layoutLabels', () => {
     expect(result.g).toMatchObject({ left: 666, top: 10 })
   })
 
+  it('양옆 이름표 사이에 끼어도 오가지 않고, 어느 이름표와도 겹치지 않는 가장 가까운 자리를 고릅니다', () => {
+    // a·b는 맞붙어 있고 c는 그 사이 위쪽: 위로는 화면 밖, 오른쪽 504는 b와, 왼쪽 396은 a와 겹칩니다.
+    const result = layout([point('c', 500, 49), point('a', 450, 50), point('b', 550, 50)])
+    const rect = (id: string) => ({ left: result[id]!.left, top: result[id]!.top, right: result[id]!.left + 100, bottom: result[id]!.top + 40 })
+    const overlaps = (x: ReturnType<typeof rect>, y: ReturnType<typeof rect>) => x.left < y.right && y.left < x.right && x.top < y.bottom && y.top < x.bottom
+    expect(overlaps(rect('c'), rect('a'))).toBe(false)
+    expect(overlaps(rect('c'), rect('b'))).toBe(false)
+    // a 왼쪽(296)과 b 오른쪽(604)이 똑같이 154px 떨어져, 먼저 찾은 a 왼쪽을 고릅니다.
+    expect(result.c).toMatchObject({ left: 296, top: 9 })
+  })
+
+  it('화면 안에 맞는 자리가 없으면 조금 잘리는 자리를 고르고, 많이 잘리면 겹치더라도 제자리에 둡니다', () => {
+    // 폭 200 화면: b는 a 위(4px 잘림)나 옆(반 넘게 잘림)으로만 비킬 수 있어 위를 고릅니다.
+    const narrow = byId(layoutLabels([point('b', 100, 50), point('a', 100, 80)], sizeOf, null, { width: 200, height: 400 }))
+    expect(narrow.a).toMatchObject({ left: 50, top: 40 })
+    expect(narrow.b).toMatchObject({ left: 50, top: -4 })
+    // 폭 120 화면: 위는 24px(60%), 옆은 94% 잘려 모두 4분의 1을 넘으므로 제자리(겹침)에 둡니다.
+    const tight = byId(layoutLabels([point('b', 60, 40), point('a', 60, 60)], sizeOf, null, { width: 120, height: 400 }))
+    expect(tight.a).toMatchObject({ left: 10, top: 20 })
+    expect(tight.b).toMatchObject({ left: 10, top: 0, leader: { dx: 0, dy: 0 } })
+  })
+
   it('따라가는 탈것은 위쪽에 있어도 제자리를 갖습니다', () => {
     const result = layout([point('b', 120, 280), point('a', 100, 300)], 'b')
     expect(result.b).toMatchObject({ top: 240, leader: { dx: 0, dy: 0 } })

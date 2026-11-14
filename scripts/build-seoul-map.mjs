@@ -43,7 +43,8 @@ const SOURCES = {
       way["highway"~"^(path|footway)$"]["bicycle"~"^(yes|designated)$"](${b});`,
   },
   minor: { bbox: DISPLAY_BBOX, split: 1, out: 'body;>;out skel qt', select: (b) => `way["highway"~"^(residential|unclassified|living_street)$"](${b});` },
-  areas: {
+  // 예전(안쪽 범위만) areas.json을 그대로 쓰지 않도록 바깥 고리까지 받은 원본은 이름을 따로 둡니다.
+  'areas-outer': {
     bbox: OUTER_BBOX,
     split: 2,
     out: 'geom',
@@ -70,7 +71,10 @@ const OVERPASS = [
 ]
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-/** 공용 Overpass 서버는 붐비면 429·502·504를 돌려주므로, 잠시 기다렸다가 다른 서버로도 다시 요청합니다. */
+/**
+ * 공용 Overpass 서버는 붐비면 429·502·504를 돌려주므로, 잠시 기다렸다가 다른 서버로도 다시 요청합니다.
+ * 시간·메모리 한도를 넘기면 200 응답의 remark('runtime error: …')로 알리고 elements가 비거나 잘려 있으므로, 그 응답도 실패로 봅니다.
+ */
 async function overpass(name, query) {
   for (let attempt = 0; attempt < 8; attempt += 1) {
     const endpoint = OVERPASS[attempt % OVERPASS.length]
@@ -80,11 +84,14 @@ async function overpass(name, query) {
       body: new URLSearchParams({ data: query }),
       signal: AbortSignal.timeout(200_000),
     }).catch((error) => ({ ok: false, status: error.message }))
+    let problem = response.status
     if (response.ok) {
-      const text = await response.text()
-      if (text.trimStart().startsWith('{')) return JSON.parse(text)
+      const text = await response.text().catch(() => '')
+      const data = text.trimStart().startsWith('{') ? JSON.parse(text) : null
+      if (data && !/runtime error/i.test(data.remark ?? '')) return data
+      problem = data ? data.remark : '응답이 JSON이 아님'
     }
-    console.log(`[map] ${name}: ${new URL(endpoint).host} ${response.status}, 다시 요청합니다.`)
+    console.log(`[map] ${name}: ${new URL(endpoint).host} ${problem}, 다시 요청합니다.`)
     await wait(10_000 * (attempt + 1))
   }
   throw new Error(`Overpass에서 ${name}을 받지 못했습니다.`)
@@ -135,7 +142,7 @@ for (const name of Object.keys(SOURCES)) {
   if (args.fetch || !exists) await fetchRaw(name)
 }
 const load = async (name) => JSON.parse(await readFile(new URL(`${name}.json`, RAW), 'utf8'))
-const [roadsRaw, minorRaw, areasRaw, outerRaw, buildingsRaw] = await Promise.all(['roads', 'minor', 'areas', 'outer', 'buildings'].map(load))
+const [roadsRaw, minorRaw, areasRaw, outerRaw, buildingsRaw] = await Promise.all(['roads', 'minor', 'areas-outer', 'outer', 'buildings'].map(load))
 
 // ── 도로 그래프와 경로 ─────────────────────────────────────────────────────
 
