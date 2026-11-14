@@ -44,6 +44,7 @@ interface LiveIssueRow {
   detected_at: string
   cleared_at: string | null
   resolved_at: string | null
+  checked_at: string
 }
 
 const toUser = (row: UserRow): UserRecord => ({
@@ -87,10 +88,8 @@ const toLiveIssue = (row: LiveIssueRow): LiveIssueRecord => ({
   detectedAt: Number(row.detected_at),
   clearedAt: toNumber(row.cleared_at),
   resolvedAt: toNumber(row.resolved_at),
+  checkedAt: Number(row.checked_at),
 })
-
-const ACTION_COLUMNS = 'id, issue_id, vehicle_id, action, sent_at, delivered_at, acked_at, ack_result, ack_message'
-const READING_COLUMNS = 'vehicle_id, at, speed, metrics, lat, lng, route_progress, odometer'
 
 /** Neon(Postgres) 저장소. 서버리스 함수에서 HTTP로 질의합니다. */
 export function createPostgresStore(url: string): Store {
@@ -98,7 +97,10 @@ export function createPostgresStore(url: string): Store {
   return {
     kind: 'postgres',
     async listActionsSince(since) {
-      const rows = (await sql.query(`select ${ACTION_COLUMNS} from remote_actions where sent_at >= $1 order by sent_at`, [since])) as ActionRow[]
+      const rows = (await sql`
+        select id, issue_id, vehicle_id, action, sent_at, delivered_at, acked_at, ack_result, ack_message
+        from remote_actions where sent_at >= ${since} order by sent_at
+      `) as ActionRow[]
       return rows.map(toAction)
     },
     async insertAction(record) {
@@ -118,12 +120,11 @@ export function createPostgresStore(url: string): Store {
       `
     },
     async takeCommands(vehicleId, now) {
-      const rows = (await sql.query(
-        `update remote_actions set delivered_at = coalesce(delivered_at, $2)
-         where vehicle_id = $1 and issue_id like 'live-%' and ack_result is null and sent_at > $3
-         returning ${ACTION_COLUMNS}`,
-        [vehicleId, now, now - ACK_TIMEOUT],
-      )) as ActionRow[]
+      const rows = (await sql`
+        update remote_actions set delivered_at = coalesce(delivered_at, ${now})
+        where vehicle_id = ${vehicleId} and issue_id like 'live-%' and ack_result is null and sent_at > ${now - ACK_TIMEOUT}
+        returning id, issue_id, vehicle_id, action, sent_at, delivered_at, acked_at, ack_result, ack_message
+      `) as ActionRow[]
       return rows.map(toAction).sort((a, b) => a.sentAt - b.sentAt)
     },
     async ackCommand({ id, vehicleId, ack, now }) {
@@ -181,22 +182,28 @@ export function createPostgresStore(url: string): Store {
       `
     },
     async listReadingsSince(since) {
-      const rows = (await sql.query(`select ${READING_COLUMNS} from telemetry_readings where at >= $1 order by at`, [since])) as ReadingRow[]
+      const rows = (await sql`
+        select vehicle_id, at, speed, metrics, lat, lng, route_progress, odometer
+        from telemetry_readings where at >= ${since} order by at
+      `) as ReadingRow[]
       return rows.map(toReading)
     },
     async listVehicleReadings(vehicleId, from, to) {
-      const rows = (await sql.query(
-        `select ${READING_COLUMNS} from telemetry_readings where vehicle_id = $1 and at >= $2 and at <= $3 order by at`,
-        [vehicleId, from, to],
-      )) as ReadingRow[]
+      const rows = (await sql`
+        select vehicle_id, at, speed, metrics, lat, lng, route_progress, odometer
+        from telemetry_readings where vehicle_id = ${vehicleId} and at >= ${from} and at <= ${to} order by at
+      `) as ReadingRow[]
       return rows.map(toReading)
     },
+    async latestReadingAt(vehicleId) {
+      const rows = (await sql`select max(at) as at from telemetry_readings where vehicle_id = ${vehicleId}`) as Array<{ at: string | null }>
+      return toNumber(rows[0]?.at ?? null)
+    },
     async lastPositionedReading(vehicleId, since) {
-      const rows = (await sql.query(
-        `select ${READING_COLUMNS} from telemetry_readings
-         where vehicle_id = $1 and at >= $2 and lat is not null order by at desc limit 1`,
-        [vehicleId, since],
-      )) as ReadingRow[]
+      const rows = (await sql`
+        select vehicle_id, at, speed, metrics, lat, lng, route_progress, odometer
+        from telemetry_readings where vehicle_id = ${vehicleId} and at >= ${since} and lat is not null order by at desc limit 1
+      `) as ReadingRow[]
       return rows[0] ? toReading(rows[0]) : null
     },
     async deleteReadingsBefore(before) {
@@ -204,32 +211,38 @@ export function createPostgresStore(url: string): Store {
     },
     async listLiveIssues(since) {
       const rows = (await sql`
-        select id, vehicle_id, metric_key, severity, detected_at, cleared_at, resolved_at
+        select id, vehicle_id, metric_key, severity, detected_at, cleared_at, resolved_at, checked_at
         from live_issues where resolved_at is null or resolved_at >= ${since}
       `) as LiveIssueRow[]
       return rows.map(toLiveIssue)
     },
     async listOpenLiveIssues(vehicleId) {
       const rows = (await sql`
-        select id, vehicle_id, metric_key, severity, detected_at, cleared_at, resolved_at
+        select id, vehicle_id, metric_key, severity, detected_at, cleared_at, resolved_at, checked_at
         from live_issues where vehicle_id = ${vehicleId} and resolved_at is null
       `) as LiveIssueRow[]
       return rows.map(toLiveIssue)
     },
     async insertLiveIssue(record) {
       const rows = await sql`
-        insert into live_issues (id, vehicle_id, metric_key, severity, detected_at, cleared_at, resolved_at)
-        values (${record.id}, ${record.vehicleId}, ${record.metricKey}, ${record.severity}, ${record.detectedAt}, ${record.clearedAt}, ${record.resolvedAt})
+        insert into live_issues (id, vehicle_id, metric_key, severity, detected_at, cleared_at, resolved_at, checked_at)
+        values (
+          ${record.id}, ${record.vehicleId}, ${record.metricKey}, ${record.severity}, ${record.detectedAt},
+          ${record.clearedAt}, ${record.resolvedAt}, ${record.checkedAt}
+        )
         on conflict do nothing
         returning id
       `
       return rows.length > 0
     },
-    async updateLiveIssue(record) {
-      await sql`
-        update live_issues set severity = ${record.severity}, cleared_at = ${record.clearedAt}, resolved_at = ${record.resolvedAt}
-        where id = ${record.id} and resolved_at is null
+    async updateLiveIssue(record, expectedCheckedAt) {
+      const rows = await sql`
+        update live_issues
+        set severity = ${record.severity}, cleared_at = ${record.clearedAt}, resolved_at = ${record.resolvedAt}, checked_at = ${record.checkedAt}
+        where id = ${record.id} and resolved_at is null and checked_at = ${expectedCheckedAt}
+        returning id
       `
+      return rows.length > 0
     },
   }
 }

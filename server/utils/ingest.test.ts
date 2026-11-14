@@ -71,6 +71,35 @@ describe('실차 수신(메모리 저장소)', () => {
     expect(resolved.vehicles.find((vehicle) => vehicle.id === G80.id)!.issues[0]).toMatchObject({ status: 'resolved', resolvedBy: 'cooling-mode' })
   })
 
+  it('늦게 도착한 옛 측정값은 이력에만 저장하고 문제 판단에 쓰지 않습니다', async () => {
+    const store = useStore()
+    const critical = tick(1000)
+    await recordTelemetry(G80, { at: critical, metrics: { coolant: 118 } }, now)
+    const [issue] = await store.listOpenLiveIssues(G80.id)
+    expect(issue).toMatchObject({ severity: 'critical', clearedAt: null })
+    // 위험 측정값보다 9초 앞선 정상값이 늦게 도착합니다.
+    const stale = await recordTelemetry(G80, { at: critical - 9_000, metrics: { coolant: 92 } }, tick(500))
+    expect(stale.stale).toBe(true)
+    expect((await store.listOpenLiveIssues(G80.id))[0]).toMatchObject({ clearedAt: null })
+    expect((await store.listVehicleReadings(G80.id, critical - 9_000, critical - 9_000)).length).toBe(1)
+    // 그 뒤 정상값은 받은 시각부터 해결 대기를 시작하므로 1초 만에 해결되지 않습니다.
+    const fresh = await recordTelemetry(G80, { at: tick(500), metrics: { coolant: 92 } }, now)
+    expect(fresh.stale).toBe(false)
+    expect((await store.listOpenLiveIssues(G80.id))[0]).toMatchObject({ clearedAt: now, resolvedAt: null })
+    await recordTelemetry(G80, { at: tick(CLEAR_HOLD), metrics: { coolant: 92 } }, now)
+    expect(await store.listOpenLiveIssues(G80.id)).toEqual([])
+  })
+
+  it('겹친 요청이 먼저 문제를 바꿨으면(checkedAt이 다르면) 덮어쓰지 않습니다', async () => {
+    const store = useStore()
+    await recordTelemetry(G80, { at: tick(1000), metrics: { battery: 12.2 } }, now)
+    const [issue] = (await store.listOpenLiveIssues(G80.id)).filter((item) => item.metricKey === 'battery')
+    expect(await store.updateLiveIssue({ ...issue!, severity: 'critical', checkedAt: now + 1 }, issue!.checkedAt - 1)).toBe(false)
+    expect(await store.updateLiveIssue({ ...issue!, severity: 'critical', checkedAt: now + 1 }, issue!.checkedAt)).toBe(true)
+    // 같은 지표에 해결되지 않은 문제가 있으면 새로 넣지 않습니다(다른 요청이 먼저 연 경우).
+    expect(await store.insertLiveIssue({ ...issue!, id: 'live-kao-0001-battery-1' })).toBe(false)
+  })
+
   it('GPS를 경로 위 위치로 바꾸고, 출발선을 지나면 바퀴를 셉니다', async () => {
     const geo = createRouteGeo(findRoute(G80.routeId))
     const at = (progress: number) => geo.toLatLng(progress)

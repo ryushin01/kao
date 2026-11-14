@@ -84,24 +84,40 @@ let lastPrune = 0
 /**
  * 측정값을 저장하고, 실측 문제를 열거나 해결하고, 차량이 받아 갈 명령을 돌려줍니다.
  * GPS가 있으면 경로 위 위치와 매시 정각부터 간 거리(바퀴)를 함께 저장합니다.
+ * 이미 더 새 측정값이 있는 늦게 도착한 측정값(stale)은 이력에만 저장하고, 문제 판단과 바퀴 수에는 쓰지 않습니다
+ * (예: 위험 측정값 뒤에 옛 정상값이 늦게 오면 해결 대기 시간이 옛 시각부터 시작돼 너무 일찍 해결됨).
  */
 export async function recordTelemetry(vehicle: VehicleSpec, input: TelemetryInput, now: number) {
   const store = useStore()
+  const [latestAt, previous] = await Promise.all([
+    store.latestReadingAt(vehicle.id),
+    input.gps ? store.lastPositionedReading(vehicle.id, Math.floor(input.at / 3600_000) * 3600_000) : null,
+  ])
+  const stale = latestAt !== null && input.at < latestAt
   let position: LivePosition | undefined
   if (input.gps) {
     const progress = locateOnRoute(vehicle, input.gps.lat, input.gps.lng)
-    const previous = await store.lastPositionedReading(vehicle.id, Math.floor(input.at / 3600_000) * 3600_000)
-    const odometer = nextOdometer(previous?.position ? { at: previous.at, position: previous.position } : null, progress, input.at)
+    const before = previous?.position ? { at: previous.at, position: previous.position } : null
+    const odometer = stale ? (before?.position.odometer ?? progress ?? 0) : nextOdometer(before, progress, input.at)
     position = { lat: input.gps.lat, lng: input.gps.lng, progress, odometer }
   }
   const reading: LiveReading = { vehicleId: vehicle.id, at: input.at, speed: input.speed, metrics: input.metrics, position }
   await store.insertReading(reading)
 
-  const [actions, open] = await Promise.all([todaysActions(now, true), store.listOpenLiveIssues(vehicle.id)])
-  const changes = evaluateLiveIssues({ vehicle, reading, open, actions, now })
-  for (const change of changes) {
-    if (change.created) await store.insertLiveIssue(change.record)
-    else await store.updateLiveIssue(change.record)
+  if (!stale) {
+    const actions = await todaysActions(now, true)
+    // 같은 탈것의 요청이 겹쳐 그사이 문제가 바뀌었으면(저장 실패) 다시 읽어 판단합니다. 이미 반영한 측정값은 건너뛰므로 다시 해도 안전합니다.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const open = await store.listOpenLiveIssues(vehicle.id)
+      let conflicted = false
+      for (const change of evaluateLiveIssues({ vehicle, reading, open, actions, now })) {
+        const saved = change.previous
+          ? await store.updateLiveIssue(change.record, change.previous.checkedAt)
+          : await store.insertLiveIssue(change.record)
+        if (!saved) conflicted = true
+      }
+      if (!conflicted) break
+    }
   }
   const commands = await store.takeCommands(vehicle.id, now)
   invalidateLiveCaches()
@@ -112,6 +128,8 @@ export async function recordTelemetry(vehicle: VehicleSpec, input: TelemetryInpu
   }
 
   return {
+    /** true면 더 새 측정값이 이미 있어 이력에만 저장했습니다. */
+    stale,
     position: position ? { onRoute: position.progress !== null, progress: position.progress, lap: lapOf(position) } : null,
     commands: commands.map((command) => toCommand(vehicle, command)),
   }

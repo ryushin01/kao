@@ -10,6 +10,7 @@ import {
   liveIssueId,
   liveIssueMetric,
   liveIssueView,
+  LIVE_READING_MAX_AGE,
   liveStateOf,
   nextOdometer,
   RECOVERY_TIMEOUT,
@@ -35,6 +36,7 @@ const openIssue = (patch: Partial<LiveIssueRecord> = {}): LiveIssueRecord => ({
   detectedAt: T,
   clearedAt: null,
   resolvedAt: null,
+  checkedAt: T,
   ...patch,
 })
 
@@ -93,24 +95,34 @@ describe('evaluateLiveIssues', () => {
   it('경고 기준을 넘으면 문제를 열고, 위험 기준을 넘으면 등급을 올리며 내리지는 않습니다', () => {
     expect(evaluate(95, T)).toEqual([])
     const [opened] = evaluate(COOLANT.warn! + 1, T)
-    expect(opened).toEqual({ created: true, record: openIssue() })
+    expect(opened).toEqual({ previous: null, record: openIssue() })
     const [escalated] = evaluate(COOLANT.crit! + 1, T + 1000, [opened!.record])
-    expect(escalated).toEqual({ created: false, record: openIssue({ severity: 'critical' }) })
-    expect(evaluate(COOLANT.warn! + 1, T + 2000, [escalated!.record])).toEqual([])
+    expect(escalated).toEqual({ previous: opened!.record, record: openIssue({ severity: 'critical', checkedAt: T + 1000 }) })
+    const [still] = evaluate(COOLANT.warn! + 1, T + 2000, [escalated!.record])
+    expect(still!.record).toEqual(openIssue({ severity: 'critical', checkedAt: T + 2000 }))
   })
 
   it('기준 안으로 돌아온 뒤 CLEAR_HOLD 동안 유지되면 해결하고, 그 사이 다시 넘으면 처음부터 기다립니다', () => {
     const [cleared] = evaluate(95, T + 1000, [openIssue()])
-    expect(cleared!.record).toMatchObject({ clearedAt: T + 1000, resolvedAt: null })
+    expect(cleared!.record).toMatchObject({ clearedAt: T + 1000, resolvedAt: null, checkedAt: T + 1000 })
     expect(evaluate(108, T + 2000, [cleared!.record])[0]!.record.clearedAt).toBeNull()
     const [resolved] = evaluate(95, T + 1000 + CLEAR_HOLD, [cleared!.record])
     expect(resolved!.record).toMatchObject({ clearedAt: T + 1000, resolvedAt: T + 1000 + CLEAR_HOLD })
   })
 
+  it('이미 반영한 측정값보다 오래된 측정값은 건너뛰고, 30초 넘게 끊겼다 돌아오면 해결 대기를 처음부터 셉니다', () => {
+    // 위험 측정값(T+10초)을 반영한 뒤 옛 정상값(T+1초)이 늦게 와도 해결 대기를 시작하지 않습니다.
+    expect(evaluate(95, T + 1_000, [openIssue({ severity: 'critical', checkedAt: T + 10_000 })])).toEqual([])
+    // 정상값을 받고 신호가 끊겼다가 40초 뒤 다시 정상값이 와도, 그 사이를 모르므로 바로 해결하지 않습니다.
+    const back = T + 2_000 + LIVE_READING_MAX_AGE + 10_000
+    const [resumed] = evaluate(95, back, [openIssue({ clearedAt: T + 1_000, checkedAt: T + 2_000 })])
+    expect(resumed!.record).toMatchObject({ clearedAt: back, resolvedAt: null, checkedAt: back })
+  })
+
   it('차량 응답을 기다리는 명령이 있으면 응답이 올 때까지 해결하지 않습니다', () => {
-    const issue = openIssue({ clearedAt: T + 6_000 })
+    const issue = openIssue({ clearedAt: T + 6_000, checkedAt: T + 15_000 })
     const at = T + 6_000 + CLEAR_HOLD
-    expect(evaluate(95, at, [issue], [command()])).toEqual([])
+    expect(evaluate(95, at, [issue], [command()])[0]!.record).toMatchObject({ clearedAt: T + 6_000, resolvedAt: null })
     const applied = command({ ack: { at: at - 500, result: 'applied', message: null } })
     expect(evaluate(95, at, [issue], [applied])[0]!.record.resolvedAt).toBe(at)
   })

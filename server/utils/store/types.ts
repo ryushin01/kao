@@ -47,6 +47,8 @@ export interface Store {
   listReadingsSince(since: number): Promise<LiveReading[]>
   /** 한 탈것의 측정값(from 이상 to 이하, 시각 순) */
   listVehicleReadings(vehicleId: string, from: number, to: number): Promise<LiveReading[]>
+  /** 이 탈것의 가장 최근 측정 시각(없으면 null) */
+  latestReadingAt(vehicleId: string): Promise<number | null>
   /** since 뒤로 GPS 위치가 있는 가장 최근 측정값 */
   lastPositionedReading(vehicleId: string, since: number): Promise<LiveReading | null>
   deleteReadingsBefore(before: number): Promise<void>
@@ -56,6 +58,9 @@ export interface Store {
   listOpenLiveIssues(vehicleId: string): Promise<LiveIssueRecord[]>
   /** 새 실측 문제. 같은 지표에 해결되지 않은 문제가 이미 있으면(다른 요청이 먼저 열었으면) 넣지 않습니다. */
   insertLiveIssue(record: LiveIssueRecord): Promise<boolean>
-  /** 해결되지 않은 실측 문제의 등급·회복 시각·해결 시각을 바꿉니다. */
-  updateLiveIssue(record: LiveIssueRecord): Promise<void>
+  /**
+   * 해결되지 않은 실측 문제를 바꿉니다. 저장된 checkedAt이 expectedCheckedAt(판단에 쓴 값)과 같을 때만 바꾸고,
+   * 그사이 다른 요청이 먼저 바꿨으면 false를 돌려줍니다(다시 읽어 판단).
+   */
+  updateLiveIssue(record: LiveIssueRecord, expectedCheckedAt: number): Promise<boolean>
 }

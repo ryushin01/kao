@@ -71,6 +71,7 @@ create index if not exists telemetry_readings_at on telemetry_readings (at);
 create index if not exists telemetry_readings_vehicle_at on telemetry_readings (vehicle_id, at);
 
 -- 실측값이 기준을 넘어 연 문제. 같은 탈것·지표에 해결되지 않은 문제는 하나뿐입니다.
+-- checked_at은 마지막으로 반영한 측정 시각입니다. 바꿀 때 이 값이 그대로인지 확인해 겹친 요청끼리 덮어쓰지 않습니다.
 create table if not exists live_issues (
   id text primary key,
   vehicle_id text not null,
@@ -78,7 +79,8 @@ create table if not exists live_issues (
   severity text not null check (severity in ('warning', 'critical')),
   detected_at bigint not null,
   cleared_at bigint,
-  resolved_at bigint
+  resolved_at bigint,
+  checked_at bigint not null
 );
 create unique index if not exists live_issues_open on live_issues (vehicle_id, metric_key) where resolved_at is null;
 create index if not exists live_issues_resolved_at on live_issues (resolved_at);

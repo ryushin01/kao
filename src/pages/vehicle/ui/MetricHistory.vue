@@ -6,7 +6,8 @@ import { formatNumber } from '@shared/lib'
 import { HudPanel, LineChart } from '@shared/ui'
 import type { ChartThreshold } from '@shared/ui'
 
-const props = defineProps<{ vehicleId: string; metrics: MetricReading[] }>()
+/** live: 지금 실차 신호가 들어오는 탈것 */
+const props = defineProps<{ vehicleId: string; metrics: MetricReading[]; live?: boolean }>()
 
 const id = useId()
 const RANGES = [10, 30, 60] as const
@@ -28,10 +29,14 @@ const thresholds = computed<ChartThreshold[]>(() => {
   return list
 })
 
-/** 실차 측정값으로 채운 점이 있으면 몇 점인지 알립니다(나머지는 시뮬레이션). */
+/**
+ * 실차 측정값으로 채운 점이 있으면 몇 점인지 알립니다(나머지는 시뮬레이션).
+ * 실차 신호가 들어오는데 이 지표의 측정값이 없으면(장치가 보내지 않는 지표) 시뮬레이션 기준임을 밝힙니다.
+ */
 const sourceNote = computed(() => {
   const current = history.value
-  if (!current || current.liveSamples === 0) return ''
+  if (!current) return ''
+  if (current.liveSamples === 0) return props.live ? '이 구간에는 이 지표의 실차 측정값이 없어 그래프는 시뮬레이션 기준입니다.' : ''
   if (current.liveSamples === current.samples.length) return '그래프의 모든 점이 실차 측정값입니다.'
   return `그래프 ${current.samples.length}점 가운데 ${current.liveSamples}점이 실차 측정값이고, 나머지는 시뮬레이션입니다.`
 })

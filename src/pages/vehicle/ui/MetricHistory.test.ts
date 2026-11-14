@@ -43,6 +43,14 @@ describe('MetricHistory', () => {
     simulated.unmount()
   })
 
+  it('실차 신호인데 이 지표의 실측값이 없으면 시뮬레이션 기준이라고 밝힙니다', async () => {
+    fetchHistory.mockResolvedValue(history(0))
+    const wrapper = mount(MetricHistory, { props: { vehicleId: 'kao-0001', metrics: [metricFixture], live: true } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('이 구간에는 이 지표의 실차 측정값이 없어 그래프는 시뮬레이션 기준입니다.')
+    wrapper.unmount()
+  })
+
   it('지표 셀렉트는 레이블과 연결하고, 직접 그린 화살표는 보조기기에서 숨깁니다', async () => {
     fetchHistory.mockResolvedValue(history(0))
     const wrapper = mount(MetricHistory, { props: { vehicleId: 'kao-0001', metrics: [metricFixture] } })

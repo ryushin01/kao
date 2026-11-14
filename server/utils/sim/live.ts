@@ -20,6 +20,8 @@ export const CLEAR_HOLD = 10_000
 export const ACK_TIMEOUT = 120_000
 /** 명령을 적용한 뒤 지표가 기준 안으로 돌아오기를 기다리는 시간(ms) */
 export const RECOVERY_TIMEOUT = 10 * 60_000
+/** 명령이 상태에 영향을 주는 최대 시간: 응답 대기 + 회복 대기. 0시 직전에 보낸 명령도 이만큼은 계속 봅니다. */
+export const COMMAND_WINDOW = ACK_TIMEOUT + RECOVERY_TIMEOUT
 
 export const SEVERITY_RANK: Record<HealthState, number> = { nominal: 0, warning: 1, critical: 2 }
 
@@ -118,8 +120,8 @@ export const isPendingCommand = (action: ActionRecord, now: number) =>
 
 export interface LiveIssueChange {
   record: LiveIssueRecord
-  /** true면 새 문제, false면 이미 있던 문제의 변경 */
-  created: boolean
+  /** 이미 있던 문제를 바꿀 때, 판단에 쓴 저장 상태(저장소가 그사이 바뀌었는지 확인) */
+  previous: LiveIssueRecord | null
 }
 
 export interface EvaluateInput {
@@ -131,7 +133,11 @@ export interface EvaluateInput {
   now: number
 }
 
-/** 새 측정값으로 실측 문제를 열고, 등급을 올리고, 해결합니다. 바뀐 문제만 돌려줍니다. */
+/**
+ * 새 측정값으로 실측 문제를 열고, 등급을 올리고, 해결합니다. 반영한 문제마다 바뀐 기록을 돌려줍니다.
+ * 문제에 이미 반영한 측정값(checkedAt)보다 오래된 측정값은 건너뛰고, 측정값이 30초 넘게 끊겼다 돌아오면
+ * 그 사이를 알 수 없으므로 해결 대기(CLEAR_HOLD)를 처음부터 다시 셉니다.
+ */
 export function evaluateLiveIssues({ vehicle, reading, open, actions, now }: EvaluateInput): LiveIssueChange[] {
   const changes: LiveIssueChange[] = []
   for (const metric of vehicle.metrics) {
@@ -143,7 +149,7 @@ export function evaluateLiveIssues({ vehicle, reading, open, actions, now }: Eva
     if (!issue) {
       if (state === 'nominal') continue
       changes.push({
-        created: true,
+        previous: null,
         record: {
           id: liveIssueId(vehicle.id, metric.key, reading.at),
           vehicleId: vehicle.id,
@@ -152,22 +158,22 @@ export function evaluateLiveIssues({ vehicle, reading, open, actions, now }: Eva
           detectedAt: reading.at,
           clearedAt: null,
           resolvedAt: null,
+          checkedAt: reading.at,
         },
       })
       continue
     }
+    if (reading.at <= issue.checkedAt) continue
+    const checked = { ...issue, checkedAt: reading.at }
     if (state !== 'nominal') {
-      const severity = worse(issue.severity, state)
-      if (severity !== issue.severity || issue.clearedAt !== null) changes.push({ created: false, record: { ...issue, severity, clearedAt: null } })
+      changes.push({ previous: issue, record: { ...checked, severity: worse(issue.severity, state), clearedAt: null } })
       continue
     }
-    const clearedAt = issue.clearedAt ?? reading.at
+    const resumed = reading.at - issue.checkedAt > LIVE_READING_MAX_AGE
+    const clearedAt = issue.clearedAt === null || resumed ? reading.at : issue.clearedAt
     const settled = reading.at - clearedAt >= CLEAR_HOLD
-    if (settled && commandStage(lastCommand(issue.id, actions), now) !== 'awaiting') {
-      changes.push({ created: false, record: { ...issue, clearedAt, resolvedAt: reading.at } })
-    } else if (issue.clearedAt === null) {
-      changes.push({ created: false, record: { ...issue, clearedAt } })
-    }
+    const resolvedAt = settled && commandStage(lastCommand(issue.id, actions), now) !== 'awaiting' ? reading.at : null
+    changes.push({ previous: issue, record: { ...checked, clearedAt, resolvedAt } })
   }
   return changes
 }

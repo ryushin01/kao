@@ -54,4 +54,6 @@ export interface LiveIssueRecord {
   /** 지표가 기준 안으로 돌아온 시각. 다시 넘으면 null */
   clearedAt: number | null
   resolvedAt: number | null
+  /** 이 문제에 마지막으로 반영한 측정 시각. 이보다 오래된 측정값은 판단에 쓰지 않고, 저장할 때 동시 변경을 가리는 데도 씁니다. */
+  checkedAt: number
 }

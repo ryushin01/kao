@@ -106,7 +106,7 @@ const onSent = (response: RemoteActionResponse) => applyAction(response)
       </ul>
     </section>
 
-    <MetricHistory :vehicle-id="vehicle.id" :metrics="vehicle.metrics" />
+    <MetricHistory :vehicle-id="vehicle.id" :metrics="vehicle.metrics" :live="vehicle.source === 'live'" />
 
     <div class="vehicle__bottom">
       <FleetTracker :frame="frame!" :initial-follow="vehicle.id" title="경로 위치" />

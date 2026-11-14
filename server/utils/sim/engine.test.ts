@@ -102,6 +102,7 @@ describe('실차 신호', () => {
     detectedAt: now - 60_000,
     clearedAt: null,
     resolvedAt: null,
+    checkedAt: now - 2000,
   }
   const hot: LiveReading[] = [{ vehicleId: 'kao-0001', at: now - 2000, speed: 55, metrics: { coolant: 117.4 } }]
 
@@ -143,6 +144,21 @@ describe('실차 신호', () => {
     const simulated = computeFrame({ now: now + 60_000, actions: [applied], vehicleIds: ['kao-0001'] }).vehicles[0]!
     const plain = computeFrame({ now: now + 60_000, actions: [], vehicleIds: ['kao-0001'] }).vehicles[0]!
     expect(simulated).toEqual(plain)
+  })
+
+  it('0시 직전에 보낸 명령도 0시가 지나면 계속 차량 응답을 기다리고, 조치 기록은 오늘 것만 보여 줍니다', () => {
+    const midnight = dayStartOf(now) + 86_400_000
+    const lateIssue = { ...record, id: liveIssueId('kao-0001', 'coolant', midnight - 90_000), detectedAt: midnight - 90_000 }
+    const sent: ActionRecord = { id: 'c1', issueId: lateIssue.id, vehicleId: 'kao-0001', action: 'cooling-mode', sentAt: midnight - 60_000 }
+    const after = computeFrame({
+      now: midnight + 30_000,
+      actions: [sent],
+      readings: [{ ...hot[0]!, at: midnight + 29_000 }],
+      liveIssues: [lateIssue],
+      vehicleIds: ['kao-0001'],
+    })
+    expect(after.vehicles[0]!.issues[0]).toMatchObject({ status: 'resolving', stage: 'awaiting' })
+    expect(after.log).toEqual([])
   })
 
   it('GPS가 경로 위에 있으면 그 위치를 쓰고, 벗어나 있으면 시뮬레이션 위치를 씁니다', () => {

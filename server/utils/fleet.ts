@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { ActionCode, RemoteActionResponse, SessionUser } from '../../src/shared/api/contract'
 import { checkAction, computeFrame, dayStartOf } from './sim/engine'
 import type { FrameInput } from './sim/engine'
-import { isLiveIssueId } from './sim/live'
+import { COMMAND_WINDOW, isLiveIssueId } from './sim/live'
 import type { ActionRecord, LiveIssueRecord, LiveReading } from './sim/types'
 import { useStore } from './store'
 
@@ -15,15 +15,16 @@ let readingCache: { fetchedAt: number; readings: LiveReading[] } | null = null
 let liveIssueCache: { fetchedAt: number; since: number; issues: LiveIssueRecord[] } | null = null
 
 /**
- * 오늘(KST) 보낸 원격 조치. 0.5초마다 프레임을 만들 때마다 DB를 읽지 않도록 1.5초 동안 기억합니다.
- * 다른 인스턴스에서 보낸 조치와 차량 응답도 길어야 1.5초 뒤에 반영됩니다.
+ * 오늘(KST) 보낸 원격 조치. 0시 직전에 보내 아직 차량 응답·지표 회복을 기다릴 수 있는 실차 명령도 보도록
+ * 0시보다 COMMAND_WINDOW(12분) 앞부터 읽습니다(시뮬레이션과 조치 기록은 엔진이 오늘 것만 씀).
+ * 0.5초마다 프레임을 만들 때마다 DB를 읽지 않도록 1.5초 동안 기억합니다. 다른 인스턴스에서 보낸 조치와 차량 응답도 길어야 1.5초 뒤에 반영됩니다.
  */
 export async function todaysActions(now: number, fresh = false) {
   const dayStart = dayStartOf(now)
   if (!fresh && actionCache && actionCache.dayStart === dayStart && now - actionCache.fetchedAt < CACHE_MS) {
     return actionCache.actions
   }
-  const actions = await useStore().listActionsSince(dayStart)
+  const actions = await useStore().listActionsSince(dayStart - COMMAND_WINDOW)
   actionCache = { fetchedAt: now, dayStart, actions }
   return actions
 }

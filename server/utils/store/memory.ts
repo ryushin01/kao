@@ -84,6 +84,11 @@ export function createMemoryStore(): Store {
     async listVehicleReadings(vehicleId, from, to) {
       return readings.filter((reading) => reading.vehicleId === vehicleId && reading.at >= from && reading.at <= to).sort((a, b) => a.at - b.at)
     },
+    async latestReadingAt(vehicleId) {
+      let latest: number | null = null
+      for (const reading of readings) if (reading.vehicleId === vehicleId && (latest === null || reading.at > latest)) latest = reading.at
+      return latest
+    },
     async lastPositionedReading(vehicleId, since) {
       let latest: LiveReading | null = null
       for (const reading of readings) {
@@ -108,12 +113,14 @@ export function createMemoryStore(): Store {
       liveIssues.push({ ...record })
       return true
     },
-    async updateLiveIssue(record) {
-      const issue = liveIssues.find((item) => item.id === record.id && item.resolvedAt === null)
-      if (!issue) return
+    async updateLiveIssue(record, expectedCheckedAt) {
+      const issue = liveIssues.find((item) => item.id === record.id && item.resolvedAt === null && item.checkedAt === expectedCheckedAt)
+      if (!issue) return false
       issue.severity = record.severity
       issue.clearedAt = record.clearedAt
       issue.resolvedAt = record.resolvedAt
+      issue.checkedAt = record.checkedAt
+      return true
     },
   }
 }

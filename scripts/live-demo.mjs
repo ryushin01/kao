@@ -54,6 +54,16 @@ if (args.fault && !faulty) {
 }
 
 const base = args.url.replace(/\/$/, '')
+// 토큰이 평문으로 새지 않도록, 이 컴퓨터(loopback)가 아닌 주소는 https만 받습니다.
+let target
+try {
+  target = new URL(base)
+} catch {
+  fail(`--url이 올바른 주소가 아닙니다: ${args.url}`)
+}
+if (target.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(target.hostname)) {
+  fail('--url은 https:// 주소여야 합니다(http://는 localhost에서만).')
+}
 const headers = { Authorization: `Bearer ${args.token}`, 'content-type': 'application/json' }
 const route = findRoute(vehicle.routeId)
 const geo = createRouteGeo(route)
@@ -67,14 +77,19 @@ let elapsed = 0
 let offset = 0
 let recovering = false
 let speedCap = null
-const seen = new Set()
+/** 응답했거나 응답 중인 명령. 일시적으로 보내지 못하면 빼서, 다음 측정값 응답에 다시 오면 또 응답합니다. */
+const handled = new Set()
 
 const noise = (amount) => (Math.random() - 0.5) * 2 * amount
 
 async function post(path, body) {
   const response = await fetch(`${base}${path}`, { method: 'POST', headers, body: JSON.stringify(body) })
   const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(`${path} ${response.status}: ${data.message ?? data.statusMessage ?? ''}`)
+  if (!response.ok) {
+    const error = new Error(`${path} ${response.status}: ${data.message ?? data.statusMessage ?? ''}`)
+    error.status = response.status
+    throw error
+  }
   return data
 }
 
@@ -98,7 +113,10 @@ function acknowledge(command) {
         if (command.parameters?.powerRatio) speedCap = Math.round(high * command.parameters.powerRatio)
       }
     } catch (error) {
-      console.error(`  ↳ 명령 응답 실패: ${error.message}`)
+      // 이미 응답했거나 시간이 지난 명령(409), 없는 명령(404)이 아니면 다음에 다시 응답합니다.
+      const retry = error.status !== 404 && error.status !== 409
+      if (retry) handled.delete(command.id)
+      console.error(`  ↳ 명령 응답 실패${retry ? '(다음 측정값 때 다시 시도)' : ''}: ${error.message}`)
     }
   }, Number(args['ack-delay']))
 }
@@ -130,8 +148,8 @@ async function tick() {
   const where = result.position ? ` · ${result.position.onRoute ? `${result.position.lap}바퀴째 ${(result.position.progress * 100).toFixed(1)}%` : '경로 밖'}` : ''
   console.log(`${new Date().toLocaleTimeString('ko-KR')} ${speed.toFixed(0)}km/h${watched}${where}`)
   for (const command of result.commands ?? []) {
-    if (seen.has(command.id)) continue
-    seen.add(command.id)
+    if (handled.has(command.id)) continue
+    handled.add(command.id)
     console.log(`  ↳ 명령을 받았습니다: ${command.label}(${command.action})`)
     acknowledge(command)
   }

@@ -337,7 +337,10 @@ function reading(metric: MetricSpec, value: number): MetricReading {
 
 export interface FrameInput {
   now: number
-  /** 오늘(KST) 보낸 원격 조치. 실차 명령은 차량 응답(ack)까지 들어 있습니다. */
+  /**
+   * 오늘(KST) 보낸 원격 조치. 실차 명령은 차량 응답(ack)까지 들어 있습니다.
+   * 0시 전 조치가 섞여 있어도 됩니다. 시뮬레이션과 조치 기록은 오늘 것만 쓰고, 실측 문제는 0시 직전에 보낸 명령도 이어서 봅니다.
+   */
   actions: ActionRecord[]
   /** 최근 실차 측정값 */
   readings?: LiveReading[]
@@ -358,7 +361,8 @@ function liveIssuesOf(vehicle: VehicleSpec, records: LiveIssueRecord[], actions:
 
 export function computeFrame({ now, actions, readings = [], liveIssues = [], vehicleIds }: FrameInput): FleetFrame {
   const dayStart = dayStartOf(now)
-  const todays = actions.filter((action) => action.sentAt >= dayStart && action.sentAt <= now)
+  const sent = actions.filter((action) => action.sentAt <= now)
+  const todays = sent.filter((action) => action.sentAt >= dayStart)
   // 시뮬레이션(위치, 속도, 문제 일정)은 시뮬레이션 문제에 보낸 조치만으로 계산합니다.
   const simulated = todays.filter((action) => !isLiveIssueId(action.issueId))
   const daily = episodesFor(dayStart, simulated)
@@ -370,7 +374,7 @@ export function computeFrame({ now, actions, readings = [], liveIssues = [], veh
     // 실차 신호가 들어온 탈것에는 시뮬레이션 문제 대신 실측 문제를 붙입니다.
     const mine = live ? [] : episodes.filter((episode) => episode.vehicle.id === vehicle.id)
     const issues = live
-      ? liveIssuesOf(vehicle, liveIssues, todays, now)
+      ? liveIssuesOf(vehicle, liveIssues, sent, now)
       : mine.map((episode) => issueOf(episode, now)).filter((issue): issue is Issue => issue !== null)
     const active = issues.filter((issue) => issue.status !== 'resolved')
     const resolved = issues
@@ -412,7 +416,7 @@ export function computeFrame({ now, actions, readings = [], liveIssues = [], veh
       positionSource: onRoute ? 'gps' : 'simulated',
       gps: gps ? { lat: gps.lat, lng: gps.lng, at: gps.at, onRoute } : null,
       speed: round(speed, 1),
-      speedCap: live ? liveSpeedCap(vehicle, todays, now) : speedCapAt(vehicle, simulated, now),
+      speedCap: live ? liveSpeedCap(vehicle, sent, now) : speedCapAt(vehicle, simulated, now),
       health,
       metrics,
       issues: [...resolved, ...active],
