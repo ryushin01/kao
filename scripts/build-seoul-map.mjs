@@ -87,9 +87,14 @@ async function overpass(name, query) {
     let problem = response.status
     if (response.ok) {
       const text = await response.text().catch(() => '')
-      const data = text.trimStart().startsWith('{') ? JSON.parse(text) : null
+      let data = null
+      try {
+        data = text.trimStart().startsWith('{') ? JSON.parse(text) : null
+      } catch {
+        // 응답이 중간에 끊겨 JSON이 잘린 경우도 다시 요청합니다.
+      }
       if (data && !/runtime error/i.test(data.remark ?? '')) return data
-      problem = data ? data.remark : '응답이 JSON이 아님'
+      problem = data ? data.remark : '응답이 온전한 JSON이 아님'
     }
     console.log(`[map] ${name}: ${new URL(endpoint).host} ${problem}, 다시 요청합니다.`)
     await wait(10_000 * (attempt + 1))
