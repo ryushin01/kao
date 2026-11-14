@@ -5,7 +5,7 @@ import { expect, loginAs, test } from './fixtures'
 
 /** playwright.config.ts의 webServer가 넘기는 수신 토큰 */
 const headers = { Authorization: 'Bearer e2e-ingest-token' }
-const G80_ROUTE = createRouteGeo(findRoute('urban-loop'))
+const G80_ROUTE = createRouteGeo(findRoute('downtown'))
 
 interface Command {
   id: string

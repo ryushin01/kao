@@ -104,9 +104,21 @@ export async function notifyCriticalIssues(now = Date.now()) {
 
 let lastOpportunistic = 0
 
-/** 관제 스트림이 열려 있을 때 30초에 한 번씩 알림을 검사합니다(인스턴스마다). */
-export function maybeNotify(now = Date.now()) {
-  if (!ensureConfigured() || now - lastOpportunistic < 30_000) return
+const isDue = (now: number) => {
+  if (!ensureConfigured() || now - lastOpportunistic < 30_000) return false
   lastOpportunistic = now
-  void notifyCriticalIssues(now).catch(() => {})
+  return true
+}
+
+/** 관제 스트림이 열려 있을 때 30초에 한 번씩 알림을 검사합니다(인스턴스마다). 스트림이 열려 있는 동안이라 기다리지 않습니다. */
+export function maybeNotify(now = Date.now()) {
+  if (isDue(now)) void notifyCriticalIssues(now).catch(() => {})
+}
+
+/**
+ * 실차 측정값을 받을 때도 30초에 한 번 알림을 검사합니다(인스턴스마다). 관제 화면을 보는 사람이 없고 예약 검사가 늦어도
+ * 실측 위험 문제는 바로 알리기 위해서입니다. 서버리스 함수가 응답 뒤 멈추지 않도록 끝날 때까지 기다립니다.
+ */
+export async function notifyIfDue(now = Date.now()) {
+  if (isDue(now)) await notifyCriticalIssues(now).catch(() => {})
 }

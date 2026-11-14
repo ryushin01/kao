@@ -1,26 +1,19 @@
-import {
-  AmbientLight,
-  Color,
-  DirectionalLight,
-  GridHelper,
-  Group,
-  Mesh,
-  MeshBasicMaterial,
-  MeshStandardMaterial,
-  PlaneGeometry,
-  Raycaster,
-  RingGeometry,
-  TubeGeometry,
-  Vector2,
-  Vector3,
-} from 'three'
-import type { CatmullRomCurve3, Object3D, PerspectiveCamera } from 'three'
+import { AmbientLight, DirectionalLight, Fog, Group, Mesh, MeshBasicMaterial, PlaneGeometry, Raycaster, RingGeometry, Vector2, Vector3 } from 'three'
+import type { Object3D, PerspectiveCamera } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { FleetFrame, HealthState, VehicleSnapshot } from '@shared/api'
 import { ROUTES, findRoute } from '@shared/config'
-import { applyStudioEnvironment, createStage, disposeObject, routeCurve } from '@shared/lib'
+import { applyStudioEnvironment, createRouteGeo, createStage, disposeObject, toLocal } from '@shared/lib'
+import type { RouteGeo } from '@shared/lib'
 import { createMiniature, loadModelMiniature, preloadModel, rollWheels } from '@entities/vehicle'
 import type { Miniature } from '@entities/vehicle'
+import { MAP_PLACES } from '../config/places'
+import { buildSeoulMap, flatLayer, loadSeoulMap, ribbon } from './seoul-map'
+
+/**
+ * 서울 도심 관제 지도. OpenStreetMap 도로·한강 위를 미니어처가 실제 경로를 따라 달립니다.
+ * 장면 좌표 1은 실제 200m이고, 미니어처는 멀리서도 보이도록 카메라 거리에 맞춰 화면 크기를 일정하게 둡니다.
+ */
 
 const HEALTH_COLORS: Record<HealthState, string> = {
   nominal: '#d8d2cc',
@@ -28,16 +21,45 @@ const HEALTH_COLORS: Record<HealthState, string> = {
   critical: '#ff3b2b',
 }
 
-/** 지도에서 보이는 미니어처 길이(지도 단위). 실제 크기를 그대로 쓰면 자전거가 보이지 않습니다. */
-const MINIATURE_LENGTH = { sedan: 3.2, supercar: 3.2, superbike: 2.3, bicycle: 1.9 } as const
+/** 장면 좌표 1이 나타내는 실제 거리(m) */
+const METERS_PER_UNIT = 200
+const toScene = (lat: number, lng: number) => {
+  const { x, z } = toLocal(lat, lng)
+  return new Vector3(x / METERS_PER_UNIT, 0, z / METERS_PER_UNIT)
+}
 
-const OVERVIEW_CAMERA = new Vector3(0, 30, 31)
-const OVERVIEW_TARGET = new Vector3(0, 0, 1.5)
-const FOLLOW_OFFSET = new Vector3(-5.5, 5, 6.5)
+/** 미니어처 길이 비율(세단 기준 1). 화면 크기는 카메라 거리로 정합니다. */
+const MINIATURE_LENGTH = { sedan: 1, supercar: 1, superbike: 0.72, bicycle: 0.6 } as const
+/** 세단 미니어처가 화면 높이에서 차지하는 비율. 가까이 따라갈수록(카메라 거리 8 미만) 키워 주행이 잘 보이게 합니다. */
+const MINIATURE_SCREEN = 0.075
+const FOV = 38
+const TAN_HALF_FOV = Math.tan(((FOV / 2) * Math.PI) / 180)
+const screenScale = (distance: number) => 2 * TAN_HALF_FOV * MINIATURE_SCREEN * (1 + 0.9 * Math.min(1, Math.max(0, (8 - distance) / 7)))
+
+/** 네 경로가 모두 보이는 전체 보기(경로들의 가운데에서 남쪽 위로 비스듬히) */
+const routeBounds = (() => {
+  const points = ROUTES.flatMap((route) => route.path.map(([lat, lng]) => toScene(lat, lng)))
+  const xs = points.map((p) => p.x)
+  const zs = points.map((p) => p.z)
+  return { minX: Math.min(...xs), maxX: Math.max(...xs), minZ: Math.min(...zs), maxZ: Math.max(...zs) }
+})()
+const OVERVIEW_TARGET = new Vector3((routeBounds.minX + routeBounds.maxX) / 2, 0, (routeBounds.minZ + routeBounds.maxZ) / 2 + 3.5)
+/** 전체 보기 방향: 남쪽 위에서 비스듬히(약 51°) 내려다봅니다. */
+const OVERVIEW_DIRECTION = new Vector3(0, 41, 33).normalize()
+const OVERVIEW_PITCH = Math.atan2(41, 33)
+const FOLLOW_OFFSET = new Vector3(-1.1, 1.3, 1.6)
+
+/** 화면 비율에 맞춰 네 경로가 다 들어오는 카메라 거리(세로 화면이면 더 멀리) */
+function overviewDistance(aspect: number) {
+  const margin = 2.5
+  const byWidth = ((routeBounds.maxX - routeBounds.minX) / 2 + margin) / (TAN_HALF_FOV * aspect * 0.92)
+  const byDepth = (((routeBounds.maxZ - routeBounds.minZ) * Math.sin(OVERVIEW_PITCH)) / 2 + margin) / (TAN_HALF_FOV * 0.92)
+  return Math.max(byWidth, byDepth)
+}
 
 interface Marker {
   id: string
-  curve: CatmullRomCurve3
+  geo: RouteGeo
   lengthKm: number
   holder: Group
   miniature: Miniature
@@ -55,46 +77,69 @@ export interface TrackerSceneOptions {
   canvas: HTMLCanvasElement
   frame: FleetFrame
   playing: boolean
-  /** 매 프레임 화면 좌표(픽셀)를 알려 줍니다. 이름표 위치에 씁니다. */
+  /** 매 프레임 화면 좌표(픽셀)를 알려 줍니다. 이름표 위치에 씁니다(탈것은 id, 지명은 place:id). */
   onProject: (id: string, x: number, y: number, visible: boolean) => void
   onPick: (id: string) => void
 }
 
-// 서버가 GPS를 경로 위치로 바꿀 때와 같은 곡선(@shared/lib route-geo)을 써야 지도 위치가 맞습니다.
-const curveFor = (routeId: string) => routeCurve(findRoute(routeId))
+const geos = new Map<string, RouteGeo>()
+function geoFor(routeId: string) {
+  let geo = geos.get(routeId)
+  if (!geo) {
+    geo = createRouteGeo(findRoute(routeId))
+    geos.set(routeId, geo)
+  }
+  return geo
+}
 
 export function createTrackerScene({ canvas, frame, playing, onProject, onPick }: TrackerSceneOptions) {
-  // 조명 환경 계산(GPU)보다 먼저 지도용 3D 모델 다운로드를 걸어 둡니다.
+  // 조명 환경 계산(GPU)보다 먼저 지도 데이터와 지도용 3D 모델 다운로드를 걸어 둡니다.
+  const mapRequest = loadSeoulMap()
   for (const vehicle of frame.vehicles) preloadModel(vehicle.modelId, 'lite')
   let disposed = false
   let timeScale = frame.timeScale
   let followId: string | null = null
   const markers = new Map<string, Marker>()
   const projected = new Vector3()
-  const tangent = new Vector3()
-  const ahead = new Vector3()
   const previousTarget = new Vector3()
+  const places = MAP_PLACES.map((place) => ({ id: `place:${place.id}`, position: toScene(place.lat, place.lng) }))
 
   const stage = createStage({
     canvas,
-    fov: 38,
-    far: 300,
+    fov: FOV,
+    near: 0.05,
+    far: 400,
     onFrame: (delta) => update(delta),
   })
   const { scene, camera, renderer } = stage
   const disposeEnvironment = applyStudioEnvironment(renderer, scene, 0.6)
-  scene.fog = null
+  // 지도 끝이 툭 끊겨 보이지 않도록 멀리 있는 곳은 어둠에 묻습니다(거리는 전체 보기에 맞춰 정함).
+  const fog = new Fog('#050303', 55, 120)
+  scene.fog = fog
 
-  camera.position.copy(OVERVIEW_CAMERA)
   const controls = new OrbitControls(camera, canvas)
-  controls.target.copy(OVERVIEW_TARGET)
   controls.enableDamping = true
   controls.dampingFactor = 0.08
-  controls.minDistance = 4
-  controls.maxDistance = 70
+  controls.minDistance = 0.8
   controls.maxPolarAngle = Math.PI * 0.46
   controls.addEventListener('change', () => stage.invalidate())
-  controls.update()
+  // 사용자가 시점을 움직이기 전까지는 화면 크기가 바뀌면 전체 보기를 다시 맞춥니다.
+  let fittedAspect = 0
+  controls.addEventListener('start', () => {
+    fittedAspect = -1
+  })
+
+  function showOverview() {
+    const distance = overviewDistance(camera.aspect)
+    controls.target.copy(OVERVIEW_TARGET)
+    camera.position.copy(OVERVIEW_TARGET).addScaledVector(OVERVIEW_DIRECTION, distance)
+    controls.maxDistance = Math.max(80, distance * 1.4)
+    fog.near = distance * 1.15
+    fog.far = distance * 2.3
+    fittedAspect = camera.aspect
+    controls.update()
+  }
+  showOverview()
 
   scene.add(new AmbientLight('#ffffff', 0.35))
   const sun = new DirectionalLight('#ffffff', 1.6)
@@ -104,47 +149,50 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
   rim.position.set(20, 8, -25)
   scene.add(rim)
 
-  // 바닥과 격자
-  const ground = new Mesh(new PlaneGeometry(140, 140), new MeshStandardMaterial({ color: '#050303', roughness: 1 }))
-  ground.rotation.x = -Math.PI / 2
-  ground.position.y = -0.02
+  // 바닥: 지도 데이터를 받기 전에도 경로와 미니어처가 놓일 어두운 지면
+  const ground = flatLayer(new PlaneGeometry(200, 200).rotateX(-Math.PI / 2), '#060404', -50)
+  ground.position.copy(OVERVIEW_TARGET)
   scene.add(ground)
-  const grid = new GridHelper(80, 40, new Color('#8b0000'), new Color('#2a0c0c'))
-  grid.position.y = -0.01
-  scene.add(grid)
 
-  // 경로: 어두운 노면 띠 + 진홍 중앙선
-  const roadMaterial = new MeshStandardMaterial({ color: '#141010', roughness: 0.85 })
-  const lineMaterial = new MeshBasicMaterial({ color: '#b3100a' })
+  // 서울 도로·한강·공원(OpenStreetMap). 받는 동안에는 경로만 보입니다.
+  let seoul: Group | null = null
+  void mapRequest.then((data) => {
+    if (disposed || !data) return
+    seoul = buildSeoulMap(data, METERS_PER_UNIT)
+    scene.add(seoul)
+    stage.invalidate()
+  })
+
+  // 경로: 어두운 진홍 띠 + 밝은 중앙선(도로 위에 겹쳐 그림). 겹치는 이음매가 얼룩지지 않게 둘 다 불투명합니다.
+  const routeLayers = new Group()
   for (const route of ROUTES) {
-    const curve = curveFor(route.id)
-    const road = new Mesh(new TubeGeometry(curve, 240, 0.55, 8, true), roadMaterial)
-    road.scale.y = 0.04
-    scene.add(road)
-    const line = new Mesh(new TubeGeometry(curve, 240, 0.05, 6, true), lineMaterial)
-    line.position.y = 0.03
-    scene.add(line)
+    const line = route.path.flatMap(([lat, lng]) => {
+      const { x, z } = toLocal(lat, lng)
+      return [x, z]
+    })
+    routeLayers.add(flatLayer(ribbon([line], 70, METERS_PER_UNIT, true), '#4a0a07', -20))
+    routeLayers.add(flatLayer(ribbon([line], 16, METERS_PER_UNIT, true), '#ff4a36', -19))
   }
+  scene.add(routeLayers)
 
   function addMarker(vehicle: VehicleSnapshot) {
-    const curve = curveFor(vehicle.routeId)
+    const size = MINIATURE_LENGTH[vehicle.kind]
     const miniature = createMiniature(vehicle.modelId, vehicle.paint.hex)
-    const scale = MINIATURE_LENGTH[vehicle.kind] / miniature.length
-    miniature.root.scale.setScalar(scale)
+    miniature.root.scale.setScalar(size / miniature.length)
     const holder = new Group()
     holder.add(miniature.root)
     holder.userData.vehicleId = vehicle.id
     const ring = new Mesh(
-      new RingGeometry(MINIATURE_LENGTH[vehicle.kind] * 0.62, MINIATURE_LENGTH[vehicle.kind] * 0.7, 48),
+      new RingGeometry(size * 0.62, size * 0.7, 48),
       new MeshBasicMaterial({ color: HEALTH_COLORS[vehicle.health], transparent: true, opacity: 0.9 }),
     )
     ring.rotation.x = -Math.PI / 2
-    ring.position.y = 0.05
+    ring.position.y = 0.02
     holder.add(ring)
     scene.add(holder)
     markers.set(vehicle.id, {
       id: vehicle.id,
-      curve,
+      geo: geoFor(vehicle.routeId),
       lengthKm: findRoute(vehicle.routeId).lengthKm,
       holder,
       miniature,
@@ -161,7 +209,7 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
     void loadModelMiniature(vehicle.modelId, vehicle.paint.hex, 'lite').then((model) => {
       const marker = markers.get(vehicle.id)
       if (disposed || !model || !marker) return
-      model.root.scale.setScalar(MINIATURE_LENGTH[vehicle.kind] / model.length)
+      model.root.scale.setScalar(size / model.length)
       holder.remove(marker.miniature.root)
       disposeObject(marker.miniature.root)
       holder.add(model.root)
@@ -203,15 +251,19 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
     }
 
     const u = marker.shown
-    marker.curve.getPointAt(u, marker.holder.position)
-    marker.curve.getTangentAt(u, tangent)
-    marker.holder.rotation.y = Math.atan2(-tangent.z, tangent.x)
+    const point = marker.geo.pointAt(u)
+    const direction = marker.geo.directionAt(u)
+    marker.holder.position.set(point.x / METERS_PER_UNIT, 0, point.z / METERS_PER_UNIT)
+    marker.holder.rotation.y = Math.atan2(-direction.z, direction.x)
+    // 멀리서도 보이도록 카메라와의 거리에 비례해 키웁니다(화면에서 늘 비슷한 크기).
+    const distance = camera.position.distanceTo(marker.holder.position)
+    marker.holder.scale.setScalar(distance * screenScale(distance))
 
     const pivot = marker.miniature.leanPivot
     if (pivot) {
-      // 굽은 쪽(곡선 안쪽)으로 기울입니다.
-      marker.curve.getTangentAt((u + 0.01) % 1, ahead)
-      const turn = tangent.x * ahead.z - tangent.z * ahead.x
+      // 굽은 쪽(곡선 안쪽)으로 기울입니다. 60m 앞의 진행 방향과 비교합니다.
+      const ahead = marker.geo.directionAt(u + 60 / marker.geo.length)
+      const turn = direction.x * ahead.z - direction.z * ahead.x
       const side = Math.sign(turn) || 1
       const angle = (Math.min(marker.lean, 62) * Math.PI) / 180
       pivot.rotation.x += (side * angle - pivot.rotation.x) * (playing ? Math.min(1, delta * 4) : 1)
@@ -234,26 +286,27 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
     camera.position.add(controls.target.clone().sub(previousTarget))
   }
 
+  function project(id: string, position: Vector3, lift: number) {
+    projected.copy(position)
+    projected.y += lift
+    projected.project(camera)
+    const visible = projected.z < 1 && Math.abs(projected.x) <= 1.1 && Math.abs(projected.y) <= 1.1
+    onProject(id, ((projected.x + 1) / 2) * canvas.clientWidth, ((1 - projected.y) / 2) * canvas.clientHeight, visible)
+  }
+
   function update(delta: number) {
+    if (followId === null && fittedAspect > 0 && fittedAspect !== camera.aspect) showOverview()
     for (const marker of markers.values()) place(marker, delta)
     followCamera(delta)
     controls.update()
-    const width = canvas.clientWidth
-    const height = canvas.clientHeight
-    for (const marker of markers.values()) {
-      projected.copy(marker.holder.position)
-      projected.y += 1.8
-      projected.project(camera)
-      const visible = projected.z < 1 && Math.abs(projected.x) <= 1.1 && Math.abs(projected.y) <= 1.1
-      onProject(marker.id, ((projected.x + 1) / 2) * width, ((1 - projected.y) / 2) * height, visible)
-    }
+    for (const marker of markers.values()) project(marker.id, marker.holder.position, marker.holder.scale.x * 0.55)
+    for (const item of places) project(item.id, item.position, 0)
   }
 
   function setFollow(id: string | null) {
     followId = id
     if (id === null) {
-      controls.target.copy(OVERVIEW_TARGET)
-      camera.position.copy(OVERVIEW_CAMERA)
+      showOverview()
     } else {
       const marker = markers.get(id)
       if (marker) {
@@ -300,6 +353,9 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
       canvas.removeEventListener('pointerup', onPointerUp)
       controls.dispose()
       disposeEnvironment()
+      if (seoul) disposeObject(seoul)
+      disposeObject(routeLayers)
+      disposeObject(ground)
       stage.dispose()
     },
   }

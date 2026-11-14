@@ -41,7 +41,7 @@ Vercel 프로젝트 `kao` 하나에 화면(Nuxt SSR)과 `/api` 함수를 함께 
 ## 위험 알림(웹 푸시)
 
 - 브라우저가 서비스 워커(`public/sw.js`)로 구독하고, 구독은 `push_subscriptions`에 저장합니다. 권한은 헤더의 **위험 알림** 버튼을 눌렀을 때만 요청합니다.
-- Vercel Hobby의 크론은 하루 한 번뿐이라 `.github/workflows/notify.yml`이 **5분마다** `/api/cron/notify`를 부릅니다(`CRON_SECRET` 비밀, `SITE_URL` 변수). 관제 화면이 열려 있으면 스트림이 30초마다 함께 검사합니다. GitHub 예약 실행은 몇 분 늦거나 부하가 몰리는 정각에는 빠질 수 있어, 매시 2분부터 5분마다(`2-59/5`) 돌립니다. 예약 실행 기록은 `gh run list --workflow notify.yml --event schedule`로 봅니다.
+- Vercel Hobby의 크론은 하루 한 번뿐이라 `.github/workflows/notify.yml`이 **5분마다** `/api/cron/notify`를 부릅니다(`CRON_SECRET` 비밀, `SITE_URL` 변수). 관제 화면이 열려 있으면 스트림이, 실차 측정값이 들어오면 수신 API가 30초마다(인스턴스마다) 함께 검사합니다. GitHub 예약 실행은 매시 2분부터 5분마다(`2-59/5`)로 걸어 두었지만, 2026-11-14 확인 때 4시간 넘게 한 번도 돌지 않았고 같은 계정 다른 저장소의 주간 예약도 8시간 반 늦게 돌았습니다. 5분 검사가 꼭 필요하면 외부 크론(예: Cloudflare Workers 크론 트리거, cron-job.org)으로 `/api/cron/notify`를 `Authorization: Bearer $CRON_SECRET`과 함께 부르게 합니다. 예약 실행 기록은 `gh run list --workflow notify.yml --event schedule`로 봅니다.
 - 위험 등급이 된 열린 문제마다 한 번만 보냅니다(`push_notifications`). 관제 요원은 전체, 회원은 자기 탈것의 문제만 받습니다.
 
 ## 배포된 사이트 확인

@@ -1,9 +1,9 @@
 # KAO — Kinetic Aero One
 
 [![CI](https://github.com/ryushin01/kao/actions/workflows/ci.yml/badge.svg)](https://github.com/ryushin01/kao/actions/workflows/ci.yml)
-![version](https://img.shields.io/badge/version-0.4.0-8B0000)
+![version](https://img.shields.io/badge/version-0.5.0-8B0000)
 
-회원의 자동차·모터사이클·자전거가 달리는 동안 상태를 실시간으로 지켜보고, 문제가 생기면 원격으로 조치하는 관제 서비스입니다. 등록된 탈것은 실제 모양을 본뜬 3D 미니어처로 지도 위를 달립니다.
+회원의 자동차·모터사이클·자전거가 달리는 동안 상태를 실시간으로 지켜보고, 문제가 생기면 원격으로 조치하는 관제 서비스입니다. 등록된 탈것은 실제 모양을 본뜬 3D 미니어처로 서울 도심 지도의 실제 도로 위를 달립니다.
 
 **[데모 바로 보기](https://kao-ryushin01.vercel.app/)** · 로그인 화면에서 데모 계정 버튼(관제 요원, 회원 01~04)을 누르면 됩니다. 비밀번호는 모두 `kao-demo-2026`입니다.
 
@@ -13,11 +13,11 @@
 
 | 소개 | 관제 센터 |
 |---|---|
-| ![붉은 강착 원반이 도는 블랙홀 앞에 "돌이킬 수 없는 지점에 닿기 전에" 제목이 있는 첫 화면](docs/images/home.jpg) | ![경로 4개 위를 미니어처가 달리는 3D 관제 지도와 주행 위치 표](docs/images/fleet.jpg) |
+| ![붉은 강착 원반이 도는 블랙홀 앞에 "돌이킬 수 없는 지점에 닿기 전에" 제목이 있는 첫 화면](docs/images/home.jpg) | ![한강과 광화문·남산·여의도·반포대교 일대 도로가 그려진 서울 도심 3D 지도 위에서 붉게 강조된 경로 4개를 미니어처가 달리고, 아래에 경로·위치 기준·바퀴 수를 보여 주는 주행 위치 표](docs/images/fleet.jpg) |
 
 | 탈것 상세 | 미니어처 |
 |---|---|
-| ![로소 마스 색 아벤타도르 3D 모델이 놓인 턴테이블과 문제·원격 조치 패널](docs/images/vehicle.jpg) | ![세단·슈퍼카·슈퍼바이크·자전거 분류 고르기와, 세단 대표 모델 G80 미니어처](docs/images/miniature.jpg) |
+| ![로소 마스 색 아벤타도르 3D 모델이 놓인 턴테이블과, 엔진오일 과열 문제에 냉각 모드·출력 제한·운전자 알림 버튼이 있는 원격 조치 패널](docs/images/vehicle.jpg) | ![세단·슈퍼카·슈퍼바이크·자전거 분류 고르기와, 세단 대표 모델 G80 미니어처](docs/images/miniature.jpg) |
 
 | 로그인 | 지표 이력 |
 |---|---|
@@ -33,11 +33,12 @@
 |---|---|
 | 소개 | 스크롤할수록 블랙홀(사건의 지평선)에 다가가는 WebGL 셰이더 배경, 관측·감지·조치·미니어처 4개 챕터 |
 | 로그인 | 관제 요원은 4대 전체와 원격 조치, 회원은 자기 탈것만(조치 버튼 없이 상태 안내). 데모 계정 버튼 |
-| 관제 센터 | SSE로 0.5초마다 받는 주행 데이터, 3D 미니어처 관제 지도(시점 고르기·따라가기), 주행 위치 표, 분류 필터, 위험 등급순 조치 대기열, 원격 조치 기록 |
+| 관제 센터 | SSE로 0.5초마다 받는 주행 데이터, 서울 도심 3D 관제 지도(실제 도로·한강, 시점 고르기·따라가기), 주행 위치 표, 분류 필터, 위험 등급순 조치 대기열, 원격 조치 기록 |
 | 탈것 상세 | 턴테이블 미니어처, 실시간 지표와 경고·위험 기준, 문제별 원격 조치, 지표 이력 그래프(10·30·60분), 경로 위치 |
 | 위험 알림 | 위험 등급 문제를 웹 푸시로 알림(관제 요원은 전체, 회원은 자기 탈것) |
 
 - **분류**: 세단·슈퍼카·슈퍼바이크·자전거 네 분류로 탈것을 나누고, 분류마다 대표 모델(G80, 아벤타도르, 파니갈레 V4 S, 스트라이다)을 3D 미니어처로 보여 줍니다. 같은 분류에 탈것이 늘어나도 `src/entities/vehicle/config/categories.ts` 하나로 관리합니다.
+- **서울 지도**: OpenStreetMap 도로·한강·공원으로 광화문에서 여의도·반포까지를 3D로 그리고, 네 대가 실제 도로를 달립니다. G80은 광화문 도심 순환, 아벤타도르는 반포·동작대교 한강 순환, 파니갈레는 남산 순환, 스트라이다는 여의도 한강 자전거길입니다. 경로는 도로 이름·진행 방향을 지정한 경유점을 일방통행을 지키며 잇는 최단 경로로 만들고(`pnpm build:map`), 실차 GPS도 같은 경로에 맞춥니다.
 - **미니어처**: G80·아벤타도르·파니갈레는 실제 3D 모델(아래 출처)을 실제 치수와 방향으로 맞추고 바퀴를 분리해 썼고, STRiDA LT는 Three.js로 직접 모델링했습니다. 바퀴는 속도에 맞춰 구르고, 이륜차는 코너에서 기울기 값만큼 눕습니다. 도장 색은 회원 데이터대로 바뀝니다.
 - **원격 조치**: 냉각 모드, 출력·속도 제한, TPMS 재보정, 트랙션 강화, 절전 모드, 운전자 알림, 긴급 출동. 확인 대화상자를 거치고 두 번 눌러도 한 번만 보냅니다.
 - **서버리스 시뮬레이션**: 시뮬레이션은 시간의 순수 함수라 어느 서버 인스턴스든 같은 상태를 내고, 원격 조치만 DB에 저장합니다. 지표 이력도 지난 시각을 다시 계산해 그립니다.
@@ -78,14 +79,16 @@ pnpm dev        # http://localhost:3000
 | `pnpm db:migrate` | `DATABASE_URL`이 있으면 스키마 적용·데모 계정 맞추기 |
 | `pnpm build:models` | `assets-src/`의 Sketchfab 원본을 `public/models/*.glb`로 변환 |
 | `pnpm live:demo` | 실차 장치 흉내: 측정값·GPS를 보내고 받은 명령에 응답(`--vehicle`, `--fault`) |
+| `pnpm build:map` | OpenStreetMap으로 서울 지도 데이터와 주행 경로 만들기(`--fetch`면 원본부터 다시 받음) |
 
 ## 프로젝트 구조
 
 ```
 app/              Nuxt 라우트·진입점 (src를 다시 내보내기만 함)
 server/           Nitro API, 시뮬레이션·실차 연동(sim/), 저장소(store/), DB 스키마(db/)
-scripts/          3D 모델 변환, DB 마이그레이션, 실차 데모 장치
+scripts/          3D 모델 변환, 서울 지도 만들기, DB 마이그레이션, 실차 데모 장치
 public/models/    변환한 3D 모델(GLB)
+public/maps/      서울 지도 데이터(OpenStreetMap에서 간추림)
 src/
 ├─ app/           진입 컴포넌트, 전역 스타일
 ├─ pages/         소개, 관제 센터, 탈것 상세, 오류
@@ -98,19 +101,20 @@ tests/e2e/        Playwright E2E
 
 ## 출처
 
-| 모델 | 원작자 | 라이선스 |
+| 자료 | 원작자 | 라이선스 |
 |---|---|---|
 | [Genesis G80](https://sketchfab.com/3d-models/genesis-g80-e9abf10cfee04ea480951d3c2f71f060) | [Nieve5677](https://sketchfab.com/niev) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | [2022 Lamborghini Aventador LP780-4 Ultimae](https://sketchfab.com/3d-models/2022-lamborghini-aventador-lp780-4-ultimae-714a8795e58442258f96bd364b9096b1) | [Ddiaz Design](https://sketchfab.com/ddiaz-design) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | [Ducati Panigale V4](https://sketchfab.com/3d-models/ducati-panigale-v4-47f87e3d70f644289e34cbff91255d0c) | [ROY](https://sketchfab.com/roy.gearloft.in) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| 서울 도심 지도 데이터(도로·한강·공원) | [© OpenStreetMap 기여자](https://www.openstreetmap.org/copyright) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) |
 
-크기·방향 조정, 바퀴 분리, 도장 색 변경, 압축을 거쳤습니다. STRiDA LT 미니어처는 Three.js 코드로 직접 만들었고, 사이트 바닥글의 '3D 모델 출처' 링크가 이 표로 옵니다.
+3D 모델은 크기·방향 조정, 바퀴 분리, 도장 색 변경, 압축을 거쳤고, STRiDA LT 미니어처는 Three.js 코드로 직접 만들었습니다. 지도 데이터는 Overpass API로 받아 간추리고 그 도로로 주행 경로를 만들었습니다(`public/maps/seoul.json`, `src/shared/config/routes.ts`도 ODbL을 따릅니다). 사이트 바닥글의 '3D 모델·지도 데이터 출처' 링크가 이 표로 옵니다.
 
 ## 문서
 
 | 문서 | 내용 |
 |---|---|
-| [개발 가이드](docs/development.md) | 구조, API와 시뮬레이션, 로그인, 미니어처 모델링, 테스트, CI |
+| [개발 가이드](docs/development.md) | 구조, API와 시뮬레이션, 로그인, 서울 지도, 미니어처 모델링, 테스트, CI |
 | [배포](docs/deploy.md) | Vercel·Neon 구성, 환경 변수, 웹 푸시, 서버리스에서 상태 다루기 |
 | [실차 연결](docs/integration.md) | 측정값·GPS 수신, 실측 문제, 원격 조치 명령과 응답, 데모 장치 |
 | [버전 기록](CHANGELOG.md) | 버전별 변경 내용 |

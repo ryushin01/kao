@@ -47,7 +47,7 @@ export const vehicleFixture: VehicleSnapshot = {
   plate: 'K-0001',
   member: '가상 회원 01',
   paint: { name: 'Vik Black', hex: '#0e0f11' },
-  routeId: 'urban-loop',
+  routeId: 'downtown',
   source: 'simulated',
   progress: 0.42,
   mapProgress: 0.04,
