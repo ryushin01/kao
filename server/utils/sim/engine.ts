@@ -243,11 +243,15 @@ function positionAt(vehicle: VehicleSpec, actions: ActionRecord[], time: number)
   const here = drive.at(effective - laps * drive.lapTime)
   const there = drive.at(wrap(effective * TIME_SCALE, drive.lapTime))
   const hourStart = Math.floor(time / 3600_000) * 3600_000
+  // 지금 유효 시간이 흐르는 빠르기: 교통 흐름 배수, 속도·출력 제한이 걸려 있으면 제한 / 실제 위치의 표 속도까지
+  const pace = waves.get(vehicle.id)!.at(time / 1000)
+  const cap = speedCapAt(vehicle, actions, time)
+  const rate = cap !== null && here.speed * pace > cap / 3.6 ? cap / 3.6 / here.speed : pace
   return {
     lap: laps - Math.floor(effectiveTime(vehicle, actions, hourStart) / drive.lapTime) + 1,
     progress: here.distance / drive.length,
     mapProgress: there.distance / drive.length,
-    mapSpeed: there.speed * 3.6 * waves.get(vehicle.id)!.at(time / 1000),
+    mapSpeed: there.speed * 3.6 * rate,
   }
 }
 

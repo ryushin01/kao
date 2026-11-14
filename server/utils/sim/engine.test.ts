@@ -264,6 +264,19 @@ describe('도로에 맞는 속도와 기울기', () => {
     expect(aventador.every((vehicle) => vehicle.speed > 0)).toBe(true)
   })
 
+  it('속도 제한이 걸린 동안에도 지도 위치는 지도 속도(mapSpeed)의 TIME_SCALE배로 움직입니다', () => {
+    const sentAt = DAY + 4 * 3600_000
+    const capped: ActionRecord = { id: 'cap', issueId: 'x', vehicleId: 'kao-0002', action: 'speed-limit', sentAt }
+    const meters = findRoute('han-river').lengthKm * 1000
+    for (let t = sentAt + 3000; t < sentAt + SPEED_CAP_DURATION - 1000; t += 9000) {
+      const a = computeFrame({ now: t, actions: [capped], vehicleIds: ['kao-0002'] }).vehicles[0]!
+      const b = computeFrame({ now: t + 200, actions: [capped], vehicleIds: ['kao-0002'] }).vehicles[0]!
+      const moved = (((b.mapProgress - a.mapProgress + 1) % 1) * meters) / TIME_SCALE
+      const expected = ((a.mapSpeed + b.mapSpeed) / 2 / 3.6) * 0.2
+      expect(Math.abs(moved - expected)).toBeLessThanOrEqual(expected * 0.15 + 0.1)
+    }
+  })
+
   it('속도 제한 조치가 걸린 90초는 제한 아래로 달리고, 그만큼 뒤처집니다', () => {
     const sentAt = DAY + 4 * 3600_000
     const capped: ActionRecord = { id: 'cap', issueId: 'x', vehicleId: 'kao-0002', action: 'speed-limit', sentAt }

@@ -61,9 +61,12 @@ export function createDriveProfile(route: Pick<RouteDefinition, 'path' | 'speedL
     if (curvature > 1e-4) speed[i] = Math.min(speed[i]!, Math.sqrt(lateral / curvature))
   }
 
-  // 2. 신호에서는 섭니다.
+  // 2. 빨간 신호(정차 시간이 있는 신호)에서는 섭니다. 녹색(0초)은 서지 않고 지나갑니다.
   const stops = new Map<number, number>()
-  route.signals.forEach((at, index) => stops.set(Math.round(at * count) % count, index))
+  route.signals.forEach((at, index) => {
+    const dwell = Math.max(0, options.dwell(index))
+    if (dwell > 0) stops.set(Math.round(at * count) % count, dwell)
+  })
   for (const i of stops.keys()) speed[i] = 0
 
   // 3. 가감속 한계: 앞으로 가며 가속, 거꾸로 가며 감속을 제한합니다. 닫힌 경로라 두 바퀴 돌려 이음매도 맞춥니다.
@@ -85,15 +88,12 @@ export function createDriveProfile(route: Pick<RouteDefinition, 'path' | 'speedL
   const from: number[] = []
   let time = 0
   for (let i = 0; i < count; i += 1) {
-    const stop = stops.get(i)
-    if (stop !== undefined) {
-      const dwell = Math.max(0, options.dwell(stop))
-      if (dwell > 0) {
-        time += dwell
-        distances.push(i * step)
-        times.push(time)
-        from.push(-1)
-      }
+    const dwell = stops.get(i)
+    if (dwell !== undefined) {
+      time += dwell
+      distances.push(i * step)
+      times.push(time)
+      from.push(-1)
     }
     time += (2 * step) / Math.max(speed[i]! + speed[(i + 1) % count]!, 2 * CREEP)
     distances.push((i + 1) * step)

@@ -60,6 +60,13 @@ describe('createDriveProfile', () => {
     }
   })
 
+  it('녹색 신호(정차 0초)에서는 서지 않고 지나갑니다', () => {
+    const plain = createDriveProfile(square(), options)
+    const green = createDriveProfile(square([[0, 60]], [0.375]), { ...options, dwell: () => 0 })
+    expect(green.lapTime).toBeCloseTo(plain.lapTime, 6)
+    expect(near(sample(green), 1500).speed * 3.6).toBeCloseTo(50, 1)
+  })
+
   it('신호에서는 서서 정차 시간만큼 위치가 멈추고, 위치는 뒤로 가지 않습니다', () => {
     const plain = createDriveProfile(square(), options)
     const stopping = createDriveProfile(square([[0, 60]], [0.375]), options)
