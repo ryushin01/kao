@@ -52,13 +52,16 @@ export function locateOnRoute(vehicle: VehicleSpec, lat: number, lng: number) {
   return match.distance <= ROUTE_MATCH_LIMIT ? match.progress : null
 }
 
-/** 차량에 보내는 명령. 속도·출력 제한은 적용할 값을 함께 보냅니다. */
+/**
+ * 차량에 보내는 명령. 속도·출력 제한은 적용할 값을 함께 보냅니다. 출력 제한은 출력 비율과 함께,
+ * 관제 화면이 '속도 제한 적용 중'으로 보여 줄 최고 속도(capValue)도 담아 차량과 화면이 같은 값을 씁니다.
+ */
 export function toCommand(vehicle: VehicleSpec, action: ActionRecord) {
   const parameters =
     action.action === 'speed-limit'
       ? { maxSpeedKmh: capValue(vehicle, 'speed-limit') }
       : action.action === 'power-limit'
-        ? { powerRatio: 0.6 }
+        ? { powerRatio: 0.6, maxSpeedKmh: capValue(vehicle, 'power-limit') }
         : undefined
   return {
     id: action.id,

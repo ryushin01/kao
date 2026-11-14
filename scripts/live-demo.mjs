@@ -109,8 +109,8 @@ function acknowledge(command) {
       console.log(`  ↳ 명령 ${command.label}: ${result === 'applied' ? '적용으로' : '실패로'} 응답했습니다.`)
       if (result === 'applied') {
         recovering = true
+        // 속도·출력 제한은 명령에 담긴 최고 속도를 따릅니다(관제 화면과 같은 값).
         if (command.parameters?.maxSpeedKmh) speedCap = command.parameters.maxSpeedKmh
-        if (command.parameters?.powerRatio) speedCap = Math.round(high * command.parameters.powerRatio)
       }
     } catch (error) {
       // 이미 응답했거나 시간이 지난 명령(409), 없는 명령(404)이 아니면 다음에 다시 응답합니다.

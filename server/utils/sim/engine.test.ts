@@ -253,4 +253,16 @@ describe('도로에 맞는 속도와 기울기', () => {
     expect(35).toBeLessThan(lean.warn!)
     expect(lean.baseline! + Math.abs(lean.fault!.target - lean.nominal)).toBeGreaterThanOrEqual(lean.crit!)
   })
+  it('실차 신호인데 기울기·회전수 측정값이 빠지면 실차의 속도와 위치로 채웁니다(서 있으면 기울기 0, 공회전)', () => {
+    const now = DAY + 9 * 3600_000 + 777_000
+    const readings: LiveReading[] = [{ vehicleId: 'kao-0003', at: now - 1000, speed: 0, metrics: { coolant: 88 } }]
+    const ducati = computeFrame({ now, actions: [], readings, vehicleIds: ['kao-0003'] }).vehicles[0]!
+    const lean = ducati.metrics.find((metric) => metric.key === 'lean')!.value
+    const rpm = ducati.metrics.find((metric) => metric.key === 'rpm')!.value
+    expect(lean).toBeLessThanOrEqual(0.6)
+    expect(Math.abs(rpm - 1300)).toBeLessThanOrEqual(60)
+    // 이력도 그 시각 실차의 속도로 채웁니다.
+    const history = computeHistory({ vehicleId: 'kao-0003', metricKey: 'lean', from: now - 20_000, to: now, points: 5, actions: [], readings })!
+    expect(history.samples.at(-1)!.value).toBeLessThanOrEqual(0.6)
+  })
 })

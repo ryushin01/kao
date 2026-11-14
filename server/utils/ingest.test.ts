@@ -6,7 +6,7 @@ import { findRoute } from '../../src/shared/config/routes'
 import { createRouteGeo } from '../../src/shared/lib/route-geo'
 import { VEHICLE_SPECS } from './fleet-specs'
 import { frameFor, sendRemoteAction, todaysActions } from './fleet'
-import { locateOnRoute, recordTelemetry } from './ingest'
+import { locateOnRoute, recordTelemetry, toCommand } from './ingest'
 import { dayStartOf } from './sim/engine'
 import { CLEAR_HOLD } from './sim/live'
 import { useStore } from './store'
@@ -134,5 +134,12 @@ describe('실차 수신(메모리 저장소)', () => {
     })
     const actions = await todaysActions(midnight + 5 * 60_000, true)
     expect(actions.map((action) => action.id)).toContain('before-midnight')
+  })
+  it('속도·출력 제한 명령에는 관제 화면이 보여 줄 최고 속도를 함께 담습니다', () => {
+    const base = { id: 'c1', issueId: 'live-kao-0001-coolant-1', vehicleId: G80.id, sentAt: now }
+    // G80 평소 최고 속도 50km/h: 속도 제한 60%, 출력 제한 80%
+    expect(toCommand(G80, { ...base, action: 'speed-limit' }).parameters).toEqual({ maxSpeedKmh: 30 })
+    expect(toCommand(G80, { ...base, action: 'power-limit' }).parameters).toEqual({ powerRatio: 0.6, maxSpeedKmh: 40 })
+    expect(toCommand(G80, { ...base, action: 'cooling-mode' })).not.toHaveProperty('parameters')
   })
 })
