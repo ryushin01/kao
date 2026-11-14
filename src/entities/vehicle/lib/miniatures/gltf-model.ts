@@ -17,7 +17,11 @@ function load(modelId: VehicleModelId, detail: ModelDetail): Promise<Group | nul
   const key = `${modelId}:${detail}`
   let pending = cache.get(key)
   if (!pending) {
-    loader ??= new GLTFLoader().setMeshoptDecoder(MeshoptDecoder)
+    if (!loader) {
+      // 3D 모델의 meshopt 압축은 웹 워커 두 개에서 풉니다(메인 스레드가 수백 ms씩 멈추지 않게).
+      if (typeof Worker !== 'undefined') MeshoptDecoder.useWorkers(2)
+      loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder)
+    }
     pending = loader
       .loadAsync(detail === 'lite' ? asset.liteUrl : asset.url)
       .then((gltf) => {
@@ -70,6 +74,14 @@ function repaint(root: Object3D, paintHex: string) {
  * detail이 'lite'면 관제 지도용 가벼운 버전(.lite.glb)을 씁니다.
  * GLB는 scripts/build-models.mjs가 실제 치수, +x 앞 방향, 바퀴 노드(wheel_N)로 맞춰 둔 것입니다.
  */
+/**
+ * 3D 모델 다운로드만 먼저 걸어 둡니다(결과는 기억해 두고 loadModelMiniature가 이어 씁니다).
+ * 장면을 만들 때 조명 환경 계산처럼 오래 걸리는 일보다 먼저 불러, 네트워크를 기다리는 시간을 겹칩니다.
+ */
+export function preloadModel(modelId: VehicleModelId, detail: ModelDetail = 'full') {
+  void load(modelId, detail)
+}
+
 export async function loadModelMiniature(
   modelId: VehicleModelId,
   paintHex: string,

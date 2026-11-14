@@ -20,7 +20,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { FleetFrame, HealthState, VehicleSnapshot } from '@shared/api'
 import { ROUTES, findRoute } from '@shared/config'
 import { applyStudioEnvironment, createStage, disposeObject } from '@shared/lib'
-import { createMiniature, loadModelMiniature, rollWheels } from '@entities/vehicle'
+import { createMiniature, loadModelMiniature, preloadModel, rollWheels } from '@entities/vehicle'
 import type { Miniature } from '@entities/vehicle'
 
 const HEALTH_COLORS: Record<HealthState, string> = {
@@ -69,6 +69,8 @@ function curveFor(routeId: string) {
 }
 
 export function createTrackerScene({ canvas, frame, playing, onProject, onPick }: TrackerSceneOptions) {
+  // 조명 환경 계산(GPU)보다 먼저 지도용 3D 모델 다운로드를 걸어 둡니다.
+  for (const vehicle of frame.vehicles) preloadModel(vehicle.modelId, 'lite')
   let disposed = false
   let timeScale = frame.timeScale
   let followId: string | null = null

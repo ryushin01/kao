@@ -1,18 +1,14 @@
-export const vertexShader = /* glsl */ `
-varying vec2 vUv;
-void main() {
-  vUv = uv;
-  gl_Position = vec4(position.xy, 0.0, 1.0);
-}
-`
-
 /**
  * 빛이 휘는 블랙홀 근사: 별 배경의 중력 렌즈, 기울어진 강착 원반,
  * 원반 뒤쪽이 그림자 위로 휘어 보이는 후광, 광자 고리를 차례로 그립니다.
  * 색은 #8B0000(진홍)에서 시작해 안쪽으로 갈수록 뜨거운 주황·흰색으로 오릅니다.
  */
 export const fragmentShader = /* glsl */ `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
 precision highp float;
+#else
+precision mediump float;
+#endif
 uniform float uTime;
 uniform float uProgress;
 uniform vec2 uResolution;

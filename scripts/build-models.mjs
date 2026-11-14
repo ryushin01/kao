@@ -6,7 +6,8 @@
  * 3. 도장 재질에 extras.kaoPaint를 붙여 화면에서 색을 바꿀 수 있게 합니다.
  * 4. 중복 제거, 단순화, 텍스처 WebP 축소, 양자화, meshopt 압축을 합니다.
  *
- * 사용: node scripts/build-models.mjs [모델 id] [--inspect]
+ * 사용: node scripts/build-models.mjs [모델 id] [--inspect] [--lite-only]
+ *   --lite-only: 이미 만든 GLB에서 관제 지도용 가벼운 버전(.lite.glb)만 다시 만듭니다.
  */
 import { mkdir } from 'node:fs/promises'
 import { NodeIO } from '@gltf-transform/core'
@@ -19,6 +20,7 @@ import {
   prune,
   quantize,
   simplify,
+  simplifyPrimitive,
   textureCompress,
   transformMesh,
   transformPrimitive,
@@ -258,9 +260,14 @@ async function build(id, config) {
   await buildLite(id)
 }
 
+/** 이보다 작은 부품은 가장자리를 잠근 채 조금만 줄입니다(부품이 통째로 사라지거나 구멍이 나지 않게). */
+const LITE_SMALL_TRIANGLES = 1500
+
 /**
  * 관제 지도용 가벼운 버전(.lite.glb). 지도에서는 미니어처가 작게 보이므로 크게 단순화합니다.
  * 노멀이 있으면 각진 경계가 잠겨 단순화가 거의 안 되므로 노멀을 지우고, 화면에서 불러올 때 다시 계산합니다.
+ * 반투명 재질(유리)은 줄이지 않습니다. 얇은 열린 면이라 가장자리가 무너지며 구멍이 납니다(아벤타도르 앞유리).
+ * 작은 부품은 가장자리를 잠근 채 조금만 줄이고, 큰 부품만 크게 줄입니다.
  */
 async function buildLite(id) {
   const lite = await io.read(`public/models/${id}.glb`)
@@ -268,17 +275,30 @@ async function buildLite(id) {
     prim.setAttribute('NORMAL', null)
     prim.setAttribute('TANGENT', null)
   }
+  await lite.transform(dedup(), weld())
+  let kept = 0
+  for (const prim of lite.getRoot().listMeshes().flatMap((mesh) => mesh.listPrimitives())) {
+    const triangles = (prim.getIndices()?.getCount() ?? 0) / 3
+    if (prim.getMaterial()?.getAlphaMode() === 'BLEND') {
+      kept += triangles
+      continue
+    }
+    const small = triangles < LITE_SMALL_TRIANGLES
+    simplifyPrimitive(prim, {
+      simplifier: MeshoptSimplifier,
+      ratio: small ? 0.3 : 0.08,
+      error: small ? 0.01 : 0.02,
+      lockBorder: small,
+    })
+  }
   await lite.transform(
-    dedup(),
-    weld(),
-    simplify({ simplifier: MeshoptSimplifier, ratio: 0.08, error: 0.02, lockBorder: false }),
     textureCompress({ encoder: sharp, targetFormat: 'webp', resize: [256, 256], quality: 75 }),
     prune(),
     meshopt({ encoder: MeshoptEncoder, level: 'high' }),
   )
   await io.write(`public/models/${id}.lite.glb`, lite)
   const tris = [...materialBounds(lite).values()].reduce((sum, e) => sum + e.tris, 0)
-  console.log(`${id}: 지도용 삼각형 약 ${Math.round(tris)} · public/models/${id}.lite.glb`)
+  console.log(`${id}: 지도용 삼각형 약 ${Math.round(tris)}(그대로 둔 유리 ${Math.round(kept)}) · public/models/${id}.lite.glb`)
 }
 
 if (onlyId && !(onlyId in MODELS)) {
@@ -286,7 +306,9 @@ if (onlyId && !(onlyId in MODELS)) {
   process.exit(1)
 }
 
+const liteOnly = process.argv.includes('--lite-only')
 for (const [id, config] of Object.entries(MODELS)) {
   if (onlyId && onlyId !== id) continue
-  await build(id, config)
+  if (liteOnly) await buildLite(id)
+  else await build(id, config)
 }
