@@ -49,11 +49,12 @@ Vercel 프로젝트 `kao` 하나에 화면(Nuxt SSR)과 `/api` 함수를 함께 
 
 `workers/notify-cron`은 크론으로만 실행되는 워커입니다(HTTP 주소를 열지 않음, `workers_dev = false`). 부르는 주소는 `wrangler.toml`의 `SITE_URL`, 인증은 워커 비밀 `CRON_SECRET`입니다.
 
+저장소 루트에서 실행합니다(`--config`로 워커를 지정하므로 지금 위치와 상관없음).
+
 ```bash
-cd workers/notify-cron
-npx wrangler@4.162.0 deploy                   # 크론 트리거(*/5 * * * *)와 함께 배포
-npx wrangler@4.162.0 secret put CRON_SECRET   # Vercel·GitHub와 같은 값(표준 입력으로 넣기)
-npx wrangler@4.162.0 tail kao-notify-cron     # 실행 로그(상태 코드와 보낸 알림 수)
+npx wrangler@4.162.0 deploy --config workers/notify-cron/wrangler.toml                   # 크론 트리거(*/5 * * * *)와 함께 배포
+npx wrangler@4.162.0 secret put CRON_SECRET --config workers/notify-cron/wrangler.toml   # Vercel·GitHub와 같은 값(표준 입력)
+npx wrangler@4.162.0 tail kao-notify-cron                                                # 실행 로그(상태 코드와 보낸 알림 수)
 ```
 
 `CRON_SECRET`은 세 곳 모두 다시 읽을 수 없는 비밀이라, 바꿀 때는 새 값을 만들어 세 곳에 함께 넣고 Vercel을 다시 배포합니다. 로컬에는 커밋하지 않는 `.env.cron.local`에 사본을 둡니다.
@@ -62,7 +63,7 @@ npx wrangler@4.162.0 tail kao-notify-cron     # 실행 로그(상태 코드와 �
 SECRET=$(openssl rand -hex 32)
 vercel env rm CRON_SECRET production -y && printf '%s' "$SECRET" | vercel env add CRON_SECRET production --sensitive
 printf '%s' "$SECRET" | gh secret set CRON_SECRET
-printf '%s' "$SECRET" | (cd workers/notify-cron && npx wrangler@4.162.0 secret put CRON_SECRET)
+printf '%s' "$SECRET" | npx wrangler@4.162.0 secret put CRON_SECRET --config workers/notify-cron/wrangler.toml
 ```
 
 ## 배포된 사이트 확인
