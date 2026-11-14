@@ -1,5 +1,8 @@
 <script setup lang="ts">
-/** 3D 모델(CC BY 4.0)과 지도 데이터(© OpenStreetMap 기여자, ODbL)의 출처는 화면이 아니라 README에 적고, 여기서는 그 표로 잇습니다. */
+/**
+ * 3D 모델(CC BY 4.0)과 지도 데이터(© OpenStreetMap 기여자, ODbL)의 출처는 README에 적고, 여기서는 그 표로 잇습니다.
+ * 지도 데이터는 OpenStreetMap 재단의 출처 표시 지침대로 관제 지도 위에도 출처를 띄웁니다.
+ */
 const SOURCES_URL = 'https://github.com/ryushin01/kao#출처'
 </script>
 

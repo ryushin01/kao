@@ -128,7 +128,13 @@ onBeforeUnmount(() => {
           <span v-if="vehicle.health !== 'nominal'">{{ HEALTH_LABELS[vehicle.health] }}</span>
         </div>
       </div>
-      <p class="tracker__hint hud-label" aria-hidden="true">끌어서 회전 · 휠로 확대 · 탈것을 누르면 따라가기</p>
+      <div class="tracker__footer">
+        <!-- 지도 데이터 출처는 OpenStreetMap 재단 지침대로 지도 위에 둡니다(다른 자료의 출처는 README). -->
+        <p v-if="supported" class="tracker__attribution">
+          지도 데이터 <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap 기여자</a>
+        </p>
+        <p class="tracker__hint hud-label" aria-hidden="true">끌어서 회전 · 휠로 확대 · 탈것을 누르면 따라가기</p>
+      </div>
     </div>
 
     <div class="tracker__table-wrap" role="region" :aria-labelledby="`${id}-caption`" tabindex="0">
@@ -308,10 +314,40 @@ onBeforeUnmount(() => {
   background: var(--color-crimson);
 }
 
-.tracker__hint {
+/* 지도 아래쪽 한 줄: 왼쪽에 지도 데이터 출처, 오른쪽에 조작 안내. 좁으면 안내가 위 줄로 접힙니다. */
+.tracker__footer {
   position: absolute;
   right: var(--space-3);
-  bottom: var(--space-3);
+  bottom: var(--space-2);
+  left: var(--space-3);
+  display: flex;
+  flex-wrap: wrap-reverse;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-4);
+  pointer-events: none;
+}
+
+.tracker__attribution {
+  margin: 0;
+  padding: 0 var(--space-2);
+  font-size: 0.6875rem;
+  color: var(--color-text-muted);
+  background: rgb(0 0 0 / 0.65);
+  pointer-events: auto;
+}
+
+.tracker__attribution a {
+  /* 누르기 쉬운 높이(바닥글 출처 링크와 같게) */
+  display: inline-block;
+  padding-block: 0.375rem;
+  color: var(--color-text);
+  text-underline-offset: 0.2em;
+}
+
+.tracker__hint {
+  margin: 0 0 0 auto;
+  padding-bottom: var(--space-1);
   font-size: 0.6875rem;
 }
 

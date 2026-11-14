@@ -33,7 +33,7 @@ Vercel 프로젝트 `kao` 하나에 화면(Nuxt SSR)과 `/api` 함수를 함께 
 | `SESSION_SECRET` | 운영·미리보기 | 로그인 쿠키 서명 키. 운영에 없으면 서버가 시작하지 않습니다 |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | 운영·미리보기 | 웹 푸시 키 쌍(`web-push`의 `generateVAPIDKeys()`). 없으면 알림 버튼을 숨깁니다 |
 | `VAPID_SUBJECT` | 선택 | 푸시 서비스에 알리는 연락처(URL). 기본값은 운영 주소 |
-| `CRON_SECRET` | 운영 | `/api/cron/notify` 인증. GitHub 저장소 비밀에도 같은 값 |
+| `CRON_SECRET` | 운영 | `/api/cron/notify` 인증. Cloudflare 워커 비밀·GitHub 저장소 비밀에도 같은 값(바꿀 때 세 곳을 함께) |
 | `INGEST_TOKEN` | 운영 | 실차 측정값 수신 API 인증([실차 연결](integration.md)) |
 
 비밀 값은 Vercel에 읽을 수 없는 Secret으로 넣었습니다. 바꾸려면 `vercel env rm` 후 다시 `vercel env add`합니다.
@@ -41,8 +41,34 @@ Vercel 프로젝트 `kao` 하나에 화면(Nuxt SSR)과 `/api` 함수를 함께 
 ## 위험 알림(웹 푸시)
 
 - 브라우저가 서비스 워커(`public/sw.js`)로 구독하고, 구독은 `push_subscriptions`에 저장합니다. 권한은 헤더의 **위험 알림** 버튼을 눌렀을 때만 요청합니다.
-- Vercel Hobby의 크론은 하루 한 번뿐이라 `.github/workflows/notify.yml`이 **5분마다** `/api/cron/notify`를 부릅니다(`CRON_SECRET` 비밀, `SITE_URL` 변수). 관제 화면이 열려 있으면 스트림이, 실차 측정값이 들어오면 수신 API가 30초마다(인스턴스마다) 함께 검사합니다. GitHub 예약 실행은 매시 2분부터 5분마다(`2-59/5`)로 걸어 두었지만, 2026-11-14 확인 때 4시간 넘게 한 번도 돌지 않았고 같은 계정 다른 저장소의 주간 예약도 8시간 반 늦게 돌았습니다. 5분 검사가 꼭 필요하면 외부 크론(예: Cloudflare Workers 크론 트리거, cron-job.org)으로 `/api/cron/notify`를 `Authorization: Bearer $CRON_SECRET`과 함께 부르게 합니다. 예약 실행 기록은 `gh run list --workflow notify.yml --event schedule`로 봅니다.
-- 위험 등급이 된 열린 문제마다 한 번만 보냅니다(`push_notifications`). 관제 요원은 전체, 회원은 자기 탈것의 문제만 받습니다.
+- **5분마다** Cloudflare Workers 크론 트리거(`workers/notify-cron`)가 `/api/cron/notify`를 부릅니다. Vercel Hobby의 크론은 하루 한 번뿐이고, GitHub Actions 예약 실행은 2026-11-14 확인 때 5시간 넘게 한 번도 돌지 않아(같은 계정 다른 저장소의 주간 예약도 8시간 반 늦음) 쓰지 않습니다. `.github/workflows/notify.yml`은 손으로 한 번 부를 때 쓰는 수동 실행용입니다.
+- 관제 화면이 열려 있으면 스트림이, 실차 측정값이 들어오면 수신 API가 30초마다(인스턴스마다) 함께 검사합니다.
+- 위험 등급이 된 열린 문제마다 구독마다 한 번만 보냅니다(`push_deliveries`). 보내지 못하면 기록을 지워 다음 검사 때 다시 보냅니다. 관제 요원은 전체, 회원은 자기 탈것의 문제만 받습니다.
+
+## 5분 알림 크론(Cloudflare Workers)
+
+`workers/notify-cron`은 크론으로만 실행되는 워커입니다(HTTP 주소를 열지 않음, `workers_dev = false`). 부르는 주소는 `wrangler.toml`의 `SITE_URL`, 인증은 워커 비밀 `CRON_SECRET`입니다.
+
+아래 명령은 모두 저장소 루트에서 실행합니다(`--config`의 경로가 저장소 루트 기준).
+
+```bash
+npx wrangler@4.162.0 deploy --config workers/notify-cron/wrangler.toml                   # 크론 트리거(*/5 * * * *)와 함께 배포
+npx wrangler@4.162.0 secret put CRON_SECRET --config workers/notify-cron/wrangler.toml   # Vercel·GitHub와 같은 값(표준 입력)
+npx wrangler@4.162.0 tail kao-notify-cron                                                # 실행 로그(상태 코드와 보낸 알림 수)
+```
+
+`CRON_SECRET`은 세 곳 모두 다시 읽을 수 없는 비밀이라, 바꿀 때는 새 값을 만들어 세 곳에 함께 넣고 Vercel을 다시 배포합니다. 로컬에는 커밋하지 않는 `.env.cron.local`에 사본을 둡니다. 세 곳의 값이 어긋나지 않도록 한 단계라도 실패하면 거기서 멈추게 이어 실행합니다(저장소 루트에서).
+
+```bash
+SECRET=$(openssl rand -hex 32) &&
+  { vercel env rm CRON_SECRET production -y || true; } &&
+  printf '%s' "$SECRET" | vercel env add CRON_SECRET production --sensitive &&
+  printf '%s' "$SECRET" | gh secret set CRON_SECRET &&
+  printf '%s' "$SECRET" | npx wrangler@4.162.0 secret put CRON_SECRET --config workers/notify-cron/wrangler.toml &&
+  (umask 077 && printf 'CRON_SECRET=%s\n' "$SECRET" > .env.cron.local)
+```
+
+중간에 멈췄다면 고친 뒤 같은 블록을 처음부터 다시 실행합니다(새 값으로 세 곳을 다시 맞춤). Vercel에서 지우는 단계는 이미 지워져 있어도 넘어가므로, 추가 단계에서 멈췄을 때도 다시 실행하면 됩니다.
 
 ## 배포된 사이트 확인
 

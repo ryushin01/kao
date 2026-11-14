@@ -19,3 +19,6 @@ assets-src
 .vercel
 .env*.local
 .env*
+
+# Cloudflare 워커 로컬 상태(wrangler)
+.wrangler

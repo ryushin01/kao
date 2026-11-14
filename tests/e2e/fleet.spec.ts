@@ -10,6 +10,8 @@ test('관제 센터는 4대를 실시간으로 받아 표와 카드로 보여 �
   await expect(page.getByRole('table', { name: '주행 위치 표' }).locator('tbody tr')).toHaveCount(4)
   await expect(page.getByText('실시간 수신 중')).toBeVisible()
   await expect(page.getByRole('img', { name: /관제 지도/ })).toBeVisible()
+  // 지도 데이터 출처(OpenStreetMap)는 지도 위에 링크로 보여 줍니다.
+  await expect(page.getByRole('link', { name: '© OpenStreetMap 기여자' })).toHaveAttribute('href', 'https://www.openstreetmap.org/copyright')
 })
 
 test('조치 대기열에서 원격 조치를 확인하고 보내면 조치 중을 거쳐 해결됩니다', async ({ page }) => {

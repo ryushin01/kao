@@ -1,11 +1,9 @@
 name: Critical issue push
 
-# Vercel 무료 요금제의 크론은 하루 한 번뿐이라, 5분마다 위험 등급 문제를 검사해 웹 푸시를 보냅니다.
-# 관제 화면이 열려 있으면 서버가 30초마다 함께 검사합니다. (GitHub의 예약 실행은 몇 분 늦을 수 있습니다)
-# GitHub 예약 실행은 정각에 몰려 밀리거나 빠지므로, 매시 2분부터 5분마다(2, 7, 12, …, 57분) 돌립니다.
+# 위험 등급 문제를 검사해 웹 푸시를 보내는 /api/cron/notify를 손으로 한 번 부를 때 씁니다.
+# 5분마다 부르는 일은 Cloudflare Workers 크론(workers/notify-cron)이 합니다. GitHub 예약 실행은
+# 2026-11-14 확인 때 5시간 넘게 한 번도 돌지 않아 예약을 뺐습니다(docs/deploy.md).
 on:
-  schedule:
-    - cron: '2-59/5 * * * *'
   workflow_dispatch:
 
 jobs:
