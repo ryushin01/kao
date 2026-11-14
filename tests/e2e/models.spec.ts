@@ -17,7 +17,8 @@ test.describe('실제 3D 모델', () => {
     await expect.poll(() => loaded, { timeout: 15_000 }).toContain('/models/lamborghini-aventador.glb')
     await expect.poll(() => loaded, { timeout: 15_000 }).toContain('/models/lamborghini-aventador.lite.glb')
     await expect(page.getByRole('img', { name: /Lamborghini Aventador 미니어처/ })).toBeVisible()
-    await expect(page.getByRole('contentinfo').getByRole('link', { name: /2022 Lamborghini Aventador LP780-4 Ultimae/ })).toBeVisible()
+    // 모델 출처(CC BY 4.0)는 README 표에 있고, 바닥글은 그 표로 잇습니다.
+    await expect(page.getByRole('contentinfo').getByRole('link', { name: '3D 모델 출처 (README)' })).toHaveAttribute('href', 'https://github.com/ryushin01/kao#출처')
     expect(errors).toEqual([])
   })
 })
