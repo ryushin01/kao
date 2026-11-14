@@ -1,6 +1,6 @@
 export { formatClock, formatNumber, formatPercent, toIsoString } from './format'
 export { initMotionPreference, useMotion } from './motion'
-export { createRouteGeo, fromLocal, MAP_CENTER, toLocal } from './route-geo'
+export { createRouteGeo, fromLocal, leanAngle, MAP_CENTER, toLocal, turnRateAt } from './route-geo'
 export { applyStudioEnvironment } from './three/environment'
 export { createStage, disposeObject } from './three/stage'
 export { whenNearViewport } from './viewport'

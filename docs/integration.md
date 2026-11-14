@@ -121,7 +121,7 @@ POST /api/ingest/commands/:id/ack
 |---|---|---|
 | `cooling-mode` | 냉각 팬과 펌프를 최대로, 엔진 회전수를 낮춤 | |
 | `power-limit` | 최고 출력을 60%로 묶음 | `{ "powerRatio": 0.6 }` |
-| `speed-limit` | 최고 속도를 묶고 계기판에 안내 | `{ "maxSpeedKmh": 80 }` |
+| `speed-limit` | 최고 속도를 평소의 60%로 묶고 계기판에 안내 | `{ "maxSpeedKmh": 30 }`(G80. 탈것마다 다름) |
 | `tpms-recalibrate` | 타이어 공기압 센서 다시 맞춤 | |
 | `notify-rider` | 계기판과 운전자 휴대폰으로 점검 안내 | |
 | `traction-boost` | 트랙션·윌리 컨트롤 단계를 올림 | |

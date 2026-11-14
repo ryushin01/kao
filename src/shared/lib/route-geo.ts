@@ -39,6 +39,24 @@ export interface RouteGeo {
   match: (lat: number, lng: number) => RouteMatch
 }
 
+/**
+ * 경로 위 위치에서 굽은 정도(1/m, 부호 있음: 진행 방향 기준 오른쪽으로 꺾이면 +). 앞뒤 window(m) 지점의
+ * 진행 방향이 바뀐 각도를 그 거리로 나눕니다. 직선이면 0, 반지름 r인 원이면 1/r에 가깝습니다.
+ */
+export function turnRateAt(geo: RouteGeo, progress: number, window = 25) {
+  const offset = window / geo.length
+  const before = geo.directionAt(progress - offset)
+  const after = geo.directionAt(progress + offset)
+  const turn = Math.atan2(before.x * after.z - before.z * after.x, before.x * after.x + before.z * after.z)
+  return turn / (2 * window)
+}
+
+/** 굽은 길을 이 속도(km/h)로 돌 때 이륜차가 눕는 각도(°): atan(v²κ / g) */
+export function leanAngle(speedKmh: number, curvature: number) {
+  const speed = speedKmh / 3.6
+  return (Math.atan((speed * speed * Math.abs(curvature)) / 9.81) * 180) / Math.PI
+}
+
 /** 닫힌 경로(마지막 점 → 첫 점)를 길이 기준으로 다룹니다. */
 export function createRouteGeo(route: Pick<RouteDefinition, 'path'>): RouteGeo {
   const points = route.path.map(([lat, lng]) => toLocal(lat, lng))

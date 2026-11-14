@@ -23,7 +23,7 @@ import { VEHICLE_SPECS } from '../server/utils/fleet-specs.ts'
 import { metricState } from '../server/utils/sim/live.ts'
 import { HEALTH_LABELS } from '../src/shared/api/contract.ts'
 import { findRoute } from '../src/shared/config/routes.ts'
-import { createRouteGeo } from '../src/shared/lib/route-geo.ts'
+import { createRouteGeo, turnRateAt } from '../src/shared/lib/route-geo.ts'
 
 const { values: args } = parseArgs({
   options: {
@@ -135,7 +135,7 @@ async function tick() {
   const metrics = {}
   for (const metric of vehicle.metrics) {
     if (metric.key === 'speed') continue
-    const value = metric.derive ? metric.derive({ speed, progress, elapsed }) : metric.nominal
+    const value = metric.derive ? metric.derive({ speed, progress, elapsed, curvature: Math.abs(turnRateAt(geo, progress)) }) : metric.nominal
     const shifted = value + (metric === faulty ? offset : 0) + noise(metric.noise)
     metrics[metric.key] = Number(Math.min(metric.max, Math.max(metric.min, shifted)).toFixed(metric.precision))
   }

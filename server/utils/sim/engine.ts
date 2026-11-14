@@ -9,6 +9,8 @@ import type {
   VehicleSnapshot,
 } from '../../../src/shared/api/contract'
 import { findRoute } from '../../../src/shared/config/routes'
+import { createRouteGeo, turnRateAt } from '../../../src/shared/lib/route-geo'
+import type { RouteGeo } from '../../../src/shared/lib/route-geo'
 import { VEHICLE_SPECS } from '../fleet-specs'
 import type { MetricSpec, VehicleSpec } from '../fleet-specs'
 import {
@@ -143,9 +145,10 @@ function speedCapAt(vehicle: VehicleSpec, actions: ActionRecord[], time: number)
   return cap
 }
 
+/** 속도 제한은 평소 최고 속도의 60%(도심이면 시속 30km), 출력 제한은 80%로 묶습니다. */
 export function capValue(vehicle: VehicleSpec, action: ActionCode) {
   const [, high] = vehicle.cruise
-  return action === 'speed-limit' ? Math.min(80, high) : Math.round(high * 0.6)
+  return Math.round(high * (action === 'speed-limit' ? 0.6 : 0.8))
 }
 
 /** 실차가 적용했다고 응답한 속도·출력 제한(응답 시각부터 SPEED_CAP_DURATION 동안) */
@@ -304,11 +307,25 @@ function issueOf(episode: Episode, time: number): Issue | null {
 
 // ── 지표 ───────────────────────────────────────────────────────────────────
 
+const geos = new Map<string, RouteGeo>()
+/** 경로의 좌표 계산(경로마다 한 번 만들어 둠) */
+function routeGeo(routeId: string) {
+  let geo = geos.get(routeId)
+  if (!geo) {
+    geo = createRouteGeo(findRoute(routeId))
+    geos.set(routeId, geo)
+  }
+  return geo
+}
+
 function metricValue(vehicle: VehicleSpec, metric: MetricSpec, episodes: Episode[], actions: ActionRecord[], time: number, withNoise = true) {
   const speed = speedAt(vehicle, actions, time)
-  const base = metric.derive
-    ? metric.derive({ speed, progress: positionAt(vehicle, actions, time).progress, elapsed: time / 1000 })
-    : metric.nominal
+  let base = metric.nominal
+  if (metric.derive) {
+    const { progress } = positionAt(vehicle, actions, time)
+    const curvature = Math.abs(turnRateAt(routeGeo(vehicle.routeId), progress))
+    base = metric.derive({ speed, progress, elapsed: time / 1000, curvature })
+  }
   let offset = 0
   for (const episode of episodes) {
     if (episode.vehicle.id === vehicle.id && episode.metric.key === metric.key) offset += offsetAt(episode, time)

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ROUTES } from '../config/routes'
-import { createRouteGeo, fromLocal, toLocal } from './route-geo'
+import { createRouteGeo, fromLocal, leanAngle, toLocal, turnRateAt } from './route-geo'
 
 describe('route-geo', () => {
   it('위도·경도와 지도 좌표(m)를 오가면 같은 곳으로 돌아옵니다', () => {
@@ -40,5 +40,19 @@ describe('route-geo', () => {
     expect(Math.hypot(direction.x, direction.z)).toBeCloseTo(1, 6)
     const [lat, lng] = route.path[0]!
     expect(geo.match(lat + 0.02, lng).distance).toBeGreaterThan(1500)
+  })
+  it('굽은 정도는 반지름 r인 원에서 1/r이고 직선에서 0이며, 기울기는 atan(v²κ/g)입니다', () => {
+    // 지도 중심 둘레 반지름 200m 원(시계 방향)과, 남북으로 곧은 긴 고리
+    const circle = Array.from({ length: 180 }, (_, i) => {
+      const angle = (i / 180) * Math.PI * 2
+      return fromLocal(Math.cos(angle) * 200, Math.sin(angle) * 200)
+    }).map(({ lat, lng }) => [lat, lng] as const)
+    const round = createRouteGeo({ path: circle })
+    expect(Math.abs(turnRateAt(round, 0.3))).toBeCloseTo(1 / 200, 3)
+    const straight = createRouteGeo({ path: [[37.53, 126.96], [37.56, 126.96], [37.56, 126.9601], [37.53, 126.9601]] })
+    expect(turnRateAt(straight, 0.2)).toBeCloseTo(0, 6)
+    // 시속 50km로 반지름 30m를 돌면 약 33°
+    expect(leanAngle(50, 1 / 30)).toBeCloseTo(33.3, 0)
+    expect(leanAngle(50, 0)).toBe(0)
   })
 })

@@ -140,7 +140,8 @@ describe('실차 신호', () => {
       ack: { at: now - 3000, result: 'applied', message: null },
     }
     const live = computeFrame({ now, actions: [applied], readings: hot, liveIssues: [record], vehicleIds: ['kao-0001'] }).vehicles[0]!
-    expect(live.speedCap).toBe(80)
+    // 속도 제한은 평소 최고 속도(G80 50km/h)의 60%
+    expect(live.speedCap).toBe(30)
     const simulated = computeFrame({ now: now + 60_000, actions: [applied], vehicleIds: ['kao-0001'] }).vehicles[0]!
     const plain = computeFrame({ now: now + 60_000, actions: [], vehicleIds: ['kao-0001'] }).vehicles[0]!
     expect(simulated).toEqual(plain)
@@ -224,5 +225,32 @@ describe('computeHistory', () => {
     expect(live.every((sample) => sample.value === 101.5)).toBe(true)
     expect(history.liveSamples).toBe(live.length)
     expect(history.samples[0]!.value).not.toBe(101.5)
+  })
+})
+
+describe('도로에 맞는 속도와 기울기', () => {
+  /** 경로 도로의 제한속도(OpenStreetMap maxspeed). 자전거길은 태그가 없어 자전거에 맞게 */
+  const LIMITS: Record<string, number> = { downtown: 50, 'han-river': 80, namsan: 50, yeouido: 20 }
+
+  it('탈것마다 속도가 경로 도로의 제한속도를 넘지 않습니다', () => {
+    for (const spec of VEHICLE_SPECS) {
+      expect(spec.cruise[1], spec.id).toBeLessThanOrEqual(LIMITS[spec.routeId]!)
+      for (let t = DAY; t < DAY + 3600_000; t += 37_000) {
+        const vehicle = computeFrame({ now: t, actions: [], vehicleIds: [spec.id] }).vehicles[0]!
+        expect(vehicle.speed, `${spec.id} ${t}`).toBeLessThanOrEqual(LIMITS[spec.routeId]!)
+        expect(vehicle.speed).toBeGreaterThanOrEqual(spec.cruise[0] - 0.1)
+      }
+    }
+  })
+
+  it('슈퍼바이크 기울기는 굽은 길과 속도로 정하고(atan(v²κ/g)) 급한 굽이에서도 35°에서 멈춥니다', () => {
+    const lean = VEHICLE_SPECS.find((spec) => spec.id === 'kao-0003')!.metrics.find((metric) => metric.key === 'lean')!
+    const derive = (speed: number, curvature: number) => lean.derive!({ speed, curvature, progress: 0, elapsed: 0 })
+    expect(derive(50, 0)).toBe(0)
+    expect(derive(50, 1 / 60)).toBeCloseTo(18.2, 0)
+    expect(derive(50, 1 / 5)).toBe(35)
+    // 평소에는 경고 기준(42°) 아래이고, 문제가 생겨 치우침이 더해지면 넘습니다.
+    expect(35).toBeLessThan(lean.warn!)
+    expect(lean.baseline! + Math.abs(lean.fault!.target - lean.nominal)).toBeGreaterThanOrEqual(lean.crit!)
   })
 })
