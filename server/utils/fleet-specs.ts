@@ -29,6 +29,8 @@ export interface MetricSpec {
   direction: 'high' | 'low'
   precision: number
   derive?: (ctx: DeriveContext) => number
+  /** derive로 늘 출렁이는 지표에서 문제를 감지할 때 기준으로 삼는 평소 값 */
+  baseline?: number
   fault?: FaultSpec
 }
 
@@ -169,10 +171,10 @@ export const VEHICLE_SPECS: VehicleSpec[] = [
       },
       {
         key: 'lean', label: '기울기 각도', unit: '°', min: 0, max: 65, nominal: 0, noise: 0.6,
-        warn: 55, crit: 60, direction: 'high', precision: 1,
+        warn: 55, crit: 60, direction: 'high', precision: 1, baseline: 40,
         derive: ({ progress, speed }) => Math.abs(Math.sin(progress * Math.PI * 8)) * 44 * Math.min(1, speed / 180),
         fault: {
-          target: 18, rate: 0.7, actions: ['traction-boost', 'notify-rider'],
+          target: 22, rate: 0.7, actions: ['traction-boost', 'notify-rider'],
           title: '과도한 기울기',
           detail: '코너마다 접지 한계에 가까운 기울기가 반복됩니다. 미끄러질 위험이 큽니다.',
         },

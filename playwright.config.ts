@@ -20,7 +20,8 @@ export default defineConfig({
   webServer: {
     command: 'node .output/server/index.mjs',
     port: PORT,
-    env: { PORT: String(PORT), NITRO_PORT: String(PORT) },
-    reuseExistingServer: !process.env.CI,
+    // 언제 열어도 조치할 문제가 있도록 문제를 자주 내는 시뮬레이션으로 띄웁니다.
+    env: { PORT: String(PORT), NITRO_PORT: String(PORT), KAO_SIM_PROFILE: 'busy' },
+    reuseExistingServer: false,
   },
 })

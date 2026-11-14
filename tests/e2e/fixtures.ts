@@ -1,4 +1,5 @@
-import { test as base, type Page } from '@playwright/test'
+import { test as base, expect } from '@playwright/test'
+import type { Page } from '@playwright/test'
 
 type NuxtWindow = Window & { useNuxtApp?: () => { isHydrating?: boolean } }
 
@@ -16,6 +17,9 @@ export async function waitForHydration(page: Page) {
  * 실제 모델을 불러오는지는 models.spec.ts에서 따로 확인합니다.
  */
 export const test = base.extend({
+  // 같은 이유로 '동작 줄이기' 상태에서 검사합니다. 3D 장면은 바뀔 때만 다시 그려 CPU를 덜 씁니다.
+  // 애니메이션 정지 버튼 검사처럼 움직임이 필요한 곳은 test.use({ reducedMotion: 'no-preference' })로 바꿉니다.
+  reducedMotion: 'reduce',
   page: async ({ page }, use) => {
     await page.route('**/models/*.glb', (route) => route.abort())
     const goto = page.goto.bind(page)
@@ -28,4 +32,10 @@ export const test = base.extend({
   },
 })
 
-export { expect } from '@playwright/test'
+/** 데모 계정으로 로그인합니다(쿠키가 브라우저 컨텍스트에 남습니다). */
+export async function loginAs(page: Page, login: string) {
+  const response = await page.request.post('/api/auth/login', { data: { login, password: 'kao-demo-2026' } })
+  expect(response.ok()).toBe(true)
+}
+
+export { expect }

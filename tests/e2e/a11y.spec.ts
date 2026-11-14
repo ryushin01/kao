@@ -1,10 +1,11 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test } from './fixtures'
+import { expect, loginAs, test } from './fixtures'
 
-const pages = ['/', '/fleet', '/fleet/kao-0003']
+const pages = ['/', '/login', '/fleet', '/fleet/kao-0003']
 
 for (const path of pages) {
   test(`${path}: axe 위반이 없고 기본 언어·제목·본문 바로가기가 있습니다`, async ({ page }) => {
+    if (path.startsWith('/fleet')) await loginAs(page, 'operator')
     await page.goto(path)
     await expect(page.locator('html')).toHaveAttribute('lang', 'ko')
     await expect(page).toHaveTitle(/KAO/)
@@ -19,6 +20,7 @@ for (const path of pages) {
   })
 
   test(`${path}: 가로로 넘치지 않습니다`, async ({ page }) => {
+    if (path.startsWith('/fleet')) await loginAs(page, 'operator')
     await page.goto(path)
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
     expect(overflow).toBeLessThanOrEqual(0)

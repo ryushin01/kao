@@ -1,3 +1,5 @@
 export { HudButton } from './hud-button'
 export { HudPanel } from './hud-panel'
 export { StatusBadge } from './status-badge'
+export { LineChart } from './line-chart'
+export type { ChartThreshold } from './line-chart'

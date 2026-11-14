@@ -1,5 +1,5 @@
+export { CATEGORY_LABELS, VEHICLE_CATEGORIES } from './config/categories'
 export { MODEL_PROFILES } from './config/models'
-export { MODEL_ASSETS } from './config/model-assets'
 export { createMiniature, loadModelMiniature, rollWheels } from './lib/miniatures'
 export type { Miniature } from './lib/miniatures'
 export { useLiveFleet } from './model/live-fleet'

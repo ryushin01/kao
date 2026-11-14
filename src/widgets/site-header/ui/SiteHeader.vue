@@ -1,17 +1,36 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { NuxtLink } from '#components'
+import { clearNuxtData, navigateTo } from '#imports'
 import { formatClock } from '@shared/lib'
+import { homePathFor, useSession } from '@entities/session'
+import { LogoutButton } from '@features/auth'
+import { usePush } from '../model/use-push'
+import PushToggle from './PushToggle.vue'
 import MotionToggle from './MotionToggle.vue'
 
+const session = useSession()
+const user = session.user
+const push = usePush(() => session.pushPublicKey.value)
 const now = ref<number | null>(null)
 let timer: ReturnType<typeof setInterval> | undefined
+
+const workspace = computed(() =>
+  user.value ? { to: homePathFor(user.value), label: user.value.role === 'operator' ? '관제 센터' : '내 탈것' } : null,
+)
 
 onMounted(() => {
   now.value = Date.now()
   timer = setInterval(() => (now.value = Date.now()), 1000)
 })
 onBeforeUnmount(() => clearInterval(timer))
+
+async function onLoggedOut() {
+  session.setUser(null)
+  // 다음 사람이 이전 계정의 관제 데이터를 보지 않도록 받아 둔 데이터를 비웁니다.
+  clearNuxtData()
+  await navigateTo('/')
+}
 </script>
 
 <template>
@@ -25,7 +44,8 @@ onBeforeUnmount(() => clearInterval(timer))
       <nav class="site-header__nav" aria-label="주요 메뉴">
         <ul>
           <li><NuxtLink to="/">소개</NuxtLink></li>
-          <li><NuxtLink to="/fleet">관제 센터</NuxtLink></li>
+          <li v-if="workspace"><NuxtLink :to="workspace.to">{{ workspace.label }}</NuxtLink></li>
+          <li v-else><NuxtLink to="/login">로그인</NuxtLink></li>
         </ul>
       </nav>
       <div class="site-header__tools">
@@ -34,6 +54,13 @@ onBeforeUnmount(() => clearInterval(timer))
           <span class="tabular">{{ now === null ? '--:--:--' : formatClock(now) }}</span>
         </p>
         <MotionToggle />
+        <template v-if="user">
+          <PushToggle :push="push" />
+          <p class="site-header__user">
+            <span class="visually-hidden">로그인: </span>{{ user.name }}
+          </p>
+          <LogoutButton :before-logout="push.clear" @done="onLoggedOut" />
+        </template>
       </div>
     </div>
   </header>
@@ -121,8 +148,10 @@ onBeforeUnmount(() => clearInterval(timer))
 
 .site-header__tools {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-4);
+  justify-content: flex-end;
+  gap: var(--space-2) var(--space-3);
   margin-left: auto;
 }
 
@@ -131,7 +160,12 @@ onBeforeUnmount(() => clearInterval(timer))
   gap: var(--space-2);
 }
 
-@media (width < 48rem) {
+.site-header__user {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+
+@media (width < 60rem) {
   .site-header__full,
   .site-header__clock {
     display: none;

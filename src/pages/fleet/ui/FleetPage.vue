@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { NuxtLink } from '#components'
 import { useFetch, useHead } from '#imports'
 import { FLEET_URL } from '@shared/api'
-import type { FleetFrame, RemoteActionResponse } from '@shared/api'
+import type { FleetFrame, RemoteActionResponse, VehicleKind } from '@shared/api'
 import { formatClock, toIsoString } from '@shared/lib'
 import { HudPanel } from '@shared/ui'
-import { MODEL_PROFILES, VehicleCard, activeIssues, fleetSummary, useLiveFleet } from '@entities/vehicle'
+import { CATEGORY_LABELS, MODEL_PROFILES, VEHICLE_CATEGORIES, VehicleCard, activeIssues, fleetSummary, useLiveFleet } from '@entities/vehicle'
 import { RemoteActionPanel } from '@features/remote-action'
 import { ActionLog } from '@widgets/action-log'
 import { FleetTracker } from '@widgets/fleet-tracker'
@@ -15,11 +15,24 @@ import { LiveAnnouncer } from '@widgets/live-announcer'
 useHead({ title: '관제 센터 — KAO' })
 
 const { data } = await useFetch<FleetFrame>(FLEET_URL, { key: 'fleet' })
-const { frame, status, patchVehicle } = useLiveFleet(data)
+const { frame, status, applyAction } = useLiveFleet(data)
 
 const summary = computed(() => (frame.value ? fleetSummary(frame.value) : null))
+
+// 분류 필터: 아래의 조치 대기열·조치 기록·등록 탈것에 함께 적용합니다.
+const kind = ref<VehicleKind | 'all'>('all')
+const categories = computed(() =>
+  VEHICLE_CATEGORIES.filter((category) => frame.value?.vehicles.some((vehicle) => vehicle.kind === category.kind)),
+)
+const shown = computed(() => (frame.value?.vehicles ?? []).filter((vehicle) => kind.value === 'all' || vehicle.kind === kind.value))
+const shownLog = computed(() => {
+  const ids = new Set(shown.value.map((vehicle) => vehicle.id))
+  return (frame.value?.log ?? []).filter((entry) => ids.has(entry.vehicleId))
+})
+const scopeLabel = computed(() => (kind.value === 'all' ? '전체' : CATEGORY_LABELS[kind.value]))
+
 const queue = computed(() =>
-  (frame.value?.vehicles ?? [])
+  shown.value
     .flatMap((vehicle) => activeIssues(vehicle).map((issue) => ({ vehicle, issue })))
     .sort((a, b) => (a.issue.severity === b.issue.severity ? a.issue.detectedAt - b.issue.detectedAt : a.issue.severity === 'critical' ? -1 : 1)),
 )
@@ -27,7 +40,7 @@ const statusText = computed(
   () => ({ connecting: '연결 중', live: '실시간 수신 중', reconnecting: '다시 연결하는 중' })[status.value],
 )
 
-const onSent = (response: RemoteActionResponse) => patchVehicle(response.vehicle)
+const onSent = (response: RemoteActionResponse) => applyAction(response)
 </script>
 
 <template>
@@ -65,6 +78,22 @@ const onSent = (response: RemoteActionResponse) => patchVehicle(response.vehicle
     <template v-if="frame">
       <FleetTracker :frame="frame" />
 
+      <fieldset class="fleet__filter">
+        <legend>분류</legend>
+        <label>
+          <input v-model="kind" type="radio" name="fleet-kind" value="all" >
+          <span>전체 <small class="tabular">{{ frame.vehicles.length }}</small></span>
+        </label>
+        <label v-for="category in categories" :key="category.kind">
+          <input v-model="kind" type="radio" name="fleet-kind" :value="category.kind" >
+          <span>
+            {{ category.label }}
+            <small class="tabular">{{ frame.vehicles.filter((vehicle) => vehicle.kind === category.kind).length }}</small>
+          </span>
+        </label>
+      </fieldset>
+      <p class="visually-hidden" role="status">{{ scopeLabel }} 분류의 탈것 {{ shown.length }}대를 보여 줍니다.</p>
+
       <div class="fleet__columns">
         <HudPanel class="fleet__queue" labelledby="queue-title">
           <h2 id="queue-title" class="fleet__section-title">조치 대기열</h2>
@@ -83,15 +112,17 @@ const onSent = (response: RemoteActionResponse) => patchVehicle(response.vehicle
               />
             </li>
           </ul>
-          <p v-else class="fleet__empty">지금은 조치할 문제가 없습니다. 모든 탈것이 기준 안에서 달리고 있습니다.</p>
+          <p v-else class="fleet__empty">
+            {{ kind === 'all' ? '지금은 조치할 문제가 없습니다. 모든 탈것이 기준 안에서 달리고 있습니다.' : `${scopeLabel} 분류에는 지금 조치할 문제가 없습니다.` }}
+          </p>
         </HudPanel>
-        <ActionLog :entries="frame.log" />
+        <ActionLog :entries="shownLog" />
       </div>
 
       <section class="fleet__vehicles" aria-labelledby="vehicles-title">
         <h2 id="vehicles-title" class="fleet__section-title">등록 탈것</h2>
         <ul>
-          <li v-for="vehicle in frame.vehicles" :key="vehicle.id">
+          <li v-for="vehicle in shown" :key="vehicle.id">
             <VehicleCard :vehicle="vehicle">
               <template #title>
                 <NuxtLink :to="`/fleet/${vehicle.id}`" class="fleet__card-link">
@@ -188,6 +219,65 @@ const onSent = (response: RemoteActionResponse) => patchVehicle(response.vehicle
   }
 }
 
+.fleet__filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.fleet__filter legend {
+  float: left;
+  width: 100%;
+  margin-bottom: var(--space-2);
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.fleet__filter label {
+  position: relative;
+}
+
+.fleet__filter input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.fleet__filter span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.75rem;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-line-strong);
+  font-size: 0.875rem;
+}
+
+.fleet__filter small {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.fleet__filter input:checked + span {
+  border-color: var(--color-crimson);
+  background: var(--color-crimson);
+  color: #fff;
+}
+
+.fleet__filter input:checked + span small {
+  color: #fff;
+}
+
+.fleet__filter input:focus-visible + span {
+  outline: 2px solid var(--color-crimson-text);
+  outline-offset: 3px;
+}
+
 .fleet__columns {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
@@ -196,7 +286,66 @@ const onSent = (response: RemoteActionResponse) => patchVehicle(response.vehicle
 }
 
 @media (width < 64rem) {
-  .fleet__columns {
+  .fleet__filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.fleet__filter legend {
+  float: left;
+  width: 100%;
+  margin-bottom: var(--space-2);
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+.fleet__filter label {
+  position: relative;
+}
+
+.fleet__filter input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.fleet__filter span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.75rem;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--color-line-strong);
+  font-size: 0.875rem;
+}
+
+.fleet__filter small {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.fleet__filter input:checked + span {
+  border-color: var(--color-crimson);
+  background: var(--color-crimson);
+  color: #fff;
+}
+
+.fleet__filter input:checked + span small {
+  color: #fff;
+}
+
+.fleet__filter input:focus-visible + span {
+  outline: 2px solid var(--color-crimson-text);
+  outline-offset: 3px;
+}
+
+.fleet__columns {
     grid-template-columns: minmax(0, 1fr);
   }
 }

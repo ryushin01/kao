@@ -2,20 +2,24 @@
 import { computed, ref } from 'vue'
 import { NuxtLink } from '#components'
 import { useFetch, useHead } from '#imports'
-import { ACTIONS, FLEET_URL } from '@shared/api'
-import type { ActionCode, FleetFrame } from '@shared/api'
+import { ACTIONS } from '@shared/api'
+import type { ActionCode, ShowroomResponse, VehicleKind } from '@shared/api'
 import { HudPanel, StatusBadge } from '@shared/ui'
-import { MODEL_PROFILES, fleetSummary } from '@entities/vehicle'
+import { CATEGORY_LABELS, MODEL_PROFILES, VEHICLE_CATEGORIES } from '@entities/vehicle'
 import { EventHorizon } from '@widgets/event-horizon'
 import { VehicleShowcase } from '@widgets/vehicle-showcase'
 
 useHead({ title: 'KAO — 돌이킬 수 없는 지점에 닿기 전에' })
 
-const { data } = await useFetch<FleetFrame>(FLEET_URL, { key: 'fleet-home' })
+const { data } = await useFetch<ShowroomResponse>('/api/showroom', { key: 'showroom' })
 const vehicles = computed(() => data.value?.vehicles ?? [])
-const summary = computed(() => (data.value ? fleetSummary(data.value) : null))
-const selectedId = ref('kao-0002')
-const selected = computed(() => vehicles.value.find((vehicle) => vehicle.id === selectedId.value) ?? vehicles.value[0])
+const summary = computed(() => data.value?.summary ?? null)
+// 분류를 고르면 그 분류의 대표 모델을 턴테이블에 올립니다.
+const selectedKind = ref<VehicleKind>('supercar')
+const category = computed(() => VEHICLE_CATEGORIES.find((item) => item.kind === selectedKind.value)!)
+const selected = computed(
+  () => vehicles.value.find((vehicle) => vehicle.modelId === category.value.representative) ?? vehicles.value[0],
+)
 
 const actionCodes = Object.keys(ACTIONS) as ActionCode[]
 const chapters = [
@@ -44,6 +48,7 @@ const chapters = [
         <NuxtLink to="/fleet" class="cta cta--primary">관제 센터 열기</NuxtLink>
         <a href="#observe" class="cta">작동 방식 보기</a>
       </div>
+      <p class="hero__note">관제 센터는 로그인 화면의 데모 계정으로 바로 들어갈 수 있습니다.</p>
       <dl v-if="summary" class="hero__stats">
         <div>
           <dt class="hud-label">등록 탈것</dt>
@@ -80,7 +85,7 @@ const chapters = [
         </p>
         <ul class="chapter__list">
           <li v-for="vehicle in vehicles" :key="vehicle.id">
-            <strong>{{ MODEL_PROFILES[vehicle.modelId].displayName }}</strong>
+            <strong>{{ CATEGORY_LABELS[vehicle.kind] }} · {{ MODEL_PROFILES[vehicle.modelId].displayName }}</strong>
             <span>{{ vehicle.metrics.map((metric) => metric.label).join(' · ') }}</span>
           </li>
         </ul>
@@ -125,20 +130,27 @@ const chapters = [
           <p class="hud-label">04 / 04 · Miniature</p>
           <h2 id="miniature-title" class="chapter__title">미니어처: 같은 모양으로 따라갑니다</h2>
           <p class="chapter__text">
-            탈것마다 실제 치수 비율대로 깎은 미니어처가 관제 지도 위를 달립니다. 바퀴는 실제 속도에 맞춰 구르고,
-            모터사이클은 코너에서 기울기 센서 값만큼 눕습니다.
+            세단·슈퍼카·슈퍼바이크·자전거 네 분류마다 대표 모델을 실제 모양 그대로 미니어처로 만들었습니다. 바퀴는
+            실제 속도에 맞춰 구르고, 모터사이클은 코너에서 기울기 센서 값만큼 눕습니다.
           </p>
           <fieldset v-if="vehicles.length" class="model-picker">
-            <legend class="hud-label">모델 고르기</legend>
-            <label v-for="vehicle in vehicles" :key="vehicle.id">
-              <input v-model="selectedId" type="radio" name="home-model" :value="vehicle.id" >
-              <span>{{ MODEL_PROFILES[vehicle.modelId].displayName }}</span>
+            <legend class="hud-label">분류 고르기</legend>
+            <label v-for="item in VEHICLE_CATEGORIES" :key="item.kind">
+              <input v-model="selectedKind" type="radio" name="home-category" :value="item.kind" >
+              <span>
+                <strong>{{ item.label }}</strong>
+                <small>{{ MODEL_PROFILES[item.representative].displayName }}</small>
+              </span>
             </label>
           </fieldset>
           <dl v-if="selected" class="spec">
-            <div>
-              <dt>분류</dt>
-              <dd>{{ MODEL_PROFILES[selected.modelId].category }}</dd>
+            <div class="spec__wide">
+              <dt>분류 · 대표 모델</dt>
+              <dd>{{ category.label }} · {{ MODEL_PROFILES[selected.modelId].displayName }}</dd>
+            </div>
+            <div class="spec__wide">
+              <dt>분류 설명</dt>
+              <dd class="spec__text">{{ category.description }}</dd>
             </div>
             <div v-for="spec in MODEL_PROFILES[selected.modelId].specs" :key="spec.label">
               <dt>{{ spec.label }}</dt>
@@ -228,6 +240,13 @@ const chapters = [
   border-color: var(--color-crimson);
   background: var(--color-crimson);
   color: #fff;
+}
+
+.hero__note {
+  margin-top: calc(var(--space-3) * -1);
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  text-shadow: 0 0 12px #000;
 }
 
 .hero__stats {
@@ -406,11 +425,34 @@ const chapters = [
 }
 
 .model-picker span {
-  display: inline-flex;
-  align-items: center;
+  display: inline-grid;
+  align-content: center;
   min-height: 2.75rem;
-  padding: 0 var(--space-3);
+  padding: var(--space-1) var(--space-3);
   border: 1px solid var(--color-line-strong);
+  font-size: 0.875rem;
+  line-height: 1.3;
+}
+
+.model-picker strong {
+  font-weight: 600;
+}
+
+.model-picker small {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.model-picker input:checked + span small {
+  color: #fff;
+}
+
+.spec__wide {
+  grid-column: 1 / -1;
+}
+
+.spec__text {
+  font-family: var(--font-sans) !important;
   font-size: 0.875rem;
 }
 

@@ -5,7 +5,6 @@ export interface ModelProfile {
   shortName: string
   /** 제조사를 붙인 이름 */
   displayName: string
-  category: string
   specs: Array<{ label: string; value: string }>
 }
 
@@ -14,7 +13,6 @@ export const MODEL_PROFILES: Record<VehicleModelId, ModelProfile> = {
   'genesis-g80': {
     shortName: 'G80',
     displayName: 'Genesis G80',
-    category: '대형 세단',
     specs: [
       { label: '전장', value: '4,995mm' },
       { label: '축거', value: '3,010mm' },
@@ -25,7 +23,6 @@ export const MODEL_PROFILES: Record<VehicleModelId, ModelProfile> = {
   'lamborghini-aventador': {
     shortName: 'Aventador',
     displayName: 'Lamborghini Aventador',
-    category: '슈퍼카',
     specs: [
       { label: '전장', value: '4,868mm' },
       { label: '축거', value: '2,700mm' },
@@ -36,7 +33,6 @@ export const MODEL_PROFILES: Record<VehicleModelId, ModelProfile> = {
   'ducati-panigale-v4s': {
     shortName: 'Panigale V4 S',
     displayName: 'Ducati Panigale V4 S',
-    category: '슈퍼바이크',
     specs: [
       { label: '전장', value: '2,110mm' },
       { label: '축거', value: '1,469mm' },
@@ -47,7 +43,6 @@ export const MODEL_PROFILES: Record<VehicleModelId, ModelProfile> = {
   'strida-lt': {
     shortName: 'Strida LT',
     displayName: 'STRiDA LT',
-    category: '접이식 자전거',
     specs: [
       { label: '바퀴', value: '16인치' },
       { label: '프레임', value: '알루미늄 A자' },

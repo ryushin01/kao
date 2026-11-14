@@ -28,6 +28,14 @@ function setup(send = vi.fn(async () => response)) {
 }
 
 describe('RemoteActionPanel', () => {
+  it('회원 화면(readonly)에서는 조치 버튼 없이 안내만 보여 줍니다', () => {
+    const wrapper = mount(RemoteActionPanel, {
+      props: { vehicleId: 'kao-0001', vehicleName: 'Genesis G80', issue: issueFixture, readonly: true },
+    })
+    expect(wrapper.find('.issue__actions').exists()).toBe(false)
+    expect(wrapper.text()).toContain('원격 조치는 관제 요원이 보냅니다')
+  })
+
   it('제안된 조치를 버튼으로 보여 주고, 각 버튼에 설명을 연결합니다', () => {
     const { wrapper } = setup()
     const buttons = wrapper.findAll('.issue__actions button')
