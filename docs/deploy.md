@@ -61,14 +61,14 @@ npx wrangler@4.162.0 tail kao-notify-cron                                       
 
 ```bash
 SECRET=$(openssl rand -hex 32) &&
-  vercel env rm CRON_SECRET production -y &&
+  { vercel env rm CRON_SECRET production -y || true; } &&
   printf '%s' "$SECRET" | vercel env add CRON_SECRET production --sensitive &&
   printf '%s' "$SECRET" | gh secret set CRON_SECRET &&
   printf '%s' "$SECRET" | npx wrangler@4.162.0 secret put CRON_SECRET --config workers/notify-cron/wrangler.toml &&
   (umask 077 && printf 'CRON_SECRET=%s\n' "$SECRET" > .env.cron.local)
 ```
 
-중간에 멈췄다면 고친 뒤 같은 블록을 처음부터 다시 실행합니다(새 값으로 세 곳을 다시 맞춤).
+중간에 멈췄다면 고친 뒤 같은 블록을 처음부터 다시 실행합니다(새 값으로 세 곳을 다시 맞춤). Vercel에서 지우는 단계는 이미 지워져 있어도 넘어가므로, 추가 단계에서 멈췄을 때도 다시 실행하면 됩니다.
 
 ## 배포된 사이트 확인
 
