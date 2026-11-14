@@ -56,17 +56,23 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
 
 ### 로그인과 화면 접근
 
-<img src="images/login.jpg" alt="아이디·비밀번호 입력란과 관제 요원·회원 01~04 데모 계정 버튼이 있는 로그인 화면" width="320">
+<img src="images/login.jpg" alt="아이디·비밀번호 입력란과 관제 요원·회원 01~07 데모 계정 버튼이 있는 로그인 화면" width="320">
 
-- 계정: 관제 요원(`operator`)과 회원(`member01`~`04`, 각자 탈것 하나). 비밀번호는 scrypt로 해시합니다. 데모 계정 목록은 `src/shared/api/contract.ts`의 `DEMO_ACCOUNTS`.
+- 계정: 관제 요원(`operator`)과 회원(`member01`~`07`, 각자 탈것 하나). 비밀번호는 scrypt로 해시합니다. 데모 계정 목록은 `src/shared/api/contract.ts`의 `DEMO_ACCOUNTS`.
 - 화면 접근은 전역 라우트 미들웨어(`src/app/routes/auth-guard.ts`)가 정합니다: `/fleet`은 관제 요원만(회원은 자기 탈것으로), `/fleet/:id`는 관제 요원이나 그 탈것의 회원만.
 - API도 같은 규칙을 서버에서 다시 확인합니다(`server/utils/session.ts`).
 
 ## 탈것 분류
 
-분류와 대표 모델은 `src/entities/vehicle/config/categories.ts`의 `VEHICLE_CATEGORIES`에 있습니다(세단 `sedan`, 슈퍼카 `supercar`, 슈퍼바이크 `superbike`, 자전거 `bicycle`, 전기자동차 `ev`, SUV `suv`, MPV `mpv`). 탈것의 분류는 서버 `fleet-specs.ts`의 `kind`로 정하고, 화면은 분류 이름을 `CATEGORY_LABELS`에서 가져옵니다. 소개 화면은 분류를 고르면 대표 모델을, 관제 센터는 분류 필터로 아래 목록을 거릅니다(등록 탈것이 있는 분류만).
+분류와 대표 모델은 `src/entities/vehicle/config/categories.ts`의 `VEHICLE_CATEGORIES`에 있습니다(세단 `sedan`, 슈퍼카 `supercar`, 슈퍼바이크 `superbike`, 자전거 `bicycle`, 전기자동차 `ev`, SUV `suv`, MPV `mpv`). 탈것의 분류는 서버 `fleet-specs.ts`의 `kind`로 정하고, 화면은 분류 이름을 `CATEGORY_LABELS`에서 가져옵니다. 소개 화면은 분류를 고르면 그 분류의 등록 탈것을 그 도장으로 턴테이블에 올리고, 관제 센터는 분류 필터로 아래 목록을 거릅니다. 턴테이블 카메라(`frameShowcase`)는 미니어처의 경계 구에 맞춰 거리를 잡고, 키가 큰 SUV·MPV처럼 턴테이블 앞쪽 가장자리가 화면 아래로 벗어나면 들어올 때까지 물러납니다.
 
-전기자동차(Genesis Essentia Concept)·SUV(Renault Arkana)·MPV(Toyota Alphard)는 관제 센터에 등록된 탈것이 없어 소개 화면에만 나옵니다. 이런 분류는 `showcase`에 보여 줄 도장과 바퀴를 굴릴 속도를 적고(알파드는 검정), 소개 화면은 그 값으로 대표 모델을 턴테이블에 올립니다. 턴테이블 카메라(`frameShowcase`)는 미니어처의 경계 구에 맞춰 거리를 잡고, 키가 큰 SUV·MPV처럼 턴테이블 앞쪽 가장자리가 화면 아래로 벗어나면 들어올 때까지 물러납니다.
+분류마다 대표 모델의 등록 탈것이 한 대씩 있고, 모두 관제 지도의 실제 도로를 달립니다(7대). 분류를 더할 때는 아래를 함께 더합니다. `server/utils/fleet-specs.test.ts`가 분류마다 탈것·경로·회원 계정·지도용 모델이 있는지 확인합니다.
+
+1. 분류·모델: `VehicleKind`·`VehicleModelId`(`src/shared/api/contract.ts`), `VEHICLE_CATEGORIES`, `MODEL_PROFILES`, 직접 만든 모형(`lib/miniatures`), 관제 지도의 미니어처 크기(`MINIATURE_LENGTH`)
+2. 실제 3D 모델: `scripts/build-models.mjs`의 `MODELS`에 넣고 `pnpm build:models <id>`(원본 GLB와 지도용 `.lite.glb`), `MODEL_ASSETS`에 `url`·`liteUrl`
+3. 경로: `scripts/build-seoul-map.mjs`의 `ROUTE_PLANS`에 넣고 `pnpm build:map`(탈것마다 다른 경로)
+4. 탈것: `server/utils/fleet-specs.ts`의 `VEHICLE_SPECS`(경로, 도장, 순항 속도, 가감속, 지표와 문제)
+5. 회원: `DEMO_MEMBERS`(`contract.ts`). 운영 DB에는 배포할 때 `scripts/migrate.mjs`가 넣습니다
 
 ## 서울 지도
 
@@ -74,7 +80,7 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
 
 | 결과 | 내용 |
 |---|---|
-| `src/shared/config/routes.ts` | 탈것 4대의 주행 경로(위도·경도 닫힌 경로, 실제 길이, 구간별 제한속도, 신호 위치). 직접 고치지 않고 스크립트의 `ROUTE_PLANS`를 고친 뒤 다시 만듭니다 |
+| `src/shared/config/routes.ts` | 탈것마다의 주행 경로(위도·경도 닫힌 경로, 실제 길이, 구간별 제한속도, 신호 위치). 직접 고치지 않고 스크립트의 `ROUTE_PLANS`를 고친 뒤 다시 만듭니다 |
 | `public/maps/seoul.json` | 도로·한강·공원·높은 건물(지도 중심 기준 m 정수 좌표를 앞 점과의 차이로 줄인 차분 부호화, 약 740KB. 전송은 압축해 약 280KB) |
 
 지도는 두 겹입니다. 경로가 있는 안쪽 도심(약 10.8×9.3km)은 골목길·자전거길과 높은 건물(10층 이상이거나 30m 이상, 약 5천 동)까지, 바깥 고리(약 25×21km)는 큰길(고속도로·도시고속도로·간선·보조간선)과 물·공원만 그립니다. 전체 보기에서 지도가 화면 끝에서 끊기지 않고, 끝 3km는 바닥색으로 서서히 흐려집니다(`edgeFade`).
@@ -96,7 +102,7 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
    - 이름이 제각각이라 바퀴는 위치로 고릅니다. `wheels`에 축 중심·반지름·폭을 적으면 그 원기둥 안의 삼각형을 `wheel_N` 노드(원점 = 축 중심)로 옮깁니다. 캘리퍼(`/calip/i`)는 몸체에 남깁니다.
    - `paint` 정규식에 맞는 재질에 `extras.kaoPaint`를 붙여 화면에서 회원 도장 색으로 바꿉니다.
    - `--inspect`를 붙이면 맞춘 뒤 재질별 위치·삼각형 수를 출력합니다. 바퀴 좌표와 도장 재질은 이 값으로 정합니다.
-   - 관제 지도용 가벼운 버전(`.lite.glb`)도 함께 만듭니다. 큰 부품만 크게 줄이고, 작은 부품(삼각형 1,500개 미만)은 가장자리를 잠근 채 조금만 줄이며, 반투명 유리는 줄이지 않습니다(얇은 열린 면이라 줄이면 구멍이 남). `--lite-only`는 이미 만든 GLB에서 가벼운 버전만 다시 만듭니다. 관제 지도에 나오지 않는 대표 모델(`lite: false`)은 만들지 않습니다.
+   - 관제 지도용 가벼운 버전(`.lite.glb`)도 함께 만듭니다. 큰 부품만 크게 줄이고, 작은 부품(삼각형 1,500개 미만)은 가장자리를 잠근 채 조금만 줄이며, 반투명 유리는 줄이지 않습니다(얇은 열린 면이라 줄이면 구멍이 남). `--lite-only`는 이미 만든 GLB에서 가벼운 버전만 다시 만듭니다. 재질·텍스처가 아주 많은 모델(Alphard: 재질 95개, 텍스처 91장)은 `liteFlatten`으로 텍스처를 평균 색으로 바꾸고 UV를 지운 뒤 줄입니다(UV 이음매가 단순화를 막고, 지도 크기에서는 텍스처가 보이지 않음. 108K → 38K 삼각형, 2.5MB → 310KB). 텍스처 알파로 비치는 곳을 정하는 재질(BLEND·MASK)은 텍스처를 그대로 둡니다.
    - 원본에 빠진 바퀴는 `mirror`(빠진 바퀴: 복사할 바퀴)로 반대쪽 바퀴를 거울 복사합니다. Arkana 원본에는 앞 왼쪽 바퀴(타이어·휠·브레이크)가 없습니다. 바퀴 재질의 앞뒤·좌우 범위는 `--wheel-bounds <재질 정규식>`, 한 상자 안의 재질은 `--at x0,x1,y0,y1,z0,z1`(각 축의 작은 값부터, 음수 가능)로 봅니다. 예: `node scripts/build-models.mjs renault-arkana --wheel-bounds tire`(모델 id를 빼면 모든 모델).
    - 부품·삼각형이 아주 많은 원본(Alphard: 삼각형 300만 개, 노드 수천 개)은 `joinFirst`로 같은 재질끼리 먼저 합친 뒤 줄이고, `dropNormals`로 법선을 지워 갈라진 정점이 단순화를 막지 않게 합니다(화면이 불러올 때 다시 계산). `textureSize`로 텍스처를 더 줄입니다. 몸체 부품은 이름을 지워 합쳐지게 합니다(바퀴 `wheel_N`만 이름을 남김).
    - Essentia는 콘셉트카라 공식 전장이 없어, 타이어 지름이 실제 GT 타이어(약 0.77m)가 되도록 맞춘 어림값(4.6m)을 씁니다. 원본 유리는 흰 반투명(거칠기 0.6)이라 젖빛 유리처럼 보여, `glass`(재질 정규식, RGBA 선형 색, 거칠기)로 실내가 비치는 짙은 유리로 바꿉니다.

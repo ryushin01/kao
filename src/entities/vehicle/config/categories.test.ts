@@ -10,20 +10,13 @@ describe('탈것 분류', () => {
     expect(CATEGORY_LABELS.mpv).toBe('MPV')
   })
 
-  it('소개 화면에만 나오는 분류(전기자동차·SUV·MPV)는 보여 줄 도장이 있고, MPV 대표 모델(알파드)은 검정입니다', () => {
-    for (const kind of ['ev', 'suv', 'mpv']) {
-      expect(VEHICLE_CATEGORIES.find((category) => category.kind === kind)!.showcase?.paint.hex).toMatch(/^#[0-9a-f]{6}$/)
-    }
-    expect(VEHICLE_CATEGORIES.find((category) => category.kind === 'mpv')).toMatchObject({
-      representative: 'toyota-alphard',
-      showcase: { paint: { name: '블랙' } },
-    })
-  })
-
-  it('분류마다 대표 모델이 있고, 자전거를 뺀 대표 모델은 실제 3D 모델을 씁니다', () => {
+  // 분류마다 대표 모델의 등록 탈것이 관제 지도에서 달리는지는 server/utils/fleet-specs.test.ts가 확인합니다.
+  it('분류마다 대표 모델이 있고, 자전거를 뺀 대표 모델은 실제 3D 모델과 관제 지도용 가벼운 버전을 씁니다', () => {
     for (const category of VEHICLE_CATEGORIES) {
       expect(MODEL_PROFILES[category.representative]).toBeDefined()
-      if (category.kind !== 'bicycle') expect(MODEL_ASSETS[category.representative]?.url).toMatch(/\.glb$/)
+      if (category.kind === 'bicycle') continue
+      expect(MODEL_ASSETS[category.representative]?.url).toMatch(/\.glb$/)
+      expect(MODEL_ASSETS[category.representative]?.liteUrl).toMatch(/\.lite\.glb$/)
     }
   })
 })

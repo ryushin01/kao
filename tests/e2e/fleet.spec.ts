@@ -4,10 +4,20 @@ test.beforeEach(async ({ page }) => {
   await loginAs(page, 'operator')
 })
 
-test('관제 센터는 4대를 실시간으로 받아 표와 카드로 보여 줍니다', async ({ page }) => {
+test('관제 센터는 분류마다 한 대씩 7대를 실시간으로 받아 표와 카드로 보여 줍니다', async ({ page }) => {
   await page.goto('/fleet')
   await expect(page.getByRole('heading', { level: 1, name: '관제 센터' })).toBeVisible()
-  await expect(page.getByRole('table', { name: '주행 위치 표' }).locator('tbody tr')).toHaveCount(4)
+  await expect(page.getByRole('table', { name: '주행 위치 표' }).locator('tbody tr')).toHaveCount(7)
+  // 전기자동차·SUV·MPV도 관제 지도의 실제 도로를 달립니다.
+  const table = page.getByRole('table', { name: '주행 위치 표' })
+  const runs: Array<[model: string, route: string]> = [
+    ['Genesis Essentia Concept', '마포·원효대교 순환'],
+    ['Renault Arkana', '용산공원 순환'],
+    ['Toyota Alphard', '서울역·삼각지 순환'],
+  ]
+  for (const [model, route] of runs) {
+    await expect(table.getByRole('row', { name: new RegExp(model) }).getByRole('cell', { name: route })).toBeVisible()
+  }
   await expect(page.getByText('실시간 수신 중')).toBeVisible()
   await expect(page.getByRole('img', { name: /관제 지도/ })).toBeVisible()
   // 지도 데이터 출처(OpenStreetMap)는 지도 위에 링크로 보여 줍니다.
@@ -40,7 +50,9 @@ test('조치 대기열에서 원격 조치를 확인하고 보내면 조치 중�
 test('분류 필터를 고르면 그 분류의 탈것만 보여 줍니다', async ({ page }) => {
   await page.goto('/fleet')
   const vehicles = page.getByRole('region', { name: '등록 탈것' })
-  await expect(vehicles.getByRole('article')).toHaveCount(4)
+  await expect(vehicles.getByRole('article')).toHaveCount(7)
+  // 분류 필터에 일곱 분류가 모두 있습니다(분류마다 등록 탈것이 있음).
+  await expect(page.getByRole('group', { name: '분류' }).getByRole('radio')).toHaveCount(8)
   await page.getByRole('group', { name: '분류' }).getByRole('radio', { name: /슈퍼바이크/ }).check({ force: true })
   await expect(vehicles.getByRole('article')).toHaveCount(1)
   await expect(vehicles.getByRole('heading', { level: 3 })).toHaveText('Ducati Panigale V4 S')

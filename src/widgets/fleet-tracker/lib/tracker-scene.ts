@@ -79,7 +79,7 @@ const FOV = 38
 const TAN_HALF_FOV = Math.tan(((FOV / 2) * Math.PI) / 180)
 const screenScale = (distance: number) => 2 * TAN_HALF_FOV * MINIATURE_SCREEN * (1 + 0.9 * Math.min(1, Math.max(0, (8 - distance) / 7)))
 
-/** 네 경로가 모두 보이는 전체 보기(경로들의 가운데에서 남쪽 위로 비스듬히) */
+/** 모든 경로가 보이는 전체 보기(경로들의 가운데에서 남쪽 위로 비스듬히) */
 const routeBounds = (() => {
   const points = ROUTES.flatMap((route) => route.path.map(([lat, lng]) => toScene(lat, lng)))
   const xs = points.map((p) => p.x)
@@ -93,7 +93,7 @@ const OVERVIEW_PITCH = Math.atan2(41, 33)
 /** 따라가기 카메라 위치(탈것 기준). 약 45° 위에서 내려다봐 높은 건물에 덜 가립니다. */
 const FOLLOW_OFFSET = new Vector3(-1, 1.65, 1.35)
 
-/** 화면 비율에 맞춰 네 경로가 다 들어오는 카메라 거리(세로 화면이면 더 멀리) */
+/** 화면 비율에 맞춰 모든 경로가 다 들어오는 카메라 거리(세로 화면이면 더 멀리) */
 function overviewDistance(aspect: number) {
   const margin = 2.5
   const byWidth = ((routeBounds.maxX - routeBounds.minX) / 2 + margin) / (TAN_HALF_FOV * aspect * 0.92)
