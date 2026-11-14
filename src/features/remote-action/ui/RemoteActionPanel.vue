@@ -31,6 +31,13 @@ const { mutate, isPending, error } = useRemoteAction({
 })
 
 const statusLabel = computed(() => ISSUE_STATUS_LABELS[props.issue.status])
+const isLive = computed(() => props.issue.source === 'live')
+/** 조치 중 안내. 실측 문제는 차량이 명령을 받아 응답해야 하므로 단계별로 알립니다. */
+const progressText = computed(() => {
+  if (props.issue.stage === 'awaiting') return '차량 응답을 기다리고 있습니다. 2분 안에 응답이 없으면 다시 조치할 수 있습니다.'
+  if (props.issue.stage === 'recovering') return '차량이 명령을 적용했습니다. 지표가 기준 안으로 돌아오면 해결됩니다.'
+  return '차량이 명령을 적용하고 있습니다.'
+})
 
 function ask(action: ActionCode) {
   chosen.value = action
@@ -54,6 +61,7 @@ async function confirm() {
       <div class="issue__badges">
         <StatusBadge :state="issue.status === 'resolved' ? 'nominal' : issue.severity" :label="issue.status === 'resolved' ? statusLabel : undefined" />
         <span v-if="issue.status !== 'resolved'" class="hud-label">{{ statusLabel }}</span>
+        <span v-if="isLive" class="hud-label issue__source">실차 측정</span>
       </div>
       <h3 :id="`${id}-title`" ref="heading" class="issue__title" tabindex="-1">{{ issue.title }}</h3>
       <p class="issue__detail">{{ issue.detail }}</p>
@@ -88,7 +96,7 @@ async function confirm() {
     </div>
     <p v-else-if="issue.status === 'resolving'" class="issue__progress">
       <span class="issue__spinner" aria-hidden="true" />
-      차량이 명령을 적용하고 있습니다.
+      {{ progressText }}
     </p>
 
     <div class="issue__live">
@@ -107,7 +115,8 @@ async function confirm() {
         <h4 :id="`${id}-dialog-title`" class="issue__dialog-title">{{ ACTIONS[chosen].label }} 명령을 보낼까요?</h4>
         <p :id="`${id}-dialog-desc`">
           {{ vehicleName }} · {{ issue.title }}<br >
-          {{ ACTIONS[chosen].description }} 보내면 주행 중인 차량에 바로 적용됩니다.
+          {{ ACTIONS[chosen].description }}
+          {{ isLive ? '보내면 차량이 명령을 받아 적용한 뒤 결과를 알려 옵니다.' : '보내면 주행 중인 차량에 바로 적용됩니다.' }}
         </p>
       </template>
       <form method="dialog" class="issue__dialog-buttons">
@@ -149,6 +158,11 @@ async function confirm() {
 
 .issue__title {
   font-size: 1.25rem;
+}
+
+.issue__source {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-line-strong);
 }
 
 .issue__title:focus {

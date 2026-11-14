@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
+import type { Ref } from 'vue'
 import type { FleetFrame } from '@shared/api'
 import { MODEL_PROFILES } from '@entities/vehicle'
 
 /**
- * 새 문제와 조치 완료를 화면 낭독기에 알립니다. 0.5초마다 오는 수치 변화는 알리지 않습니다.
- * 위험 등급의 새 문제만 role="alert", 나머지는 role="status"로 보냅니다.
+ * 새 문제와 조치 결과를 화면 낭독기에 알립니다. 0.5초마다 오는 수치 변화는 알리지 않습니다.
+ * 위험 등급의 새 문제와 조치 실패(차량이 적용하지 못했거나 응답이 없음)는 바로 다시 조치해야 하므로 role="alert",
+ * 나머지는 role="status"로 보냅니다.
  */
 const props = defineProps<{ frame: FleetFrame | null }>()
 
@@ -13,6 +15,25 @@ const politeMessage = ref('')
 const urgentMessage = ref('')
 let knownIssues: Set<string> | null = null
 let knownLog: Set<string> | null = null
+
+/**
+ * 같은 글자를 다시 넣으면 화면 낭독기가 바뀐 것으로 보지 않습니다(같은 조치가 또 응답 없음으로 끝난 경우 등).
+ * 영역을 먼저 비우고, 잠시 뒤 새 글자를 넣어 매번 읽히게 합니다. 그 사이 새 알림이 오면 앞의 것은 버립니다.
+ */
+const RESTORE_DELAY = 100
+const pending = new Map<Ref<string>, ReturnType<typeof setTimeout>>()
+function announce(region: Ref<string>, message: string) {
+  clearTimeout(pending.get(region))
+  region.value = ''
+  pending.set(
+    region,
+    setTimeout(() => {
+      pending.delete(region)
+      region.value = message
+    }, RESTORE_DELAY),
+  )
+}
+onBeforeUnmount(() => pending.forEach((timer) => clearTimeout(timer)))
 
 watch(
   () => props.frame,
@@ -28,15 +49,16 @@ watch(
       )
       const critical = fresh.filter(({ issue }) => issue.severity === 'critical')
       const warning = fresh.filter(({ issue }) => issue.severity === 'warning')
-      if (critical.length) {
-        urgentMessage.value = critical.map(({ issue, name }) => `위험: ${name} ${issue.title}`).join('. ')
-      }
-      const completed = frame.log.filter((entry) => entry.phase === 'completed' && !knownLog!.has(entry.id))
+      const newEntries = frame.log.filter((entry) => !knownLog!.has(entry.id))
+      const failed = newEntries.filter((entry) => entry.phase === 'failed')
+      const urgent = [...critical.map(({ issue, name }) => `위험: ${name} ${issue.title}`), ...failed.map((entry) => `실패: ${entry.message}`)]
+      if (urgent.length) announce(urgentMessage, urgent.join('. '))
+      const completed = newEntries.filter((entry) => entry.phase === 'completed')
       const polite = [
         ...warning.map(({ issue, name }) => `경고: ${name} ${issue.title}`),
         ...completed.map((entry) => entry.message),
       ]
-      if (polite.length) politeMessage.value = polite.join('. ')
+      if (polite.length) announce(politeMessage, polite.join('. '))
     }
     knownIssues = new Set(escalated)
     knownLog = new Set(frame.log.map((entry) => entry.id))

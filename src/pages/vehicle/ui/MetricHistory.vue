@@ -6,6 +6,7 @@ import { formatNumber } from '@shared/lib'
 import { HudPanel, LineChart } from '@shared/ui'
 import type { ChartThreshold } from '@shared/ui'
 
+/** live: 지금 실차 신호가 들어오는 탈것 */
 const props = defineProps<{ vehicleId: string; metrics: MetricReading[]; live?: boolean }>()
 
 const id = useId()
@@ -26,6 +27,18 @@ const thresholds = computed<ChartThreshold[]>(() => {
   if (current.warn !== null) list.push({ value: current.warn, label: `경고 ${formatNumber(current.warn, current.precision)}`, tone: 'warning' })
   if (current.crit !== null) list.push({ value: current.crit, label: `위험 ${formatNumber(current.crit, current.precision)}`, tone: 'critical' })
   return list
+})
+
+/**
+ * 실차 측정값으로 채운 점이 있으면 몇 점인지 알립니다(나머지는 시뮬레이션).
+ * 실차 신호가 들어오는데 이 지표의 측정값이 없으면(장치가 보내지 않는 지표) 시뮬레이션 기준임을 밝힙니다.
+ */
+const sourceNote = computed(() => {
+  const current = history.value
+  if (!current) return ''
+  if (current.liveSamples === 0) return props.live ? '이 구간에는 이 지표의 실차 측정값이 없어 그래프는 시뮬레이션 기준입니다.' : ''
+  if (current.liveSamples === current.samples.length) return '그래프의 모든 점이 실차 측정값입니다.'
+  return `그래프 ${current.samples.length}점 가운데 ${current.liveSamples}점이 실차 측정값이고, 나머지는 시뮬레이션입니다.`
 })
 
 let latest = 0
@@ -65,9 +78,14 @@ watch([metricKey, minutes], load)
     <div class="history__filters">
       <div class="history__field">
         <label :for="`${id}-metric`">지표</label>
-        <select :id="`${id}-metric`" v-model="metricKey">
-          <option v-for="item in metrics" :key="item.key" :value="item.key">{{ item.label }}</option>
-        </select>
+        <div class="history__select">
+          <select :id="`${id}-metric`" v-model="metricKey">
+            <option v-for="item in metrics" :key="item.key" :value="item.key">{{ item.label }}</option>
+          </select>
+          <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+            <path d="M3.5 6 8 10.5 12.5 6" fill="none" stroke="currentColor" stroke-width="1.5" />
+          </svg>
+        </div>
       </div>
       <fieldset class="history__range">
         <legend>기간</legend>
@@ -77,7 +95,7 @@ watch([metricKey, minutes], load)
         </label>
       </fieldset>
     </div>
-    <p v-if="live" class="history__note">실차 측정값은 아직 이력으로 저장하지 않아, 그래프는 시뮬레이션 기준입니다.</p>
+    <p v-if="sourceNote" class="history__note">{{ sourceNote }}</p>
     <p v-if="error" role="alert" class="history__error">{{ error }}</p>
     <LineChart
       v-if="metric && history"
@@ -115,12 +133,29 @@ watch([metricKey, minutes], load)
   font-size: 0.875rem;
 }
 
-.history__field select {
+/* 셀렉트 좌우 간격: 화살표와 칸 오른쪽 끝 사이를 글자와 칸 왼쪽 끝 사이(테두리 1px + 안쪽 여백)와 같게 둡니다. */
+.history__select {
+  position: relative;
+}
+
+.history__select select {
+  appearance: none;
+  width: 100%;
   min-height: 2.75rem;
-  padding: 0 var(--space-3);
+  padding: 0 calc(var(--space-3) + 1rem + var(--space-2)) 0 var(--space-3);
   border: 1px solid var(--color-line-strong);
   border-radius: 0;
   background: var(--color-surface-raised);
+}
+
+.history__select svg {
+  position: absolute;
+  top: 50%;
+  right: calc(var(--space-3) + 1px);
+  width: 1rem;
+  height: 1rem;
+  translate: 0 -50%;
+  pointer-events: none;
 }
 
 .history__range {

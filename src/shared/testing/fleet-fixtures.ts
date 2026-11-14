@@ -25,6 +25,16 @@ export const issueFixture: Issue = {
   detectedAt: Date.UTC(2026, 10, 12, 11, 30, 0),
   status: 'open',
   actions: ['cooling-mode', 'power-limit', 'dispatch-service'],
+  source: 'simulated',
+}
+
+/** 실차 측정값이 기준을 넘어 연 문제. 명령을 보내고 차량 응답을 기다리는 중 */
+export const liveIssueFixture: Issue = {
+  ...issueFixture,
+  id: 'live-kao-0001-coolant-1794464400000',
+  source: 'live',
+  status: 'resolving',
+  stage: 'awaiting',
 }
 
 export const vehicleFixture: VehicleSnapshot = {
@@ -42,6 +52,8 @@ export const vehicleFixture: VehicleSnapshot = {
   progress: 0.42,
   mapProgress: 0.04,
   lap: 3,
+  positionSource: 'simulated',
+  gps: null,
   speed: 72,
   speedCap: null,
   health: 'warning',

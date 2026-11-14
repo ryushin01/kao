@@ -53,6 +53,10 @@ export interface Issue {
   actions: ActionCode[]
   resolvedBy?: ActionCode
   resolvedAt?: number
+  /** live: 실차 측정값이 기준을 넘어 연 문제, simulated: 시뮬레이션 문제 */
+  source: 'live' | 'simulated'
+  /** 실측 문제가 조치 중일 때: awaiting(차량 응답 대기), recovering(차량이 적용했고 지표가 돌아오기를 기다림) */
+  stage?: 'awaiting' | 'recovering'
 }
 
 export interface VehicleSnapshot {
@@ -68,12 +72,16 @@ export interface VehicleSnapshot {
   routeId: string
   /** live: 실제 차량에서 30초 안에 측정값이 들어옴, simulated: 시뮬레이션 */
   source: 'live' | 'simulated'
-  /** 경로 위 위치(0 이상 1 미만, 실제 속도 기준) */
+  /** 경로 위 위치(0 이상 1 미만). 시뮬레이션은 실제 속도 기준, GPS는 실제 위치 */
   progress: number
-  /** 관제 지도 위 위치(0 이상 1 미만). 움직임이 보이도록 FleetFrame.timeScale배 빠르게 돕니다. */
+  /** 관제 지도 위 위치(0 이상 1 미만). 시뮬레이션은 움직임이 보이도록 FleetFrame.timeScale배 빠르게 돌고, GPS는 progress와 같습니다. */
   mapProgress: number
-  /** 매시 정각부터 센 바퀴 수(실제 속도 기준) */
+  /** 매시 정각부터 센 바퀴 수 */
   lap: number
+  /** gps: 실차 GPS가 경로 위에 있음, simulated: 시뮬레이션 위치 */
+  positionSource: 'gps' | 'simulated'
+  /** 최근 30초 안의 실차 GPS 위치. onRoute가 false면 경로에서 150m 넘게 벗어나 있습니다. */
+  gps: { lat: number; lng: number; at: number; onRoute: boolean } | null
   speed: number
   /** 원격 조치로 걸린 속도 제한(km/h). 없으면 null */
   speedCap: number | null
@@ -88,7 +96,8 @@ export interface ActionLogEntry {
   issueId: string
   action: ActionCode
   at: number
-  phase: 'sent' | 'completed'
+  /** sent: 명령 전송, completed: 조치 완료, failed: 실차가 적용하지 못했거나 응답이 없음 */
+  phase: 'sent' | 'completed' | 'failed'
   message: string
 }
 
@@ -161,6 +170,8 @@ export interface HistoryResponse {
   from: number
   to: number
   samples: Array<{ at: number; value: number }>
+  /** samples 가운데 실차 측정값으로 채운 점의 수(나머지는 시뮬레이션) */
+  liveSamples: number
 }
 
 /** 로그인하지 않아도 보는 소개 화면용 요약 */

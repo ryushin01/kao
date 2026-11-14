@@ -1,1 +1,1 @@
-export { issueFixture, metricFixture, vehicleFixture } from './fleet-fixtures'
+export { issueFixture, liveIssueFixture, metricFixture, vehicleFixture } from './fleet-fixtures'

@@ -9,6 +9,8 @@ const props = withDefaults(defineProps<{ entries: ActionLogEntry[]; limit?: numb
   limit: 8,
   title: '원격 조치 기록',
 })
+const PHASE_LABELS: Record<ActionLogEntry['phase'], string> = { sent: '전송', completed: '완료', failed: '실패' }
+
 const id = useId()
 const visible = computed(() => props.entries.slice(0, props.limit))
 </script>
@@ -19,7 +21,7 @@ const visible = computed(() => props.entries.slice(0, props.limit))
     <ol v-if="visible.length" class="action-log__list">
       <li v-for="entry in visible" :key="entry.id" :data-phase="entry.phase">
         <time :datetime="toIsoString(entry.at)" class="tabular hud-label">{{ formatClock(entry.at) }}</time>
-        <span class="action-log__phase">{{ entry.phase === 'sent' ? '전송' : '완료' }}</span>
+        <span class="action-log__phase">{{ PHASE_LABELS[entry.phase] }}</span>
         <span class="action-log__message">{{ entry.message }}</span>
         <span class="visually-hidden">({{ ACTIONS[entry.action].label }})</span>
       </li>
@@ -65,6 +67,10 @@ const visible = computed(() => props.entries.slice(0, props.limit))
 
 [data-phase='completed'] .action-log__phase {
   color: var(--color-nominal);
+}
+
+[data-phase='failed'] .action-log__phase {
+  color: var(--color-critical);
 }
 
 .action-log__empty {

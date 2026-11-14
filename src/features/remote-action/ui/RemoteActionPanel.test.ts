@@ -1,7 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import type { RemoteActionResponse } from '@shared/api'
-import { issueFixture, vehicleFixture } from '@shared/testing'
+import { issueFixture, liveIssueFixture, vehicleFixture } from '@shared/testing'
 import RemoteActionPanel from './RemoteActionPanel.vue'
 
 beforeAll(() => {
@@ -90,6 +90,30 @@ describe('RemoteActionPanel', () => {
     expect(wrapper.get('[role="alert"]').text()).toBe('이미 조치 중이거나 해결된 문제입니다.')
     await sendOnce()
     expect(send).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+  it('실측 문제는 차량 응답을 기다리는지, 적용 뒤 지표 회복을 기다리는지 나눠 알립니다', () => {
+    const awaiting = mount(RemoteActionPanel, { props: { vehicleId: 'kao-0001', vehicleName: 'Genesis G80', issue: liveIssueFixture } })
+    expect(awaiting.text()).toContain('실차 측정')
+    expect(awaiting.get('.issue__progress').text()).toBe('차량 응답을 기다리고 있습니다. 2분 안에 응답이 없으면 다시 조치할 수 있습니다.')
+    const recovering = mount(RemoteActionPanel, {
+      props: { vehicleId: 'kao-0001', vehicleName: 'Genesis G80', issue: { ...liveIssueFixture, stage: 'recovering' } },
+    })
+    expect(recovering.get('.issue__progress').text()).toBe('차량이 명령을 적용했습니다. 지표가 기준 안으로 돌아오면 해결됩니다.')
+    const simulated = mount(RemoteActionPanel, {
+      props: { vehicleId: 'kao-0001', vehicleName: 'Genesis G80', issue: { ...issueFixture, status: 'resolving' } },
+    })
+    expect(simulated.get('.issue__progress').text()).toBe('차량이 명령을 적용하고 있습니다.')
+    expect(simulated.text()).not.toContain('실차 측정')
+  })
+
+  it('실측 문제의 확인 대화상자는 차량이 명령을 받아 결과를 알려 온다고 안내합니다', async () => {
+    const wrapper = mount(RemoteActionPanel, {
+      props: { vehicleId: 'kao-0001', vehicleName: 'Genesis G80', issue: { ...liveIssueFixture, status: 'open', stage: undefined }, send: vi.fn() },
+      attachTo: document.body,
+    })
+    await wrapper.findAll('.issue__actions button')[0]!.trigger('click')
+    expect(wrapper.get('dialog').text()).toContain('보내면 차량이 명령을 받아 적용한 뒤 결과를 알려 옵니다.')
     wrapper.unmount()
   })
 })

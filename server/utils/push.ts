@@ -1,6 +1,6 @@
 import { sendNotification, setVapidDetails } from 'web-push'
 import { criticalIssues } from './sim/engine'
-import { recentReadings, todaysActions } from './fleet'
+import { frameInput } from './fleet'
 import { useStore } from './store'
 import type { PushSubscriptionRecord } from './store'
 
@@ -78,7 +78,7 @@ export async function sendTestPush(userId: string) {
 export async function notifyCriticalIssues(now = Date.now()) {
   if (!ensureConfigured()) return { sent: 0, issues: 0 }
   const store = useStore()
-  const issues = criticalIssues(now, await todaysActions(now), await recentReadings(now))
+  const issues = criticalIssues(await frameInput(now))
   if (issues.length === 0) return { sent: 0, issues: 0 }
   const subscriptions = await store.listPushSubscriptions()
   let sent = 0

@@ -58,7 +58,12 @@ const onSent = (response: RemoteActionResponse) => applyAction(response)
         <StatusBadge :state="vehicle.health" />
         <span class="vehicle__source" :data-source="vehicle.source">{{ vehicle.source === 'live' ? '실차 신호' : '시뮬레이션' }}</span>
         <span class="tabular">{{ formatNumber(vehicle.speed) }} km/h</span>
-        <span>{{ findRoute(vehicle.routeId).name }} · 정각부터 {{ vehicle.lap }}바퀴째 · {{ formatPercent(vehicle.progress) }}</span>
+        <span v-if="vehicle.gps && !vehicle.gps.onRoute">
+          {{ findRoute(vehicle.routeId).name }}에서 벗어남 · GPS {{ formatNumber(vehicle.gps.lat, 5) }}, {{ formatNumber(vehicle.gps.lng, 5) }}
+        </span>
+        <span v-else>
+          {{ findRoute(vehicle.routeId).name }} · 정각부터 {{ vehicle.lap }}바퀴째 · {{ formatPercent(vehicle.progress) }}<template v-if="vehicle.positionSource === 'gps'"> · GPS 기준</template>
+        </span>
         <span v-if="vehicle.speedCap" class="vehicle__cap">속도 제한 {{ vehicle.speedCap }} km/h 적용 중</span>
       </div>
     </header>
