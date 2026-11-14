@@ -1,7 +1,7 @@
 # KAO — Kinetic Aero One
 
 [![CI](https://github.com/ryushin01/kao/actions/workflows/ci.yml/badge.svg)](https://github.com/ryushin01/kao/actions/workflows/ci.yml)
-![version](https://img.shields.io/badge/version-0.9.0-8B0000)
+![version](https://img.shields.io/badge/version-0.10.0-8B0000)
 
 회원의 자동차·모터사이클·자전거가 달리는 동안 상태를 실시간으로 지켜보고, 문제가 생기면 원격으로 조치하는 관제 서비스입니다. 등록된 탈것은 실제 모양을 본뜬 3D 미니어처로 서울 도심 지도의 실제 도로 위를 달립니다.
 
@@ -17,7 +17,7 @@
 
 | 탈것 상세 | 미니어처 |
 |---|---|
-| ![로소 마스 색 아벤타도르 3D 모델이 놓인 턴테이블과, 동작·한남 한강 순환을 시속 74km로 달리며 실차 신호(GPS 기준)로 들어온 엔진오일 과열 경고에 냉각 모드·출력 제한·운전자 알림 버튼이 있는 원격 조치 패널](docs/images/vehicle.jpg) | ![세단·슈퍼카·슈퍼바이크·자전거 분류 고르기와, 세단 대표 모델 G80 미니어처](docs/images/miniature.jpg) |
+| ![로소 마스 색 아벤타도르 3D 모델이 놓인 턴테이블과, 동작·한남 한강 순환을 시속 74km로 달리며 실차 신호(GPS 기준)로 들어온 엔진오일 과열 경고에 냉각 모드·출력 제한·운전자 알림 버튼이 있는 원격 조치 패널](docs/images/vehicle.jpg) | ![세단·슈퍼카·슈퍼바이크·자전거·전기자동차·SUV·MPV 일곱 분류 고르기와, MPV 대표 모델인 검은색 토요타 알파드 미니어처가 놓인 턴테이블](docs/images/miniature.jpg) |
 
 | 지표 이력 | 모바일 관제 센터 |
 |---|---|
@@ -34,7 +34,7 @@
 | 위험 알림 | 위험 등급 문제를 웹 푸시로 알림(관제 요원은 전체, 회원은 자기 탈것). Cloudflare Workers 크론이 5분마다 검사 |
 
 - **서울 지도**: OpenStreetMap 도로·한강·공원과 높은 건물(10층 이상, 약 5천 동)로 광화문에서 여의도·반포까지를 3D로 그립니다. 네 대는 도로 이름·진행 방향을 지정한 경유점을 일방통행을 지키며 잇는 실제 도로(G80 광화문 도심, 아벤타도르 한강 다리, 파니갈레 남산, 스트라이다 여의도 자전거길)를 구간별 제한속도에 맞춰 달리고, 굽이에서 줄이고 신호에서 섭니다.
-- **미니어처**: 세단·슈퍼카·슈퍼바이크·자전거 네 분류의 대표 모델입니다. G80·아벤타도르·파니갈레는 실제 3D 모델(아래 출처)을 실제 치수로 맞추고 바퀴를 분리했고, STRiDA LT는 Three.js로 직접 모델링했습니다. 바퀴는 속도에 맞춰 구르고, 이륜차는 굽은 길에서 실제 속도에 맞는 각도로 눕습니다.
+- **미니어처**: 세단·슈퍼카·슈퍼바이크·자전거·전기자동차·SUV·MPV 일곱 분류의 대표 모델입니다. G80·아벤타도르·파니갈레·에센시아·아르카나·알파드는 실제 3D 모델(아래 출처)을 실제 치수로 맞추고 바퀴를 분리했고, STRiDA LT는 Three.js로 직접 모델링했습니다. 전기자동차·SUV·MPV는 소개 화면에만 나오는 대표 모델입니다. 바퀴는 속도에 맞춰 구르고, 이륜차는 굽은 길에서 실제 속도에 맞는 각도로 눕습니다.
 - **원격 조치·실차 연결**: 냉각 모드, 출력·속도 제한, TPMS 재보정 등을 확인 대화상자를 거쳐 한 번만 보냅니다. 실제 차량이 측정값·GPS를 보내면 실측값으로 바뀌고, 조치는 명령으로 차량에 전달돼 적용·실패 응답을 받습니다. 장치는 탈것 하나에 묶인 토큰을 쓰고, 제조사 서버에는 서명한 웹훅으로 명령을 보내며, 경로 밖을 달리면 실제 위치와 지나온 길을 그립니다([실차 연결](docs/integration.md)).
 - **서버리스·성능**: 시뮬레이션은 시간의 순수 함수라 어느 서버 인스턴스든 같은 상태를 냅니다. 3D는 화면에 다가올 때 받고, 지도 도형은 웹 워커에서 만들며, 셰이더는 그리기 전에 메인 스레드를 막지 않게 컴파일합니다.
 - **접근성**: 본문 바로가기, 애니메이션 정지(운영체제 '동작 줄이기' 따름), 색·모양·글자를 함께 쓰는 상태 표시, 새 문제를 `status`·`alert`로 알림, 3D 지도의 표 대체 콘텐츠
@@ -90,9 +90,12 @@ tests/e2e/  Playwright E2E
 | [Genesis G80](https://sketchfab.com/3d-models/genesis-g80-e9abf10cfee04ea480951d3c2f71f060) | [Nieve5677](https://sketchfab.com/niev) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | [2022 Lamborghini Aventador LP780-4 Ultimae](https://sketchfab.com/3d-models/2022-lamborghini-aventador-lp780-4-ultimae-714a8795e58442258f96bd364b9096b1) | [Ddiaz Design](https://sketchfab.com/ddiaz-design) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | [Ducati Panigale V4](https://sketchfab.com/3d-models/ducati-panigale-v4-47f87e3d70f644289e34cbff91255d0c) | [ROY](https://sketchfab.com/roy.gearloft.in) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| [2018 Genesis Essentia Concept](https://sketchfab.com/3d-models/2018-genesis-essentia-concept-da53b2c73baa426bb58d576c00b32ef1) | [kevin (ケビン)](https://sketchfab.com/sohyalebret) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| [2019 Renault Arkana](https://sketchfab.com/3d-models/2019-renault-arkana-b28e3bd3a038423b9d1a5c27cc45087f) | [tonielpro520](https://sketchfab.com/tonielpro520) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| [Toyota Alphard (2025)](https://sketchfab.com/3d-models/toyota-alphard-2025-22ff91c22fd84ef68384a8fa388b88d6) | [geyges](https://sketchfab.com/geyges) | [Sketchfab Standard](https://sketchfab.com/licenses) |
 | 서울 지도 데이터(도로·한강·공원·건물) | [© OpenStreetMap 기여자](https://www.openstreetmap.org/copyright) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) |
 
-3D 모델은 크기·방향 조정, 바퀴 분리, 도장 색 변경, 압축을 거쳤고, STRiDA LT 미니어처는 Three.js 코드로 직접 만들었습니다. 지도 데이터는 Overpass API로 받아 간추리고 그 도로로 주행 경로를 만들었습니다(`public/maps/seoul.json`, `src/shared/config/routes.ts`도 ODbL을 따릅니다). 사이트 바닥글의 '3D 모델·지도 데이터 출처' 링크가 이 표로 오고, 지도 데이터는 OpenStreetMap 재단의 출처 표시 지침대로 관제 지도 왼쪽 아래에도 '© OpenStreetMap 기여자'를 띄웁니다.
+3D 모델은 크기·방향 조정, 바퀴 분리, 도장 색 변경(알파드는 검정), 단순화, 압축을 거쳤습니다. 아르카나는 원본에 없는 앞 왼쪽 바퀴를 반대쪽 바퀴로 채웠고, 에센시아는 흰 반투명 유리를 짙은 유리로 바꿨습니다. STRiDA LT 미니어처는 Three.js 코드로 직접 만들었습니다. 지도 데이터는 Overpass API로 받아 간추리고 그 도로로 주행 경로를 만들었습니다(`public/maps/seoul.json`, `src/shared/config/routes.ts`도 ODbL을 따릅니다). 사이트 바닥글의 '3D 모델·지도 데이터 출처' 링크가 이 표로 오고, 지도 데이터는 OpenStreetMap 재단의 출처 표시 지침대로 관제 지도 왼쪽 아래에도 '© OpenStreetMap 기여자'를 띄웁니다.
 
 ## 문서
 

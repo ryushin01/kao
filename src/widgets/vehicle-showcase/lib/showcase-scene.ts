@@ -16,6 +16,7 @@ import type { VehicleSnapshot } from '@shared/api'
 import { applyStudioEnvironment, createStage, disposeObject, nextTask, precompile } from '@shared/lib'
 import { createMiniature, loadModelMiniature, preloadModel, rollWheels } from '@entities/vehicle'
 import type { Miniature } from '@entities/vehicle'
+import { frameShowcase } from './framing'
 
 export interface ShowcaseOptions {
   canvas: HTMLCanvasElement
@@ -72,20 +73,14 @@ export function createShowcaseScene({ canvas, vehicle, playing }: ShowcaseOption
   scene.add(ring)
 
   function frameCamera(length: number) {
-    // 미니어처 전체가 화면에 들어오도록 경계 상자로 거리를 정합니다.
+    // 미니어처와 턴테이블이 모두 화면에 들어오도록 경계 상자로 자리를 정합니다.
     const bounds = new Box3()
     if (miniature) bounds.setFromObject(miniature.root)
-    const size = bounds.getSize(new Vector3())
-    const center = bounds.getCenter(new Vector3())
-    const radius = Math.max(size.length() / 2, 0.6)
-    const fit = radius / Math.sin(((camera.fov * Math.PI) / 180) / 2)
-    const distance = fit * 0.82
-    const direction = new Vector3(0.78, 0.36, 0.92).normalize()
-    controls.target.copy(center)
-    camera.position.copy(center).addScaledVector(direction, distance)
+    const { target, position, distance, turntable } = frameShowcase(bounds.getCenter(new Vector3()), bounds.getSize(new Vector3()), length, camera.fov)
+    controls.target.copy(target)
+    camera.position.copy(position)
     controls.minDistance = distance * 0.45
     controls.maxDistance = distance * 2
-    const turntable = Math.max(1, length * 0.62)
     plate.scale.setScalar(turntable / 3.2)
     ring.scale.setScalar(turntable / 3.2)
     floor.scale.setScalar(turntable / 3.2)

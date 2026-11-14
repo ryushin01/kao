@@ -76,10 +76,90 @@ const MODELS = {
       { x: -0.72, y: 0.33, z: 0, r: 0.34, halfWidth: 0.14 },
     ],
   },
+  'genesis-essentia': {
+    src: 'assets-src/2018__genesis_essentia_concept/scene.gltf',
+    // 콘셉트카라 공식 전장이 없어, 타이어 지름이 실제 GT 타이어(약 0.77m)가 되도록 맞춘 어림값입니다.
+    length: 4.6,
+    forward: [0, 0, 1],
+    // 차체는 carpaint(짙은 회색), 휠과 장식은 구리색(material, carpaimt2)입니다.
+    paint: /^carpaint$/,
+    // 원본 유리는 흰 반투명(불투명도 0.81, 거칠기 0.6)이라 젖빛 유리처럼 보입니다. 실제 차처럼 실내가 비치는 짙은 유리로 바꿉니다.
+    glass: { match: /^windows_glass$/, color: [0.012, 0.013, 0.016, 0.55], roughness: 0.05 },
+    drop: /^$/,
+    ratio: 0.3,
+    // 소개 화면에만 나오는 대표 모델이라 관제 지도용 가벼운 버전은 만들지 않습니다.
+    lite: false,
+    wheels: [
+      { x: 1.45, y: 0.39, z: 0.85, r: 0.4, halfWidth: 0.17 },
+      { x: 1.45, y: 0.39, z: -0.85, r: 0.4, halfWidth: 0.17 },
+      { x: -1.38, y: 0.39, z: 0.85, r: 0.4, halfWidth: 0.17 },
+      { x: -1.38, y: 0.39, z: -0.85, r: 0.4, halfWidth: 0.17 },
+    ],
+  },
+  'renault-arkana': {
+    src: 'assets-src/2019_renault_arkana/scene.gltf',
+    length: 4.545,
+    forward: [0, 0, 1],
+    paint: /^visionarq_mx_car_body_carpaint$/,
+    drop: /^$/,
+    ratio: 0.7,
+    lite: false,
+    // 원본에 앞 왼쪽(+z) 바퀴가 없어(타이어·휠·브레이크 모두) 앞 오른쪽 바퀴를 거울로 복사합니다.
+    mirror: { 0: 1 },
+    wheels: [
+      { x: 1.435, y: 0.345, z: 0.81, r: 0.355, halfWidth: 0.13 },
+      { x: 1.435, y: 0.345, z: -0.81, r: 0.355, halfWidth: 0.13 },
+      { x: -1.305, y: 0.345, z: 0.81, r: 0.355, halfWidth: 0.13 },
+      { x: -1.305, y: 0.345, z: -0.81, r: 0.355, halfWidth: 0.13 },
+    ],
+  },
+  'toyota-alphard': {
+    src: 'assets-src/toyota_alphard_2025/scene.gltf',
+    length: 4.995,
+    forward: [1, 0, 0],
+    // 차체 도장은 C_089(토요타 색 코드 089, 플래티넘 화이트 펄)입니다. 화면에서 검정으로 칠합니다.
+    paint: /^C_089$/,
+    drop: /^$/,
+    // 원본이 삼각형 300만 개·노드 수천 개라, 같은 재질끼리 먼저 합친 뒤 크게 줄이고 텍스처(약 100장)도 512로 줄입니다.
+    joinFirst: true,
+    dropNormals: true,
+    ratio: 0.05,
+    error: 0.008,
+    textureSize: [512, 512],
+    lite: false,
+    wheels: [
+      { x: 1.545, y: 0.365, z: 0.815, r: 0.375, halfWidth: 0.14 },
+      { x: 1.545, y: 0.365, z: -0.815, r: 0.375, halfWidth: 0.14 },
+      { x: -1.455, y: 0.365, z: 0.815, r: 0.375, halfWidth: 0.14 },
+      { x: -1.455, y: 0.365, z: -0.815, r: 0.375, halfWidth: 0.14 },
+    ],
+  },
 }
 
-const [onlyId] = process.argv.slice(2).filter((arg) => !arg.startsWith('--'))
+/** 값을 받는 옵션의 값(다음 인자). 다음 인자가 없거나 다른 옵션(--)이면 undefined입니다. 음수 좌표(-1.8,…)는 값으로 받습니다. */
+function optionValue(flag) {
+  const index = process.argv.indexOf(flag)
+  const value = index < 0 ? undefined : process.argv[index + 1]
+  return value === undefined || value.startsWith('--') ? undefined : value
+}
+/** --at x0,x1,y0,y1,z0,z1: 이 상자 안에 꼭짓점이 있는 재질과 개수를 봅니다(재질 위치 찾기). */
+const atBox = process.argv.includes('--at') ? parseBox(optionValue('--at')) : null
+/** --wheel-bounds <재질 정규식>: 바퀴 재질의 앞뒤·좌우 범위를 봅니다(바퀴 좌표 정하기). */
+const wheelPattern = process.argv.includes('--wheel-bounds') ? new RegExp(optionValue('--wheel-bounds') ?? 'tire|tyre', 'i') : null
+// 옵션의 값은 모델 id로 읽지 않습니다.
+const operands = new Set([optionValue('--at'), optionValue('--wheel-bounds')].filter((value) => value !== undefined))
+const [onlyId] = process.argv.slice(2).filter((arg) => !arg.startsWith('--') && !operands.has(arg))
 const inspectOnly = process.argv.includes('--inspect')
+
+function parseBox(text) {
+  const values = (text ?? '').split(',').map((value) => (value.trim() === '' ? NaN : Number(value)))
+  const [x0, x1, y0, y1, z0, z1] = values
+  if (values.length !== 6 || values.some((value) => !Number.isFinite(value)) || x0 > x1 || y0 > y1 || z0 > z1) {
+    console.error(`--at에는 x0,x1,y0,y1,z0,z1 여섯 숫자를 각 축의 작은 값부터 씁니다(받은 값: ${text ?? '없음'}). 예: --at -1.8,0.8,1.84,2,-0.6,0.6`)
+    process.exit(1)
+  }
+  return values
+}
 await MeshoptEncoder.ready
 await MeshoptDecoder.ready
 await MeshoptSimplifier.ready
@@ -214,6 +294,53 @@ async function build(id, config) {
   const matrix = normalizeMatrix(getBounds(scene), config.forward, config.length)
   for (const mesh of root.listMeshes()) transformMesh(mesh, matrix)
 
+  if (atBox) {
+    // 이 상자(x0,x1,y0,y1,z0,z1) 안에 꼭짓점이 있는 재질과 개수
+    const [x0, x1, y0, y1, z0, z1] = atBox
+    console.log(`=== ${id}`)
+    const counts = new Map()
+    for (const mesh of root.listMeshes()) {
+      for (const prim of mesh.listPrimitives()) {
+        const pos = prim.getAttribute('POSITION')
+        const p = []
+        for (let i = 0; i < pos.getCount(); i += 1) {
+          pos.getElement(i, p)
+          if (p[0] < x0 || p[0] > x1 || p[1] < y0 || p[1] > y1 || p[2] < z0 || p[2] > z1) continue
+          const name = prim.getMaterial()?.getName() ?? '(none)'
+          counts.set(name, (counts.get(name) ?? 0) + 1)
+        }
+      }
+    }
+    for (const [name, count] of [...counts].sort((a, b) => b[1] - a[1])) console.log(String(count).padStart(7), name)
+    return
+  }
+
+  if (wheelPattern) {
+    // 바퀴 재질(타이어·휠) 꼭짓점을 앞뒤·좌우 네 구역으로 나눠 범위를 봅니다(바퀴 좌표 정할 때).
+    const pattern = wheelPattern
+    console.log(`=== ${id}`)
+    const zones = new Map()
+    for (const mesh of root.listMeshes()) {
+      for (const prim of mesh.listPrimitives()) {
+        if (!pattern.test(prim.getMaterial()?.getName() ?? '')) continue
+        const pos = prim.getAttribute('POSITION')
+        const p = []
+        for (let i = 0; i < pos.getCount(); i += 1) {
+          pos.getElement(i, p)
+          const key = `${p[0] > 0 ? '앞' : '뒤'}${p[2] > 0 ? '+z' : '-z'}`
+          const zone = zones.get(key) ?? { min: [Infinity, Infinity, Infinity], max: [-Infinity, -Infinity, -Infinity] }
+          for (let k = 0; k < 3; k += 1) {
+            zone.min[k] = Math.min(zone.min[k], p[k])
+            zone.max[k] = Math.max(zone.max[k], p[k])
+          }
+          zones.set(key, zone)
+        }
+      }
+    }
+    for (const [key, { min, max }] of zones) console.log(key, 'min', min.map((v) => v.toFixed(3)).join(','), 'max', max.map((v) => v.toFixed(3)).join(','))
+    return
+  }
+
   if (inspectOnly) {
     console.log(`\n=== ${id}`, JSON.stringify(getBounds(scene), (k, v) => (typeof v === 'number' ? +v.toFixed(3) : v)))
     for (const [name, { min, max, tris }] of materialBounds(document)) {
@@ -225,30 +352,58 @@ async function build(id, config) {
 
   for (const material of root.listMaterials()) {
     if (config.paint.test(material.getName())) material.setExtras({ ...material.getExtras(), kaoPaint: true })
+    // 유리 색(RGBA, 선형)과 거칠기를 바꿉니다(glass: { match, color, roughness }).
+    if (config.glass?.match.test(material.getName())) material.setBaseColorFactor(config.glass.color).setRoughnessFactor(config.glass.roughness)
   }
   for (const mesh of root.listMeshes()) {
     for (const prim of mesh.listPrimitives()) if (config.drop.test(prim.getMaterial()?.getName() ?? '-')) mesh.removePrimitive(prim)
   }
   const counts = splitWheels(document, config.wheels, config.keepOnBody ?? /calip/i)
+  // 원본에 빠진 바퀴는 반대쪽 바퀴를 거울로 복사합니다(mirror: { 빠진 바퀴: 복사할 바퀴 }). 거울 변환은 면 방향도 뒤집습니다.
+  for (const [target, source] of Object.entries(config.mirror ?? {})) {
+    const from = scene.listChildren().find((node) => node.getName() === `wheel_${source}`)
+    if (!from?.getMesh()) throw new Error(`${id}: 거울로 복사할 wheel_${source}가 없습니다.`)
+    const mesh = document.createMesh(`wheel_${target}`)
+    for (const prim of from.getMesh().listPrimitives()) {
+      const clone = prim.clone()
+      for (const semantic of clone.listSemantics()) clone.setAttribute(semantic, clone.getAttribute(semantic).clone())
+      if (clone.getIndices()) clone.setIndices(clone.getIndices().clone())
+      mesh.addPrimitive(clone)
+    }
+    transformMesh(mesh, [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1])
+    const wheel = config.wheels[target]
+    scene.addChild(document.createNode(`wheel_${target}`).setMesh(mesh).setTranslation([wheel.x, wheel.y, wheel.z]))
+    counts[target] = counts[source]
+  }
   const missing = counts.flatMap((count, index) => (count === 0 ? [index] : []))
   if (missing.length) throw new Error(`${id}: wheel_${missing.join(', wheel_')}에서 형상을 찾지 못했습니다. --inspect로 바퀴 좌표를 다시 확인해 주세요.`)
 
-  // 바퀴가 아닌 메시는 몸체 노드 하나로 모읍니다.
+  // 바퀴가 아닌 메시는 몸체 노드 하나로 모읍니다. 부품 이름은 지워 같은 재질끼리 합쳐지게 합니다(join은 이름 있는 노드를 남김).
   const body = document.createNode('body')
   for (const node of scene.listChildren()) {
     if (node.getName().startsWith('wheel_') || !node.getMesh()) continue
     scene.removeChild(node)
+    node.setName('')
+    node.getMesh().setName('')
     body.addChild(node)
   }
   scene.addChild(body)
 
+  // 법선이 갈라진 정점은 합쳐지지 않아 단순화가 막히므로, dropNormals면 법선을 지우고 화면에서 불러올 때 다시 계산합니다.
+  if (config.dropNormals) {
+    for (const prim of root.listMeshes().flatMap((mesh) => mesh.listPrimitives())) {
+      prim.setAttribute('NORMAL', null)
+      prim.setAttribute('TANGENT', null)
+    }
+  }
+  // 부품이 아주 많은 모델(joinFirst)은 먼저 합친 뒤 줄입니다. 단순화 오차 한도가 부품 크기 기준이라 작은 부품은 거의 줄지 않습니다.
+  const simplifyStep = simplify({ simplifier: MeshoptSimplifier, ratio: config.ratio, error: config.error ?? 0.001, lockBorder: false })
   await document.transform(
     dedup(),
     prune(),
     weld(),
-    simplify({ simplifier: MeshoptSimplifier, ratio: config.ratio, error: config.error ?? 0.001, lockBorder: false }),
-    join({ keepNamed: true }),
-    textureCompress({ encoder: sharp, targetFormat: 'webp', resize: [1024, 1024], quality: 82 }),
+    ...(config.joinFirst ? [join({ keepNamed: true }), simplifyStep] : [simplifyStep, join({ keepNamed: true })]),
+    textureCompress({ encoder: sharp, targetFormat: 'webp', resize: config.textureSize ?? [1024, 1024], quality: 82 }),
     prune(),
     quantize(),
     meshopt({ encoder: MeshoptEncoder, level: 'high' }),
@@ -257,7 +412,7 @@ async function build(id, config) {
   await io.write(`public/models/${id}.glb`, document)
   const tris = [...materialBounds(document).values()].reduce((sum, e) => sum + e.tris, 0)
   console.log(`${id}: 바퀴 프리미티브 ${counts.join('/')} · 삼각형 약 ${Math.round(tris)} · public/models/${id}.glb`)
-  await buildLite(id)
+  if (config.lite !== false) await buildLite(id)
 }
 
 /** 이보다 작은 부품은 가장자리를 잠근 채 조금만 줄입니다(부품이 통째로 사라지거나 구멍이 나지 않게). */
@@ -309,6 +464,8 @@ if (onlyId && !(onlyId in MODELS)) {
 const liteOnly = process.argv.includes('--lite-only')
 for (const [id, config] of Object.entries(MODELS)) {
   if (onlyId && onlyId !== id) continue
-  if (liteOnly) await buildLite(id)
+  if (liteOnly) {
+    if (config.lite !== false) await buildLite(id)
+  }
   else await build(id, config)
 }

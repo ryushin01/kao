@@ -70,7 +70,7 @@ const toScene = (lat: number, lng: number) => {
 }
 
 /** 미니어처 길이 비율(세단 기준 1). 화면 크기는 카메라 거리로 정합니다. */
-const MINIATURE_LENGTH = { sedan: 1, supercar: 1, superbike: 0.72, bicycle: 0.6 } as const
+const MINIATURE_LENGTH = { sedan: 1, supercar: 1, superbike: 0.72, bicycle: 0.6, ev: 1, suv: 1, mpv: 1 } as const
 /** 이륜차가 지도 위 굽은 길에서 눕는 최대 각도(°). 급한 굽이에서는 속도를 줄인다고 봅니다. */
 const MAX_LEAN = { superbike: 35, bicycle: 20 } as const
 /** 세단 미니어처가 화면 높이에서 차지하는 비율. 가까이 따라갈수록(카메라 거리 8 미만) 키워 주행이 잘 보이게 합니다. */
