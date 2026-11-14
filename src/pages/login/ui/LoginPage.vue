@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { navigateTo, useHead, useRoute } from '#imports'
+import { FLEET_SIZE } from '@shared/api'
 import type { SessionUser } from '@shared/api'
 import { HudPanel } from '@shared/ui'
 import { homePathFor, useSession } from '@entities/session'
@@ -24,7 +25,7 @@ async function onSuccess(user: SessionUser) {
     <HudPanel as="div" class="login-page__panel">
       <p class="hud-label">Access</p>
       <h1 class="login-page__title">로그인</h1>
-      <p class="login-page__lead">관제 요원은 등록된 4대 전체를, 회원은 자기 탈것의 상태와 알림을 봅니다.</p>
+      <p class="login-page__lead">관제 요원은 등록된 {{ FLEET_SIZE }}대 전체를, 회원은 자기 탈것의 상태와 알림을 봅니다.</p>
       <LoginForm @success="onSuccess" />
     </HudPanel>
   </div>

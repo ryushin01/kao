@@ -5,7 +5,7 @@
  *   pnpm build:map --fetch    # 원본을 모두 다시 받은 뒤 만들기
  *
  * 만드는 것
- * - src/shared/config/routes.ts: 탈것 4대의 주행 경로. 실제 도로를 따라 닫힌 경로(위도·경도)
+ * - src/shared/config/routes.ts: 탈것마다의 주행 경로. 실제 도로를 따라 닫힌 경로(위도·경도)
  * - public/maps/seoul.json: 관제 지도에 그리는 도로·한강·공원·높은 건물(지도 중심 기준 m 좌표, 정수, 차분 부호화)
  *
  * 지도는 두 겹입니다. 안쪽(경로가 있는 도심)은 골목길·자전거길·높은 건물(10층 이상 또는 30m 이상)까지,
@@ -372,6 +372,41 @@ const ROUTE_PLANS = [
       { name: '한강남자전거길', lat: 37.5235, lng: 126.9381, heading: 135 },
       { name: '여의샛강자전거길', lat: 37.5156, lng: 126.9275, heading: 265 },
       { name: '여의샛강자전거길', lat: 37.5199, lng: 126.9165, heading: 310 },
+    ],
+  },
+  {
+    id: 'mapo-wonhyo',
+    name: '마포·원효대교 순환',
+    via: '마포대교 → 강변북로 → 원효대교 → 여의도',
+    allow: car,
+    waypoints: [
+      { name: '여의대로', lat: 37.532, lng: 126.936, heading: 40 },
+      { name: '강변북로', lat: 37.534, lng: 126.9455, heading: 140 },
+      // 원효대교 남쪽 방향 차로는 이름이 없습니다(북쪽 방향은 여의대방로).
+      { lat: 37.5235, lng: 126.939, heading: 236 },
+    ],
+  },
+  {
+    id: 'yongsan-park',
+    name: '용산공원 순환',
+    via: '이태원로 → 녹사평대로 → 서빙고로 → 한강대로',
+    allow: car,
+    waypoints: [
+      { name: '이태원로', lat: 37.5342, lng: 126.981, heading: 90 },
+      { name: '녹사평대로', lat: 37.527, lng: 126.99, heading: 165 },
+      { name: '서빙고로', lat: 37.5225, lng: 126.975, heading: 290 },
+      { name: '한강대로', lat: 37.53, lng: 126.969, heading: 40 },
+    ],
+  },
+  {
+    id: 'seoul-station',
+    name: '서울역·삼각지 순환',
+    via: '한강대로 → 백범로 → 청파로',
+    allow: car,
+    waypoints: [
+      { name: '한강대로', lat: 37.548, lng: 126.9718, heading: 175 },
+      { name: '백범로', lat: 37.5368, lng: 126.971, heading: 290 },
+      { name: '청파로', lat: 37.546, lng: 126.9685, heading: 355 },
     ],
   },
 ]

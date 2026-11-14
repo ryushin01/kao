@@ -1,5 +1,5 @@
 export type * from './contract'
-export { ACTIONS, DEMO_ACCOUNTS, DEMO_PASSWORD, HEALTH_LABELS, ISSUE_STATUS_LABELS } from './contract'
+export { ACTIONS, DEMO_ACCOUNTS, DEMO_PASSWORD, FLEET_SIZE, HEALTH_LABELS, ISSUE_STATUS_LABELS } from './contract'
 export {
   deletePushSubscription,
   fetchHistory,

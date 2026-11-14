@@ -2,8 +2,8 @@ import type { VehicleModelId } from '@shared/api'
 
 export interface ModelAsset {
   url: string
-  /** 관제 지도용 가벼운 버전. 관제 지도에 나오지 않는 대표 모델(소개 화면만)은 없습니다. */
-  liteUrl?: string
+  /** 관제 지도용 가벼운 버전. 모든 모델이 관제 지도에서 달리므로 모델마다 있습니다. */
+  liteUrl: string
   /** 실제 전장(m) */
   length: number
   /** wheel_N 노드의 반지름(m) */
@@ -13,7 +13,7 @@ export interface ModelAsset {
 
 /**
  * Sketchfab 원본을 scripts/build-models.mjs로 바꾼 실제 3D 모델. 없는 모델은 직접 만든 모형을 씁니다.
- * 원작자와 라이선스(CC BY 4.0)는 README의 '출처'에 있습니다.
+ * 원작자와 라이선스(CC BY 4.0, Alphard는 Sketchfab Standard)는 README의 '출처'에 있습니다.
  */
 export const MODEL_ASSETS: Partial<Record<VehicleModelId, ModelAsset>> = {
   'genesis-g80': {
@@ -39,18 +39,21 @@ export const MODEL_ASSETS: Partial<Record<VehicleModelId, ModelAsset>> = {
   },
   'genesis-essentia': {
     url: '/models/genesis-essentia.glb',
+    liteUrl: '/models/genesis-essentia.lite.glb',
     length: 4.6,
     wheelRadii: [0.39, 0.39, 0.39, 0.39],
     leans: false,
   },
   'renault-arkana': {
     url: '/models/renault-arkana.glb',
+    liteUrl: '/models/renault-arkana.lite.glb',
     length: 4.545,
     wheelRadii: [0.345, 0.345, 0.345, 0.345],
     leans: false,
   },
   'toyota-alphard': {
     url: '/models/toyota-alphard.glb',
+    liteUrl: '/models/toyota-alphard.lite.glb',
     length: 4.995,
     wheelRadii: [0.365, 0.365, 0.365, 0.365],
     leans: false,

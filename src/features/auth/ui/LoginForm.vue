@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useId } from 'vue'
-import { DEMO_ACCOUNTS, DEMO_PASSWORD } from '@shared/api'
+import { DEMO_ACCOUNTS, DEMO_PASSWORD, FLEET_SIZE } from '@shared/api'
 import type { LoginRequest, SessionUser } from '@shared/api'
 import { HudButton } from '@shared/ui'
 import { useLogin } from '../model/use-login'
@@ -81,7 +81,7 @@ function useDemo(account: string) {
     <section class="login__demo" :aria-labelledby="`${id}-demo`">
       <h2 :id="`${id}-demo`" class="login__demo-title">데모 계정으로 바로 로그인</h2>
       <p class="login__demo-note">
-        모든 계정의 비밀번호는 <code>{{ DEMO_PASSWORD }}</code>입니다. 관제 요원은 4대 전체를, 회원은 자기 탈것만 봅니다.
+        모든 계정의 비밀번호는 <code>{{ DEMO_PASSWORD }}</code>입니다. 관제 요원은 {{ FLEET_SIZE }}대 전체를, 회원은 자기 탈것만 봅니다.
       </p>
       <ul>
         <li v-for="account in DEMO_ACCOUNTS" :key="account.login">

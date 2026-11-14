@@ -88,7 +88,6 @@ const MODELS = {
     drop: /^$/,
     ratio: 0.3,
     // 소개 화면에만 나오는 대표 모델이라 관제 지도용 가벼운 버전은 만들지 않습니다.
-    lite: false,
     wheels: [
       { x: 1.45, y: 0.39, z: 0.85, r: 0.4, halfWidth: 0.17 },
       { x: 1.45, y: 0.39, z: -0.85, r: 0.4, halfWidth: 0.17 },
@@ -103,7 +102,6 @@ const MODELS = {
     paint: /^visionarq_mx_car_body_carpaint$/,
     drop: /^$/,
     ratio: 0.7,
-    lite: false,
     // 원본에 앞 왼쪽(+z) 바퀴가 없어(타이어·휠·브레이크 모두) 앞 오른쪽 바퀴를 거울로 복사합니다.
     mirror: { 0: 1 },
     wheels: [
@@ -126,7 +124,8 @@ const MODELS = {
     ratio: 0.05,
     error: 0.008,
     textureSize: [512, 512],
-    lite: false,
+    // 지도용 가벼운 버전은 텍스처를 평균 색으로 바꾸고 UV를 지웁니다(UV 이음매가 단순화를 막고, 지도 크기에서는 텍스처가 보이지 않음).
+    liteFlatten: true,
     wheels: [
       { x: 1.545, y: 0.365, z: 0.815, r: 0.375, halfWidth: 0.14 },
       { x: 1.545, y: 0.365, z: -0.815, r: 0.375, halfWidth: 0.14 },
@@ -412,7 +411,7 @@ async function build(id, config) {
   await io.write(`public/models/${id}.glb`, document)
   const tris = [...materialBounds(document).values()].reduce((sum, e) => sum + e.tris, 0)
   console.log(`${id}: 바퀴 프리미티브 ${counts.join('/')} · 삼각형 약 ${Math.round(tris)} · public/models/${id}.glb`)
-  if (config.lite !== false) await buildLite(id)
+  if (config.lite !== false) await buildLite(id, config)
 }
 
 /** 이보다 작은 부품은 가장자리를 잠근 채 조금만 줄입니다(부품이 통째로 사라지거나 구멍이 나지 않게). */
@@ -424,12 +423,38 @@ const LITE_SMALL_TRIANGLES = 1500
  * 반투명 재질(유리)은 줄이지 않습니다. 얇은 열린 면이라 가장자리가 무너지며 구멍이 납니다(아벤타도르 앞유리).
  * 작은 부품은 가장자리를 잠근 채 조금만 줄이고, 큰 부품만 크게 줄입니다.
  */
-async function buildLite(id) {
+/** sRGB(0~1) → 선형 */
+const toLinear = (value) => (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4)
+
+/** 텍스처를 평균 색으로 바꿔 재질의 기본 색에 곱하고, 텍스처와 UV를 지웁니다. */
+async function flattenTextures(document) {
+  for (const material of document.getRoot().listMaterials()) {
+    const image = material.getBaseColorTexture()?.getImage()
+    if (image) {
+      const { channels } = await sharp(image).stats()
+      const [r, g, b] = channels.slice(0, 3).map((channel) => toLinear(channel.mean / 255))
+      const [fr, fg, fb, fa] = material.getBaseColorFactor()
+      material.setBaseColorFactor([fr * r, fg * g, fb * b, fa])
+    }
+    material
+      .setBaseColorTexture(null)
+      .setMetallicRoughnessTexture(null)
+      .setNormalTexture(null)
+      .setOcclusionTexture(null)
+      .setEmissiveTexture(null)
+  }
+  for (const prim of document.getRoot().listMeshes().flatMap((mesh) => mesh.listPrimitives())) {
+    for (const semantic of prim.listSemantics()) if (semantic.startsWith('TEXCOORD_')) prim.setAttribute(semantic, null)
+  }
+}
+
+async function buildLite(id, config = MODELS[id]) {
   const lite = await io.read(`public/models/${id}.glb`)
   for (const prim of lite.getRoot().listMeshes().flatMap((mesh) => mesh.listPrimitives())) {
     prim.setAttribute('NORMAL', null)
     prim.setAttribute('TANGENT', null)
   }
+  if (config.liteFlatten) await flattenTextures(lite)
   await lite.transform(dedup(), weld())
   let kept = 0
   for (const prim of lite.getRoot().listMeshes().flatMap((mesh) => mesh.listPrimitives())) {
@@ -465,7 +490,7 @@ const liteOnly = process.argv.includes('--lite-only')
 for (const [id, config] of Object.entries(MODELS)) {
   if (onlyId && onlyId !== id) continue
   if (liteOnly) {
-    if (config.lite !== false) await buildLite(id)
+    if (config.lite !== false) await buildLite(id, config)
   }
   else await build(id, config)
 }

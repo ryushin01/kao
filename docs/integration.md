@@ -55,7 +55,7 @@ Content-Type: application/json
 
 | 필드 | 내용 |
 |---|---|
-| `vehicleId` | 등록 탈것 id (`kao-0001`~`kao-0004`). 없으면 404 |
+| `vehicleId` | 등록 탈것 id (`kao-0001`~`kao-0007`). 없으면 404 |
 | `at` | 측정 시각(ms). 미래(5초 넘게)이거나 1분보다 오래되면 서버 시각을 씁니다. 생략 가능 |
 | `speed` | 속도(km/h). 생략하면 시뮬레이션 속도 |
 | `metrics` | 지표 key와 값. 그 탈것에 없는 key나 숫자가 아닌 값은 422. 지표를 나눠 보내도 됩니다(30초 안의 가장 새 값을 지표마다 씀) |
@@ -94,6 +94,9 @@ Content-Type: application/json
 | `kao-0002` Lamborghini Aventador | `rpm`, **`oil`**, **`brake-fl`**, **`tire-rl`** |
 | `kao-0003` Ducati Panigale V4 S | `rpm`, **`lean`**, **`coolant`**, **`tire-r`** |
 | `kao-0004` STRiDA LT | `cadence`, **`tire-f`**, **`belt`**, **`tracker`** |
+| `kao-0005` Genesis Essentia Concept | `motor-power`, **`battery-temp`**, **`motor-temp`**, **`soc`**, **`tire-fr`** |
+| `kao-0006` Renault Arkana | `rpm`, **`cvt`**, **`oil-pressure`**, **`tire-rr`** |
+| `kao-0007` Toyota Alphard | `rpm`, **`hv-battery`**, **`cabin-co2`**, **`tire-fl`** |
 
 ## 실측 문제
 

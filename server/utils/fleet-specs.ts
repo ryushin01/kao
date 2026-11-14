@@ -78,7 +78,10 @@ const tirePressure = (
   },
 })
 
-/** 가상 회원의 등록 탈것 4대입니다. 회원 정보와 등록번호는 모두 가상 값입니다. */
+/**
+ * 가상 회원의 등록 탈것입니다. 분류(VEHICLE_CATEGORIES)마다 대표 모델 한 대씩, 모두 관제 지도에서 실제 도로를 달립니다
+ * (분류를 더하면 이 목록·경로·회원 계정도 함께 더합니다. fleet-specs.test.ts가 확인합니다). 회원 정보와 등록번호는 모두 가상 값입니다.
+ */
 export const VEHICLE_SPECS: VehicleSpec[] = [
   {
     id: 'kao-0001',
@@ -248,6 +251,147 @@ export const VEHICLE_SPECS: VehicleSpec[] = [
           detail: '위치 추적기 배터리가 곧 바닥납니다. 꺼지면 주행을 지켜볼 수 없습니다.',
         },
       },
+    ],
+  },
+  {
+    id: 'kao-0005',
+    modelId: 'genesis-essentia',
+    kind: 'ev',
+    maker: 'Genesis',
+    model: 'Essentia Concept',
+    year: 2018,
+    plate: 'K-0005',
+    member: '가상 회원 05',
+    paint: { name: 'Gunmetal Grey', hex: '#4a4c52' },
+    routeId: 'mapo-wonhyo',
+    // 강변북로(80)와 마포대교·원효대교를 오갑니다.
+    cruise: [35, 80],
+    pace: [0.8, 1],
+    // 전기 모터라 출발이 빠르고, 배터리가 바닥에 깔려 무게 중심이 낮습니다.
+    handling: { accel: 2.8, decel: 3, lateral: 2.6 },
+    metrics: [
+      speedMetric(250),
+      {
+        key: 'motor-power', label: '모터 출력', unit: 'kW', min: 0, max: 600, nominal: 0, noise: 1.5,
+        warn: null, crit: null, direction: 'high', precision: 0,
+        // 공기 저항이 속도의 세제곱으로 늘어 정속 주행 출력도 따라 늘어납니다(시속 80km에 약 24kW).
+        derive: ({ speed }) => 3 + speed ** 3 * 4e-5,
+      },
+      {
+        key: 'battery-temp', label: '고전압 배터리 온도', unit: '°C', min: -10, max: 80, nominal: 32, noise: 0.15,
+        warn: 45, crit: 55, direction: 'high', precision: 1,
+        fault: {
+          target: 60, rate: 0.55, actions: ['cooling-mode', 'power-limit', 'dispatch-service'],
+          title: '고전압 배터리 과열',
+          detail: '배터리 셀 온도가 기준을 넘었습니다. 냉각수 펌프나 셀 이상일 수 있어, 열 폭주를 막으려면 출력을 낮춰야 합니다.',
+        },
+      },
+      {
+        key: 'motor-temp', label: '구동 모터 온도', unit: '°C', min: 20, max: 180, nominal: 75, noise: 0.5,
+        warn: 120, crit: 140, direction: 'high', precision: 1,
+        fault: {
+          target: 150, rate: 1.8, actions: ['cooling-mode', 'power-limit', 'notify-rider'],
+          title: '구동 모터 과열',
+          detail: '고속 주행이 이어져 모터 권선 온도가 올랐습니다. 영구 자석이 약해지기 전에 식혀야 합니다.',
+        },
+      },
+      {
+        key: 'soc', label: '배터리 잔량', unit: '%', min: 0, max: 100, nominal: 46, noise: 0.05,
+        warn: 20, crit: 10, direction: 'low', precision: 0,
+        fault: {
+          target: 6, rate: 1.2, actions: ['eco-power', 'notify-rider', 'dispatch-service'],
+          title: '배터리 잔량 급감',
+          detail: '달린 거리보다 배터리가 빨리 줄고 있습니다. 셀 이상이나 과도한 소모일 수 있어 충전소 안내가 필요합니다.',
+        },
+      },
+      tirePressure('tire-fr', '앞오른쪽 타이어 공기압', 260, 230, 210, 196, ['speed-limit', 'tpms-recalibrate', 'dispatch-service']),
+    ],
+  },
+  {
+    id: 'kao-0006',
+    modelId: 'renault-arkana',
+    kind: 'suv',
+    maker: 'Renault',
+    model: 'Arkana',
+    year: 2024,
+    plate: 'K-0006',
+    member: '가상 회원 06',
+    paint: { name: 'Glacier White', hex: '#e8e8e5' },
+    routeId: 'yongsan-park',
+    // 녹사평대로·서빙고로에 60 구간이 있습니다.
+    cruise: [20, 60],
+    pace: [0.7, 1],
+    // 지상고가 높아 무게 중심이 높습니다.
+    handling: { accel: 1.8, decel: 2.6, lateral: 2.1 },
+    metrics: [
+      speedMetric(195),
+      {
+        key: 'rpm', label: '엔진 회전수', unit: 'rpm', min: 0, max: 6500, nominal: 0, noise: 25,
+        warn: null, crit: null, direction: 'high', precision: 0,
+        derive: ({ speed }) => 800 + speed * 26,
+      },
+      {
+        key: 'cvt', label: '변속기 오일 온도', unit: '°C', min: 20, max: 150, nominal: 82, noise: 0.4,
+        warn: 110, crit: 120, direction: 'high', precision: 1,
+        fault: {
+          target: 126, rate: 1.2, actions: ['power-limit', 'notify-rider', 'dispatch-service'],
+          title: '변속기 과열',
+          detail: '오르막과 정체가 이어져 CVT 오일 온도가 올랐습니다. 벨트가 미끄러지기 전에 부하를 줄여야 합니다.',
+        },
+      },
+      {
+        key: 'oil-pressure', label: '엔진오일 압력', unit: 'kPa', min: 0, max: 600, nominal: 320, noise: 2,
+        warn: 150, crit: 100, direction: 'low', precision: 0,
+        fault: {
+          target: 80, rate: 7, actions: ['power-limit', 'dispatch-service'],
+          title: '엔진오일 압력 저하',
+          detail: '오일이 새거나 펌프에 이상이 있을 수 있습니다. 계속 달리면 엔진이 손상됩니다.',
+        },
+      },
+      tirePressure('tire-rr', '뒤오른쪽 타이어 공기압', 250, 220, 200, 186, ['speed-limit', 'tpms-recalibrate', 'dispatch-service']),
+    ],
+  },
+  {
+    id: 'kao-0007',
+    modelId: 'toyota-alphard',
+    kind: 'mpv',
+    maker: 'Toyota',
+    model: 'Alphard',
+    year: 2025,
+    plate: 'K-0007',
+    member: '가상 회원 07',
+    paint: { name: 'Black', hex: '#0d0d0f' },
+    routeId: 'seoul-station',
+    cruise: [15, 50],
+    pace: [0.7, 1],
+    // 무겁고 뒷좌석 승객이 편하도록 부드럽게 가감속합니다.
+    handling: { accel: 1.3, decel: 2.2, lateral: 1.8 },
+    metrics: [
+      speedMetric(180),
+      {
+        key: 'rpm', label: '엔진 회전수', unit: 'rpm', min: 0, max: 6000, nominal: 0, noise: 20,
+        warn: null, crit: null, direction: 'high', precision: 0,
+        derive: ({ speed }) => 700 + speed * 22,
+      },
+      {
+        key: 'hv-battery', label: '하이브리드 배터리 온도', unit: '°C', min: -10, max: 80, nominal: 31, noise: 0.15,
+        warn: 45, crit: 52, direction: 'high', precision: 1,
+        fault: {
+          target: 57, rate: 0.6, actions: ['cooling-mode', 'eco-power', 'dispatch-service'],
+          title: '하이브리드 배터리 과열',
+          detail: '정체 구간에서 모터만으로 오래 달려 배터리 온도가 올랐습니다. 냉각 팬 흡입구가 막혔을 수 있습니다.',
+        },
+      },
+      {
+        key: 'cabin-co2', label: '실내 이산화탄소', unit: 'ppm', min: 400, max: 5000, nominal: 750, noise: 8,
+        warn: 1500, crit: 2500, direction: 'high', precision: 0,
+        fault: {
+          target: 2800, rate: 30, actions: ['notify-rider'],
+          title: '실내 공기 탁해짐',
+          detail: '승객이 많은데 내기 순환이 이어져 이산화탄소가 쌓였습니다. 졸음운전 위험이 커지니 외기 유입이 필요합니다.',
+        },
+      },
+      tirePressure('tire-fl', '앞왼쪽 타이어 공기압', 240, 210, 190, 176, ['speed-limit', 'tpms-recalibrate', 'dispatch-service']),
     ],
   },
 ]

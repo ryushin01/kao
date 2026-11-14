@@ -197,10 +197,20 @@ export interface ShowroomResponse {
 
 /** 로그인 화면에 보여 주는 데모 계정(비밀번호는 모두 같음) */
 export const DEMO_PASSWORD = 'kao-demo-2026'
-export const DEMO_ACCOUNTS: Array<{ login: string; name: string; role: UserRole; vehicleIds: string[]; description: string }> = [
-  { login: 'operator', name: '관제 요원', role: 'operator', vehicleIds: [], description: '4대 전체 관제와 원격 조치' },
+type DemoAccount = { login: string; name: string; role: UserRole; vehicleIds: string[]; description: string }
+/** 회원은 등록 탈것 한 대씩입니다(서버 fleet-specs의 탈것과 같은 순서·id). */
+const DEMO_MEMBERS: DemoAccount[] = [
   { login: 'member01', name: '가상 회원 01', role: 'member', vehicleIds: ['kao-0001'], description: 'Genesis G80' },
   { login: 'member02', name: '가상 회원 02', role: 'member', vehicleIds: ['kao-0002'], description: 'Lamborghini Aventador' },
   { login: 'member03', name: '가상 회원 03', role: 'member', vehicleIds: ['kao-0003'], description: 'Ducati Panigale V4 S' },
   { login: 'member04', name: '가상 회원 04', role: 'member', vehicleIds: ['kao-0004'], description: 'STRiDA LT' },
+  { login: 'member05', name: '가상 회원 05', role: 'member', vehicleIds: ['kao-0005'], description: 'Genesis Essentia Concept' },
+  { login: 'member06', name: '가상 회원 06', role: 'member', vehicleIds: ['kao-0006'], description: 'Renault Arkana' },
+  { login: 'member07', name: '가상 회원 07', role: 'member', vehicleIds: ['kao-0007'], description: 'Toyota Alphard' },
+]
+/** 등록 탈것 수(회원마다 한 대). 서버 fleet-specs와 같은지 fleet-specs.test.ts가 확인합니다. */
+export const FLEET_SIZE = DEMO_MEMBERS.flatMap((member) => member.vehicleIds).length
+export const DEMO_ACCOUNTS: DemoAccount[] = [
+  { login: 'operator', name: '관제 요원', role: 'operator', vehicleIds: [], description: `${FLEET_SIZE}대 전체 관제와 원격 조치` },
+  ...DEMO_MEMBERS,
 ]

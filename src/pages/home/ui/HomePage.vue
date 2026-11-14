@@ -17,16 +17,8 @@ const summary = computed(() => data.value?.summary ?? null)
 // 분류를 고르면 그 분류의 대표 모델을 턴테이블에 올립니다.
 const selectedKind = ref<VehicleKind>('supercar')
 const category = computed(() => VEHICLE_CATEGORIES.find((item) => item.kind === selectedKind.value)!)
-type ShowroomVehicle = ShowroomResponse['vehicles'][number]
-const selected = computed((): ShowroomVehicle | undefined => {
-  const registered = vehicles.value.find((vehicle) => vehicle.modelId === category.value.representative)
-  const showcase = category.value.showcase
-  if (registered || !showcase) return registered ?? vehicles.value[0]
-  // 관제 센터에 등록되지 않은 대표 모델(소개 화면에만 나오는 분류)은 분류에 정한 도장으로, 지표 없이 보여 줍니다.
-  const { representative, kind } = category.value
-  const name = MODEL_PROFILES[representative].displayName
-  return { id: `showcase-${representative}`, modelId: representative, kind, maker: name.split(' ')[0]!, model: name, paint: showcase.paint, speed: showcase.speed, metrics: [] }
-})
+// 분류마다 대표 모델의 등록 탈것이 관제 지도에서 달리므로, 그 탈것의 도장·속도로 턴테이블에 올립니다.
+const selected = computed(() => vehicles.value.find((vehicle) => vehicle.modelId === category.value.representative) ?? vehicles.value[0])
 
 const actionCodes = Object.keys(ACTIONS) as ActionCode[]
 const chapters = [
@@ -88,7 +80,8 @@ const chapters = [
         <h2 id="observe-title" class="chapter__title">관측: 달리는 동안 계속 봅니다</h2>
         <p class="chapter__text">
           등록된 탈것마다 다른 센서를 읽습니다. 세단은 냉각수와 12V 배터리, 슈퍼카는 엔진오일과 카본 세라믹 브레이크,
-          슈퍼바이크는 기울기 각도, 자전거는 벨트 장력과 트래커 배터리까지 봅니다.
+          슈퍼바이크는 기울기 각도, 자전거는 벨트 장력과 트래커 배터리, 전기자동차는 고전압 배터리와 구동 모터, SUV는
+          변속기와 엔진오일 압력, MPV는 하이브리드 배터리와 실내 공기까지 봅니다.
         </p>
         <ul class="chapter__list">
           <li v-for="vehicle in vehicles" :key="vehicle.id">
@@ -171,7 +164,7 @@ const chapters = [
 
     <section class="finale" aria-labelledby="finale-title">
       <p class="hud-label">Cross the horizon</p>
-      <h2 id="finale-title" class="finale__title">지금 달리고 있는 4대를 보러 가세요</h2>
+      <h2 id="finale-title" class="finale__title">지금 달리고 있는 {{ summary ? `${summary.vehicles}대를` : '탈것을' }} 보러 가세요</h2>
       <NuxtLink to="/fleet" class="cta cta--primary">관제 센터 열기</NuxtLink>
     </section>
   </div>

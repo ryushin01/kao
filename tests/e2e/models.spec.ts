@@ -31,6 +31,10 @@ test.describe('실제 3D 모델', () => {
     await page.getByRole('img', { name: /관제 지도/ }).scrollIntoViewIfNeeded()
     await expect.poll(() => loaded, { timeout: 45_000 }).toContain('/models/lamborghini-aventador.lite.glb')
     await expect.poll(() => loaded, { timeout: 45_000 }).toContain('/maps/seoul.json')
+    // 분류마다 한 대씩 7대가 모두 지도에서 달립니다(실제 3D 모델이 있는 여섯 대는 지도용 가벼운 모델로).
+    for (const id of ['genesis-g80', 'ducati-panigale-v4s', 'genesis-essentia', 'renault-arkana', 'toyota-alphard']) {
+      await expect.poll(() => loaded, { timeout: 45_000 }).toContain(`/models/${id}.lite.glb`)
+    }
     // 서울 지도 데이터는 웹 워커가 받아 도형으로 만듭니다(메인 스레드를 막지 않음).
     expect(workers.some((url) => url.includes('seoul-map.worker'))).toBe(true)
     await expect(page.getByRole('img', { name: /Lamborghini Aventador 미니어처/ })).toBeVisible()
@@ -59,9 +63,9 @@ test.describe('실제 3D 모델', () => {
     await page.locator('#miniature').scrollIntoViewIfNeeded()
     // 분류 기본값은 슈퍼카(아벤타도르)입니다.
     await expect.poll(() => loaded, { timeout: 30_000 }).toContain('/models/lamborghini-aventador.glb')
-    // 소개 화면에만 나오는 분류(MPV)는 분류에 정한 도장(검정)으로 대표 모델을 올립니다.
+    // 분류를 고르면 그 분류의 등록 탈것(MPV는 검정 알파드)을 그 도장으로 올립니다.
     await page.getByRole('group', { name: '분류 고르기' }).getByRole('radio', { name: /MPV/ }).check()
     await expect.poll(() => loaded, { timeout: 30_000 }).toContain('/models/toyota-alphard.glb')
-    await expect(page.getByRole('img', { name: 'Toyota Alphard 미니어처, 블랙 색상. 턴테이블 위 3D 모델' })).toBeVisible()
+    await expect(page.getByRole('img', { name: 'Toyota Alphard 미니어처, Black 색상. 턴테이블 위 3D 모델' })).toBeVisible()
   })
 })

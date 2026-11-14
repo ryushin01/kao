@@ -48,7 +48,9 @@ const onSent = (response: RemoteActionResponse) => applyAction(response)
     <header class="fleet__head">
       <p class="hud-label">Control Center</p>
       <h1 class="fleet__title">관제 센터</h1>
-      <p class="fleet__lead">등록된 탈것 4대의 주행과 상태를 실시간으로 지켜보고, 문제가 생기면 여기서 바로 조치합니다.</p>
+      <p class="fleet__lead">
+        등록된 탈것{{ frame ? ` ${frame.vehicles.length}대` : '' }}의 주행과 상태를 실시간으로 지켜보고, 문제가 생기면 여기서 바로 조치합니다.
+      </p>
       <dl v-if="summary && frame" class="fleet__summary">
         <div>
           <dt>수신 상태</dt>
