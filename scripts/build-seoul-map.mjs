@@ -1,18 +1,21 @@
 /**
  * 관제 지도용 서울 도심 지도 데이터를 OpenStreetMap에서 만듭니다(지도 데이터 © OpenStreetMap 기여자, ODbL 1.0).
  *
- *   pnpm build:map            # assets-src/osm/에 받아 둔 원본으로 만들기
- *   pnpm build:map --fetch    # Overpass API에서 원본을 다시 받은 뒤 만들기
+ *   pnpm build:map            # assets-src/osm/에 받아 둔 원본으로 만들기(없는 원본만 Overpass API에서 받음)
+ *   pnpm build:map --fetch    # 원본을 모두 다시 받은 뒤 만들기
  *
  * 만드는 것
  * - src/shared/config/routes.ts: 탈것 4대의 주행 경로. 실제 도로를 따라 닫힌 경로(위도·경도)
- * - public/maps/seoul.json: 관제 지도에 그리는 도로·한강·공원(지도 중심 기준 m 좌표, 정수)
+ * - public/maps/seoul.json: 관제 지도에 그리는 도로·한강·공원·높은 건물(지도 중심 기준 m 좌표, 정수, 차분 부호화)
+ *
+ * 지도는 두 겹입니다. 안쪽(경로가 있는 도심)은 골목길·자전거길·높은 건물(10층 이상 또는 30m 이상)까지,
+ * 바깥 고리는 큰길·물·공원만 그려 전체 보기에서 지도가 화면 끝에서 끊기지 않게 하고, 끝은 화면에서 흐리게 묻습니다.
  *
  * 경로는 경유점(도로 이름·진행 방향·태그)을 잇는 최단 경로이고, 일방통행(oneway 태그와 OSM 관례상 한 방향인 길)을 지킵니다
  * (실제로 달릴 수 있는 길만). 교차로 구조 때문에 크게 돌아가는 조합은 경유점과 방향을 바꿔 고릅니다.
  * Node 22.18 이상이 TS 파일을 그대로 불러와 앱과 같은 좌표 변환을 씁니다.
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { parseArgs } from 'node:util'
 import { MAP_CENTER, toLocal } from '../src/shared/lib/route-geo.ts'
 
@@ -20,62 +23,119 @@ const { values: args } = parseArgs({ options: { fetch: { type: 'boolean', defaul
 const ROOT = new URL('../', import.meta.url)
 const RAW = new URL('assets-src/osm/', ROOT)
 
-/** 경로 계산용(진출입로가 화면 밖으로 잠깐 나가는 곳까지 넉넉히)과 화면용 범위: [남, 서, 북, 동] */
+/** 범위: [남, 서, 북, 동]. 경로 계산용(진출입로가 화면 밖으로 잠깐 나가는 곳까지 넉넉히), 안쪽(자세히), 바깥 고리 */
 const ROUTING_BBOX = [37.495, 126.893, 37.595, 127.027]
 const DISPLAY_BBOX = [37.5, 126.9, 37.584, 127.022]
+const OUTER_BBOX = [37.45, 126.82, 37.64, 127.11]
 
 // ── 원본 받기 ───────────────────────────────────────────────────────────────
 
-const QUERIES = {
-  roads: `[out:json][timeout:240];(
-    way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|cycleway)$"](${ROUTING_BBOX});
-    way["highway"~"^(path|footway)$"]["bicycle"~"^(yes|designated)$"](${ROUTING_BBOX});
-  );out body;>;out skel qt;`,
-  minor: `[out:json][timeout:240];(way["highway"~"^(residential|unclassified|living_street)$"](${DISPLAY_BBOX}););out body;>;out skel qt;`,
-  areas: `[out:json][timeout:240];(
-    relation["natural"="water"](${DISPLAY_BBOX});way["natural"="water"](${DISPLAY_BBOX});
-    relation["leisure"="park"](${DISPLAY_BBOX});way["leisure"="park"](${DISPLAY_BBOX});
-  );out geom;`,
+/** 10층 이상이거나 높이 30m 이상인 건물 */
+const TALL = ['["building:levels"~"^[1-9][0-9]+$"]', '["height"~"^([3-9][0-9]|[1-9][0-9][0-9]+)([.][0-9]+)?$"]']
+
+/** 원본별 범위와 선택 조건. split×split 조각으로 나눠 받습니다(공용 서버는 큰 요청을 502·504로 끊습니다). */
+const SOURCES = {
+  roads: {
+    bbox: ROUTING_BBOX,
+    split: 1,
+    out: 'body;>;out skel qt',
+    select: (b) => `way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|cycleway)$"](${b});
+      way["highway"~"^(path|footway)$"]["bicycle"~"^(yes|designated)$"](${b});`,
+  },
+  minor: { bbox: DISPLAY_BBOX, split: 1, out: 'body;>;out skel qt', select: (b) => `way["highway"~"^(residential|unclassified|living_street)$"](${b});` },
+  areas: {
+    bbox: OUTER_BBOX,
+    split: 2,
+    out: 'geom',
+    select: (b) => `relation["natural"="water"](${b});way["natural"="water"](${b});relation["leisure"="park"](${b});way["leisure"="park"](${b});`,
+  },
+  outer: {
+    bbox: OUTER_BBOX,
+    split: 3,
+    out: 'geom',
+    select: (b) => `way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|secondary)$"](${b});`,
+  },
+  buildings: {
+    bbox: DISPLAY_BBOX,
+    split: 2,
+    out: 'geom',
+    select: (b) => ['way', 'relation'].flatMap((type) => TALL.map((tag) => `${type}["building"]${tag}(${b});`)).join(''),
+  },
 }
 
-const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']
+const OVERPASS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+]
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** 공용 Overpass 서버는 붐비면 429·502·504를 돌려주므로, 잠시 기다렸다가 다른 서버로도 다시 요청합니다. */
 async function overpass(name, query) {
-  for (let attempt = 0; attempt < 6; attempt += 1) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
     const endpoint = OVERPASS[attempt % OVERPASS.length]
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': 'kao-map-builder (https://github.com/ryushin01/kao)' },
       body: new URLSearchParams({ data: query }),
+      signal: AbortSignal.timeout(200_000),
     }).catch((error) => ({ ok: false, status: error.message }))
-    if (response.ok) return response.text()
+    if (response.ok) {
+      const text = await response.text()
+      if (text.trimStart().startsWith('{')) return JSON.parse(text)
+    }
     console.log(`[map] ${name}: ${new URL(endpoint).host} ${response.status}, 다시 요청합니다.`)
-    await wait(15_000 * (attempt + 1))
+    await wait(10_000 * (attempt + 1))
   }
   throw new Error(`Overpass에서 ${name}을 받지 못했습니다.`)
 }
 
-async function fetchRaw() {
-  await mkdir(RAW, { recursive: true })
-  for (const [name, query] of Object.entries(QUERIES)) {
-    console.log(`[map] Overpass에서 ${name} 받는 중…`)
-    await writeFile(new URL(`${name}.json`, RAW), await overpass(name, query))
+/** [남, 서, 북, 동] 범위를 split×split 조각으로 나눕니다. */
+function tiles([south, west, north, east], split) {
+  const result = []
+  for (let i = 0; i < split; i += 1) {
+    for (let j = 0; j < split; j += 1) {
+      const lat = (k) => Number((south + ((north - south) * k) / split).toFixed(5))
+      const lng = (k) => Number((west + ((east - west) * k) / split).toFixed(5))
+      result.push([lat(i), lng(j), lat(i + 1), lng(j + 1)])
+    }
+  }
+  return result
+}
+
+async function fetchRaw(name) {
+  const { bbox, split, out, select } = SOURCES[name]
+  const parts = tiles(bbox, split)
+  const seen = new Set()
+  const elements = []
+  let head = null
+  for (const [i, part] of parts.entries()) {
+    console.log(`[map] Overpass에서 ${name} 받는 중… (${i + 1}/${parts.length})`)
+    const data = await overpass(name, `[out:json][timeout:180];(${select(part)});out ${out};`)
+    head ??= { version: data.version, generator: data.generator, osm3s: data.osm3s }
+    // 조각 경계에 걸친 길·건물은 여러 조각에 들어 있으므로 한 번만 남깁니다.
+    for (const element of data.elements) {
+      const id = `${element.type}/${element.id}`
+      if (seen.has(id)) continue
+      seen.add(id)
+      elements.push(element)
+    }
     // Overpass 공용 서버 사용 규칙: 요청 사이를 띄웁니다.
     await wait(3000)
   }
+  await mkdir(RAW, { recursive: true })
+  await writeFile(new URL(`${name}.json`, RAW), JSON.stringify({ ...head, elements }))
 }
 
-if (args.fetch) await fetchRaw()
-const load = async (name) => {
-  try {
-    return JSON.parse(await readFile(new URL(`${name}.json`, RAW), 'utf8'))
-  } catch {
-    throw new Error(`assets-src/osm/${name}.json이 없습니다. pnpm build:map --fetch로 먼저 받아 주세요.`)
-  }
+for (const name of Object.keys(SOURCES)) {
+  const exists = await access(new URL(`${name}.json`, RAW)).then(
+    () => true,
+    () => false,
+  )
+  if (args.fetch || !exists) await fetchRaw(name)
 }
-const [roadsRaw, minorRaw, areasRaw] = await Promise.all([load('roads'), load('minor'), load('areas')])
+const load = async (name) => JSON.parse(await readFile(new URL(`${name}.json`, RAW), 'utf8'))
+const [roadsRaw, minorRaw, areasRaw, outerRaw, buildingsRaw] = await Promise.all(['roads', 'minor', 'areas', 'outer', 'buildings'].map(load))
 
 // ── 도로 그래프와 경로 ─────────────────────────────────────────────────────
 
@@ -349,10 +409,34 @@ await writeFile(new URL('src/shared/config/routes.ts', ROOT), routesTs)
 
 // ── 화면용 지도 ────────────────────────────────────────────────────────────
 
-const corner1 = toLocal(DISPLAY_BBOX[0], DISPLAY_BBOX[1])
-const corner2 = toLocal(DISPLAY_BBOX[2], DISPLAY_BBOX[3])
-const bounds = { minX: Math.round(corner1.x), maxX: Math.round(corner2.x), minZ: Math.round(corner2.z), maxZ: Math.round(corner1.z) }
-const inside = (p) => p.x >= bounds.minX && p.x <= bounds.maxX && p.z >= bounds.minZ && p.z <= bounds.maxZ
+const boundsOf = ([south, west, north, east]) => {
+  const a = toLocal(south, west)
+  const b = toLocal(north, east)
+  return { minX: Math.round(a.x), maxX: Math.round(b.x), minZ: Math.round(b.z), maxZ: Math.round(a.z) }
+}
+/** 지도 전체(바깥 고리까지)와 자세히 그리는 안쪽 */
+const bounds = boundsOf(OUTER_BBOX)
+const detail = boundsOf(DISPLAY_BBOX)
+const within = (box) => (p) => p.x >= box.minX && p.x <= box.maxX && p.z >= box.minZ && p.z <= box.maxZ
+
+/**
+ * 점들을 정수 m로 반올림해 [x0, z0, dx1, dz1, …](첫 점, 그다음부터는 앞 점과의 차이)로 줄입니다.
+ * 반올림한 뒤 차이를 내므로 차이를 더해 가면 반올림한 좌표가 그대로 나오고, 반올림해서 겹친 점은 뺍니다.
+ */
+function encode(points) {
+  const out = []
+  let px = 0
+  let pz = 0
+  for (const p of points) {
+    const x = Math.round(p.x)
+    const z = Math.round(p.z)
+    if (out.length && x === px && z === pz) continue
+    out.push(x - px, z - pz)
+    px = x
+    pz = z
+  }
+  return out
+}
 
 const ROAD_CLASS = {
   motorway: 'trunk', trunk: 'trunk', primary: 'primary', secondary: 'secondary', tertiary: 'tertiary',
@@ -360,31 +444,47 @@ const ROAD_CLASS = {
   residential: 'minor', unclassified: 'minor', living_street: 'minor', cycleway: 'cycleway', path: 'cycleway', footway: 'cycleway',
 }
 const TOLERANCE = { trunk: 2, primary: 2, secondary: 2, tertiary: 2.5, link: 2, minor: 4, cycleway: 3 }
+/** 바깥 고리까지 그리는 큰길(고속도로·도시고속도로·간선·보조간선). 나머지는 안쪽만 그립니다. */
+const OUTER_ROADS = new Set(['motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'secondary'])
 const roads = Object.fromEntries(Object.keys(TOLERANCE).map((key) => [key, []]))
-for (const way of [...roadWays, ...minorWays]) {
-  const kind = ROAD_CLASS[way.tags.highway]
-  if (!kind) continue
-  // 화면 밖 구간은 잘라 내고, 안쪽에 이어진 조각만 남깁니다.
+
+/**
+ * 범위 밖 구간은 잘라 내고, 안쪽에 이어진 조각만 등급별로 모읍니다.
+ * 바깥 고리(안쪽 범위 밖)의 조각은 멀리서만 보이므로 3배 크게 간추립니다.
+ */
+function addRoad(kind, points, box) {
+  const inside = within(box)
   let piece = []
   const flush = () => {
-    if (piece.length > 1) roads[kind].push(simplify(piece, TOLERANCE[kind]).flatMap((p) => [Math.round(p.x), Math.round(p.z)]))
+    if (piece.length > 1) {
+      const middle = piece[Math.floor(piece.length / 2)]
+      roads[kind].push(encode(simplify(piece, TOLERANCE[kind] * (within(detail)(middle) ? 1 : 3))))
+    }
     piece = []
   }
-  for (const id of way.nodes) {
-    const node = nodes.get(id)
-    if (node && inside(node)) piece.push(node)
+  for (const point of points) {
+    if (point && inside(point)) piece.push(point)
     else flush()
   }
   flush()
 }
+for (const way of outerRaw.elements) {
+  const kind = way.type === 'way' && way.geometry ? ROAD_CLASS[way.tags.highway] : undefined
+  // 진출입로는 멀리서는 보이지 않으므로 안쪽에만 그립니다.
+  if (kind) addRoad(kind, way.geometry.map((p) => toLocal(p.lat, p.lon)), kind === 'link' ? detail : bounds)
+}
+for (const way of [...roadWays, ...minorWays]) {
+  const kind = ROAD_CLASS[way.tags.highway]
+  if (kind && !OUTER_ROADS.has(way.tags.highway)) addRoad(kind, way.nodes.map((id) => nodes.get(id)), detail)
+}
 
-/** 다각형을 화면 사각형으로 자릅니다(Sutherland–Hodgman). */
-function clip(ring) {
+/** 다각형을 사각형 범위로 자릅니다(Sutherland–Hodgman). */
+function clip(ring, box) {
   const edgesOf = [
-    [(p) => p.x >= bounds.minX, (a, b) => ({ x: bounds.minX, z: a.z + ((b.z - a.z) * (bounds.minX - a.x)) / (b.x - a.x) })],
-    [(p) => p.x <= bounds.maxX, (a, b) => ({ x: bounds.maxX, z: a.z + ((b.z - a.z) * (bounds.maxX - a.x)) / (b.x - a.x) })],
-    [(p) => p.z >= bounds.minZ, (a, b) => ({ x: a.x + ((b.x - a.x) * (bounds.minZ - a.z)) / (b.z - a.z), z: bounds.minZ })],
-    [(p) => p.z <= bounds.maxZ, (a, b) => ({ x: a.x + ((b.x - a.x) * (bounds.maxZ - a.z)) / (b.z - a.z), z: bounds.maxZ })],
+    [(p) => p.x >= box.minX, (a, b) => ({ x: box.minX, z: a.z + ((b.z - a.z) * (box.minX - a.x)) / (b.x - a.x) })],
+    [(p) => p.x <= box.maxX, (a, b) => ({ x: box.maxX, z: a.z + ((b.z - a.z) * (box.maxX - a.x)) / (b.x - a.x) })],
+    [(p) => p.z >= box.minZ, (a, b) => ({ x: a.x + ((b.x - a.x) * (box.minZ - a.z)) / (b.z - a.z), z: box.minZ })],
+    [(p) => p.z <= box.maxZ, (a, b) => ({ x: a.x + ((b.x - a.x) * (box.maxZ - a.z)) / (b.z - a.z), z: box.maxZ })],
   ]
   let output = ring
   for (const [isIn, cross] of edgesOf) {
@@ -405,7 +505,9 @@ function clip(ring) {
   return output
 }
 
-const area = (ring) => Math.abs(ring.reduce((sum, p, i) => sum + p.x * ring[(i + 1) % ring.length].z - ring[(i + 1) % ring.length].x * p.z, 0) / 2)
+/** 넓이(m², 부호 있음). 지도 좌표(x 동쪽, z 남쪽)에서 +면 반시계 방향입니다. */
+const signedArea = (ring) => ring.reduce((sum, p, i) => sum + p.x * ring[(i + 1) % ring.length].z - ring[(i + 1) % ring.length].x * p.z, 0) / 2
+const area = (ring) => Math.abs(signedArea(ring))
 const key = (p) => `${p.lat.toFixed(7)},${p.lon.toFixed(7)}`
 
 /** 여러 선(멤버 way)을 끝점끼리 이어 닫힌 고리로 만듭니다. */
@@ -435,11 +537,10 @@ const toRing = (geometry) => geometry.map((p) => toLocal(p.lat, p.lon))
 function polygons(filter, minArea, tolerance) {
   const result = []
   const push = (outer, holes) => {
-    const clipped = clip(simplify([...outer, outer[0]], tolerance).slice(0, -1))
+    const clipped = clip(simplify([...outer, outer[0]], tolerance).slice(0, -1), bounds)
     if (clipped.length < 3 || area(clipped) < minArea) return
-    const flat = (ring) => ring.flatMap((p) => [Math.round(p.x), Math.round(p.z)])
-    const inner = holes.map((hole) => clip(simplify([...hole, hole[0]], tolerance).slice(0, -1))).filter((hole) => hole.length > 2 && area(hole) > minArea / 10)
-    result.push({ outer: flat(clipped), holes: inner.map(flat) })
+    const inner = holes.map((hole) => clip(simplify([...hole, hole[0]], tolerance).slice(0, -1), bounds)).filter((hole) => hole.length > 2 && area(hole) > minArea / 10)
+    result.push({ outer: encode(clipped), holes: inner.map(encode) })
   }
   for (const el of areasRaw.elements) {
     if (!filter(el.tags ?? {})) continue
@@ -453,16 +554,51 @@ function polygons(filter, minArea, tolerance) {
   return result
 }
 
+/** 건물 높이(m): height 태그, 없으면 층수 × 3.3m */
+function buildingHeight(tags) {
+  const height = Number.parseFloat(tags.height)
+  if (Number.isFinite(height) && height > 0) return height
+  const levels = Number.parseFloat(tags['building:levels'])
+  return Number.isFinite(levels) && levels > 0 ? levels * 3.3 : null
+}
+
+/** 높은 건물: [높이(m), x0, z0, dx1, dz1, …] 바닥 둘레(반시계 방향). 가운데가 안쪽 범위에 있는 것만 둡니다. */
+const buildings = []
+function addBuilding(ring, height) {
+  let points = simplify([...ring, ring[0]], 1).slice(0, -1)
+  if (points.length < 3 || area(points) < 80) return
+  const center = points.reduce((sum, p) => ({ x: sum.x + p.x / points.length, z: sum.z + p.z / points.length }), { x: 0, z: 0 })
+  if (!within(detail)(center)) return
+  // 앱은 바닥이 반시계 방향이라고 보고 벽의 바깥쪽을 정합니다.
+  if (signedArea(points) < 0) points = points.reverse()
+  const encoded = encode(points)
+  if (encoded.length >= 6) buildings.push([Math.round(height), ...encoded])
+}
+for (const el of buildingsRaw.elements) {
+  const height = buildingHeight(el.tags ?? {})
+  if (!height) continue
+  if (el.type === 'way' && el.geometry) addBuilding(toRing(el.geometry.slice(0, -1)), height)
+  if (el.type === 'relation') {
+    const outers = el.members.filter((m) => m.type === 'way' && m.role === 'outer' && m.geometry).map((m) => m.geometry)
+    for (const outer of joinRings(outers).map(toRing)) addBuilding(outer, height)
+  }
+}
+
 const map = {
+  version: 2,
   attribution: '© OpenStreetMap 기여자 (ODbL 1.0)',
   center: MAP_CENTER,
   bounds,
+  detail,
   roads,
   water: polygons((tags) => tags.natural === 'water', 15_000, 4),
   parks: polygons((tags) => tags.leisure === 'park', 40_000, 6),
+  buildings,
 }
 await mkdir(new URL('public/maps/', ROOT), { recursive: true })
 const json = JSON.stringify(map)
 await writeFile(new URL('public/maps/seoul.json', ROOT), json)
 const segments = Object.values(roads).reduce((sum, list) => sum + list.reduce((s, line) => s + line.length / 2 - 1, 0), 0)
-console.log(`[map] public/maps/seoul.json ${(json.length / 1024).toFixed(0)}KB, 도로 선분 ${segments}개, 물 ${map.water.length}개, 공원 ${map.parks.length}개`)
+console.log(
+  `[map] public/maps/seoul.json ${(json.length / 1024).toFixed(0)}KB, 도로 선분 ${segments}개, 물 ${map.water.length}개, 공원 ${map.parks.length}개, 건물 ${buildings.length}동`,
+)

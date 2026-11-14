@@ -14,6 +14,11 @@ export interface StageOptions {
 
 export interface Stage {
   scene: Scene
+  /**
+   * scene 위에 겹쳐 그리는 장면. 깊이만 지운 뒤 그리므로 scene의 물체(관제 지도의 건물 등)에 가려지지 않습니다.
+   * 비어 있으면 그리지 않습니다.
+   */
+  overlay: Scene
   camera: PerspectiveCamera
   renderer: WebGLRenderer
   /** true면 매 프레임 그리고, false면 invalidate()를 부를 때만 그립니다. */
@@ -38,6 +43,7 @@ export function createStage({ canvas, fov = 35, near = 0.1, far = 400, maxPixelR
   renderer.toneMappingExposure = 1.05
 
   const scene = new Scene()
+  const overlay = new Scene()
   const camera = new PerspectiveCamera(fov, 1, near, far)
   const timer = new Timer()
 
@@ -51,6 +57,12 @@ export function createStage({ canvas, fov = 35, near = 0.1, far = 400, maxPixelR
     const delta = Math.min(timer.getDelta(), 0.1)
     onFrame?.(delta, timer.getElapsed())
     renderer.render(scene, camera)
+    if (overlay.children.length > 0) {
+      renderer.autoClear = false
+      renderer.clearDepth()
+      renderer.render(overlay, camera)
+      renderer.autoClear = true
+    }
   }
 
   const loop = () => {
@@ -121,6 +133,7 @@ export function createStage({ canvas, fov = 35, near = 0.1, far = 400, maxPixelR
 
   return {
     scene,
+    overlay,
     camera,
     renderer,
     setPlaying(next) {
@@ -136,6 +149,7 @@ export function createStage({ canvas, fov = 35, near = 0.1, far = 400, maxPixelR
       intersection.disconnect()
       document.removeEventListener('visibilitychange', onVisibility)
       disposeObject(scene)
+      disposeObject(overlay)
       timer.dispose()
       renderer.dispose()
       // dispose()만으로는 브라우저가 WebGL 컨텍스트를 바로 돌려주지 않아, 화면을 오가면 컨텍스트 수 한도에 걸립니다.

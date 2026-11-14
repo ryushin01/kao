@@ -7,6 +7,7 @@ import { formatNumber, formatPercent, isWebGLAvailable, useMotion, whenNearViewp
 import { HudPanel, StatusBadge } from '@shared/ui'
 import { MODEL_PROFILES } from '@entities/vehicle'
 import { MAP_PLACES } from '../config/places'
+import { layoutLabels } from '../lib/label-layout'
 import type { TrackerScene } from '../lib/tracker-scene'
 
 const props = withDefaults(defineProps<{ frame: FleetFrame; initialFollow?: string; title?: string }>(), {
@@ -26,7 +27,7 @@ const vehicles = computed(() => props.frame.vehicles)
 const gpsCount = computed(() => vehicles.value.filter((vehicle) => vehicle.positionSource === 'gps').length)
 const description = computed(
   () =>
-    `서울 도심 관제 지도. 광화문·남산·한강·여의도의 실제 도로 위를 ${vehicles.value.length}대의 미니어처가 각자의 경로로 달리고 있습니다. ` +
+    `서울 도심 관제 지도. 광화문·남산·한강·여의도의 실제 도로와 높은 건물 사이를 ${vehicles.value.length}대의 미니어처가 각자의 경로로 달리고 있습니다. ` +
     (gpsCount.value > 0 ? `실차 GPS로 위치를 받는 ${gpsCount.value}대는 실제 위치에, 나머지는 ` : '') +
     `움직임이 보이도록 실제보다 ${props.frame.timeScale}배 빠르게 움직이며, 실제 위치와 상태는 지도 아래 표에 있습니다.`,
 )
@@ -35,8 +36,38 @@ const positionLabel = (vehicle: FleetFrame['vehicles'][number]) => {
   return vehicle.gps ? 'GPS 경로 밖(시뮬레이션 위치)' : '시뮬레이션'
 }
 
-const setLabel = (vehicleId: string) => (el: unknown) => {
-  labels.value[vehicleId] = el as HTMLElement | null
+/** 이름표 크기(px). 글자(속도·상태)가 바뀌어 크기가 달라질 때만 ResizeObserver로 다시 잽니다. */
+const labelSizes = new Map<string, { width: number; height: number }>()
+const labelKeys = new WeakMap<Element, string>()
+let sizeObserver: ResizeObserver | null = null
+
+const setLabel = (key: string) => (el: unknown) => {
+  const element = el as HTMLElement | null
+  const previous = labels.value[key]
+  if (previous === element) return
+  if (previous) sizeObserver?.unobserve(previous)
+  labels.value[key] = element
+  labelSizes.delete(key)
+  if (!element) return
+  sizeObserver ??= new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      const target = entry.target as HTMLElement
+      const id = labelKeys.get(target)
+      if (id) labelSizes.set(id, { width: target.offsetWidth, height: target.offsetHeight })
+    }
+  })
+  labelKeys.set(element, key)
+  sizeObserver.observe(element)
+}
+
+const labelSize = (key: string) => {
+  let size = labelSizes.get(key)
+  if (!size) {
+    const label = labels.value[key]
+    size = { width: label?.offsetWidth ?? 0, height: label?.offsetHeight ?? 0 }
+    labelSizes.set(key, size)
+  }
+  return size
 }
 
 let unmounted = false
@@ -50,13 +81,18 @@ async function start() {
     canvas: canvas.value,
     frame: props.frame,
     playing: !paused.value,
-    onProject(vehicleId, x, y, visible) {
-      const label = labels.value[vehicleId]
-      if (!label) return
-      // 탈것 이름표는 미니어처 위에, 지명은 그 자리 한가운데에 둡니다.
-      const anchor = vehicleId.startsWith('place:') ? 'translate(-50%, -50%)' : 'translate(-50%, -100%)'
-      label.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) ${anchor}`
-      label.style.opacity = visible ? '1' : '0'
+    onProject(points, view) {
+      // 탈것 이름표는 미니어처 위에 두고 서로 겹치면 위나 옆으로 비켜 세워 선으로 잇고, 지명은 이름표와 겹치면 숨깁니다.
+      for (const placement of layoutLabels(points, labelSize, follow.value === 'all' ? null : follow.value, view)) {
+        const label = labels.value[placement.id]
+        if (!label) continue
+        label.style.transform = `translate(${placement.left.toFixed(1)}px, ${placement.top.toFixed(1)}px)`
+        label.style.opacity = placement.shown ? '1' : '0'
+        if (placement.id.startsWith('place:')) continue
+        const { dx, dy } = placement.leader
+        label.style.setProperty('--leader-length', `${Math.hypot(dx, dy).toFixed(1)}px`)
+        label.style.setProperty('--leader-angle', `${((Math.atan2(dy, dx) * 180) / Math.PI).toFixed(1)}deg`)
+      }
     },
     onPick(vehicleId) {
       follow.value = vehicleId
@@ -82,6 +118,7 @@ watch(paused, (value) => scene.value?.setPlaying(!value))
 
 onBeforeUnmount(() => {
   unmounted = true
+  sizeObserver?.disconnect()
   stopWatching()
   scene.value?.dispose()
   scene.value = null
@@ -295,6 +332,20 @@ onBeforeUnmount(() => {
   text-shadow: 0 0 4px #000, 0 0 2px #000;
   white-space: nowrap;
   opacity: 0;
+}
+
+/* 다른 이름표를 피해 비켜 섰을 때 이름표 아래 가운데에서 미니어처까지 잇는 선 */
+.tracker__label::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  width: var(--leader-length, 0px);
+  height: 1px;
+  background: currentColor;
+  opacity: 0.6;
+  transform: rotate(var(--leader-angle, 90deg));
+  transform-origin: 0 50%;
 }
 
 .tracker__label strong {
