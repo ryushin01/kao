@@ -17,9 +17,16 @@ const summary = computed(() => data.value?.summary ?? null)
 // 분류를 고르면 그 분류의 대표 모델을 턴테이블에 올립니다.
 const selectedKind = ref<VehicleKind>('supercar')
 const category = computed(() => VEHICLE_CATEGORIES.find((item) => item.kind === selectedKind.value)!)
-const selected = computed(
-  () => vehicles.value.find((vehicle) => vehicle.modelId === category.value.representative) ?? vehicles.value[0],
-)
+type ShowroomVehicle = ShowroomResponse['vehicles'][number]
+const selected = computed((): ShowroomVehicle | undefined => {
+  const registered = vehicles.value.find((vehicle) => vehicle.modelId === category.value.representative)
+  const showcase = category.value.showcase
+  if (registered || !showcase) return registered ?? vehicles.value[0]
+  // 관제 센터에 등록되지 않은 대표 모델(소개 화면에만 나오는 분류)은 분류에 정한 도장으로, 지표 없이 보여 줍니다.
+  const { representative, kind } = category.value
+  const name = MODEL_PROFILES[representative].displayName
+  return { id: `showcase-${representative}`, modelId: representative, kind, maker: name.split(' ')[0]!, model: name, paint: showcase.paint, speed: showcase.speed, metrics: [] }
+})
 
 const actionCodes = Object.keys(ACTIONS) as ActionCode[]
 const chapters = [
@@ -130,8 +137,8 @@ const chapters = [
           <p class="hud-label">04 / 04 · Miniature</p>
           <h2 id="miniature-title" class="chapter__title">미니어처: 같은 모양으로 따라갑니다</h2>
           <p class="chapter__text">
-            세단·슈퍼카·슈퍼바이크·자전거 네 분류마다 대표 모델을 실제 모양 그대로 미니어처로 만들었습니다. 바퀴는
-            실제 속도에 맞춰 구르고, 모터사이클은 코너에서 기울기 센서 값만큼 눕습니다.
+            세단·슈퍼카·슈퍼바이크·자전거·전기자동차·SUV·MPV 일곱 분류마다 대표 모델을 실제 모양 그대로 미니어처로
+            만들었습니다. 바퀴는 실제 속도에 맞춰 구르고, 모터사이클은 코너에서 기울기 센서 값만큼 눕습니다.
           </p>
           <fieldset v-if="vehicles.length" class="model-picker">
             <legend class="hud-label">분류 고르기</legend>

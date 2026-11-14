@@ -59,5 +59,9 @@ test.describe('실제 3D 모델', () => {
     await page.locator('#miniature').scrollIntoViewIfNeeded()
     // 분류 기본값은 슈퍼카(아벤타도르)입니다.
     await expect.poll(() => loaded, { timeout: 30_000 }).toContain('/models/lamborghini-aventador.glb')
+    // 소개 화면에만 나오는 분류(MPV)는 분류에 정한 도장(검정)으로 대표 모델을 올립니다.
+    await page.getByRole('group', { name: '분류 고르기' }).getByRole('radio', { name: /MPV/ }).check()
+    await expect.poll(() => loaded, { timeout: 30_000 }).toContain('/models/toyota-alphard.glb')
+    await expect(page.getByRole('img', { name: 'Toyota Alphard 미니어처, 블랙 색상. 턴테이블 위 3D 모델' })).toBeVisible()
   })
 })

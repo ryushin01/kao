@@ -23,7 +23,7 @@ function load(modelId: VehicleModelId, detail: ModelDetail): Promise<Group | nul
       loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder)
     }
     pending = loader
-      .loadAsync(detail === 'lite' ? asset.liteUrl : asset.url)
+      .loadAsync(detail === 'lite' ? (asset.liteUrl ?? asset.url) : asset.url)
       .then((gltf) => {
         // 가벼운 버전은 단순화하려고 노멀을 지웠으므로 여기서 다시 계산합니다.
         gltf.scene.traverse((object) => {

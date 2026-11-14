@@ -3,9 +3,16 @@
  * 서버는 이 타입으로 프레임을 만들고, 화면은 같은 타입으로 읽습니다.
  */
 
-export type VehicleKind = 'sedan' | 'supercar' | 'superbike' | 'bicycle'
+export type VehicleKind = 'sedan' | 'supercar' | 'superbike' | 'bicycle' | 'ev' | 'suv' | 'mpv'
 
-export type VehicleModelId = 'genesis-g80' | 'lamborghini-aventador' | 'ducati-panigale-v4s' | 'strida-lt'
+export type VehicleModelId =
+  | 'genesis-g80'
+  | 'lamborghini-aventador'
+  | 'ducati-panigale-v4s'
+  | 'strida-lt'
+  | 'genesis-essentia'
+  | 'renault-arkana'
+  | 'toyota-alphard'
 
 export type HealthState = 'nominal' | 'warning' | 'critical'
 

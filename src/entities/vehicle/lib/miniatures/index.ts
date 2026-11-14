@@ -2,6 +2,7 @@ import type { VehicleModelId } from '@shared/api'
 import { createDucatiPanigaleV4S } from './ducati-panigale-v4s'
 import { createGenesisG80 } from './genesis-g80'
 import { createLamborghiniAventador } from './lamborghini-aventador'
+import { createGenesisEssentia, createRenaultArkana, createToyotaAlphard } from './new-models'
 import { createStridaLT } from './strida-lt'
 import type { Miniature } from './parts'
 
@@ -10,6 +11,9 @@ const builders: Record<VehicleModelId, (paintHex: string) => Miniature> = {
   'lamborghini-aventador': createLamborghiniAventador,
   'ducati-panigale-v4s': createDucatiPanigaleV4S,
   'strida-lt': createStridaLT,
+  'genesis-essentia': createGenesisEssentia,
+  'renault-arkana': createRenaultArkana,
+  'toyota-alphard': createToyotaAlphard,
 }
 
 export function createMiniature(modelId: VehicleModelId, paintHex: string): Miniature {

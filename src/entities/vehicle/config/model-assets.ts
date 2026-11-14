@@ -2,8 +2,8 @@ import type { VehicleModelId } from '@shared/api'
 
 export interface ModelAsset {
   url: string
-  /** 관제 지도용 가벼운 버전 */
-  liteUrl: string
+  /** 관제 지도용 가벼운 버전. 관제 지도에 나오지 않는 대표 모델(소개 화면만)은 없습니다. */
+  liteUrl?: string
   /** 실제 전장(m) */
   length: number
   /** wheel_N 노드의 반지름(m) */
@@ -36,5 +36,23 @@ export const MODEL_ASSETS: Partial<Record<VehicleModelId, ModelAsset>> = {
     length: 2.11,
     wheelRadii: [0.3, 0.33],
     leans: true,
+  },
+  'genesis-essentia': {
+    url: '/models/genesis-essentia.glb',
+    length: 4.6,
+    wheelRadii: [0.39, 0.39, 0.39, 0.39],
+    leans: false,
+  },
+  'renault-arkana': {
+    url: '/models/renault-arkana.glb',
+    length: 4.545,
+    wheelRadii: [0.345, 0.345, 0.345, 0.345],
+    leans: false,
+  },
+  'toyota-alphard': {
+    url: '/models/toyota-alphard.glb',
+    length: 4.995,
+    wheelRadii: [0.365, 0.365, 0.365, 0.365],
+    leans: false,
   },
 }

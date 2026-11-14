@@ -40,6 +40,36 @@ export const MODEL_PROFILES: Record<VehicleModelId, ModelProfile> = {
       { label: '서스펜션', value: 'Öhlins 전자식' },
     ],
   },
+  'genesis-essentia': {
+    shortName: 'Essentia',
+    displayName: 'Genesis Essentia Concept',
+    specs: [
+      { label: '구분', value: '2018 콘셉트카' },
+      { label: '구동', value: '전기 모터 여러 개' },
+      { label: '0→100km/h', value: '약 3초(발표)' },
+      { label: '차체', value: '탄소섬유 모노코크' },
+    ],
+  },
+  'renault-arkana': {
+    shortName: 'Arkana',
+    displayName: 'Renault Arkana',
+    specs: [
+      { label: '전장', value: '4,545mm' },
+      { label: '축거', value: '2,721mm' },
+      { label: '엔진', value: '1.3 터보 150마력' },
+      { label: '변속기', value: 'CVT' },
+    ],
+  },
+  'toyota-alphard': {
+    shortName: 'Alphard',
+    displayName: 'Toyota Alphard',
+    specs: [
+      { label: '전장', value: '4,995mm' },
+      { label: '전고', value: '1,935mm' },
+      { label: '축거', value: '3,000mm' },
+      { label: '동력', value: '2.5 하이브리드' },
+    ],
+  },
   'strida-lt': {
     shortName: 'Strida LT',
     displayName: 'STRiDA LT',

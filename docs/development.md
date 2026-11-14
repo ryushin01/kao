@@ -64,7 +64,9 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
 
 ## 탈것 분류
 
-분류와 대표 모델은 `src/entities/vehicle/config/categories.ts`의 `VEHICLE_CATEGORIES`에 있습니다(세단 `sedan`, 슈퍼카 `supercar`, 슈퍼바이크 `superbike`, 자전거 `bicycle`). 탈것의 분류는 서버 `fleet-specs.ts`의 `kind`로 정하고, 화면은 분류 이름을 `CATEGORY_LABELS`에서 가져옵니다. 소개 화면은 분류를 고르면 대표 모델을, 관제 센터는 분류 필터로 아래 목록을 거릅니다.
+분류와 대표 모델은 `src/entities/vehicle/config/categories.ts`의 `VEHICLE_CATEGORIES`에 있습니다(세단 `sedan`, 슈퍼카 `supercar`, 슈퍼바이크 `superbike`, 자전거 `bicycle`, 전기자동차 `ev`, SUV `suv`, MPV `mpv`). 탈것의 분류는 서버 `fleet-specs.ts`의 `kind`로 정하고, 화면은 분류 이름을 `CATEGORY_LABELS`에서 가져옵니다. 소개 화면은 분류를 고르면 대표 모델을, 관제 센터는 분류 필터로 아래 목록을 거릅니다(등록 탈것이 있는 분류만).
+
+전기자동차(Genesis Essentia Concept)·SUV(Renault Arkana)·MPV(Toyota Alphard)는 관제 센터에 등록된 탈것이 없어 소개 화면에만 나옵니다. 이런 분류는 `showcase`에 보여 줄 도장과 바퀴를 굴릴 속도를 적고(알파드는 검정), 소개 화면은 그 값으로 대표 모델을 턴테이블에 올립니다. 턴테이블 카메라(`frameShowcase`)는 미니어처의 경계 구에 맞춰 거리를 잡고, 키가 큰 SUV·MPV처럼 턴테이블 앞쪽 가장자리가 화면 아래로 벗어나면 들어올 때까지 물러납니다.
 
 ## 서울 지도
 
@@ -86,7 +88,7 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
 
 ## 미니어처
 
-### 실제 3D 모델 (G80, Aventador, Panigale)
+### 실제 3D 모델 (G80, Aventador, Panigale, Essentia, Arkana, Alphard)
 
 1. Sketchfab에서 glTF로 받아 `assets-src/<모델 id>/`에 풉니다. 이 폴더는 git에 올리지 않습니다.
 2. `pnpm build:models [모델 id]`로 `public/models/<모델 id>.glb`를 만듭니다. 설정은 `scripts/build-models.mjs`의 `MODELS`에 있습니다.
@@ -94,8 +96,11 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
    - 이름이 제각각이라 바퀴는 위치로 고릅니다. `wheels`에 축 중심·반지름·폭을 적으면 그 원기둥 안의 삼각형을 `wheel_N` 노드(원점 = 축 중심)로 옮깁니다. 캘리퍼(`/calip/i`)는 몸체에 남깁니다.
    - `paint` 정규식에 맞는 재질에 `extras.kaoPaint`를 붙여 화면에서 회원 도장 색으로 바꿉니다.
    - `--inspect`를 붙이면 맞춘 뒤 재질별 위치·삼각형 수를 출력합니다. 바퀴 좌표와 도장 재질은 이 값으로 정합니다.
-   - 관제 지도용 가벼운 버전(`.lite.glb`)도 함께 만듭니다. 큰 부품만 크게 줄이고, 작은 부품(삼각형 1,500개 미만)은 가장자리를 잠근 채 조금만 줄이며, 반투명 유리는 줄이지 않습니다(얇은 열린 면이라 줄이면 구멍이 남). `--lite-only`는 이미 만든 GLB에서 가벼운 버전만 다시 만듭니다.
-3. 화면은 `MODEL_ASSETS`(`src/entities/vehicle/config/model-assets.ts`)에 등록된 모델만 불러오고, 출처는 README의 '출처' 표에 적고, 푸터에는 그 표로 가는 링크만 둡니다(CC BY 4.0).
+   - 관제 지도용 가벼운 버전(`.lite.glb`)도 함께 만듭니다. 큰 부품만 크게 줄이고, 작은 부품(삼각형 1,500개 미만)은 가장자리를 잠근 채 조금만 줄이며, 반투명 유리는 줄이지 않습니다(얇은 열린 면이라 줄이면 구멍이 남). `--lite-only`는 이미 만든 GLB에서 가벼운 버전만 다시 만듭니다. 관제 지도에 나오지 않는 대표 모델(`lite: false`)은 만들지 않습니다.
+   - 원본에 빠진 바퀴는 `mirror`(빠진 바퀴: 복사할 바퀴)로 반대쪽 바퀴를 거울 복사합니다. Arkana 원본에는 앞 왼쪽 바퀴(타이어·휠·브레이크)가 없습니다. 바퀴 재질의 앞뒤·좌우 범위는 `--wheel-bounds <재질 정규식>`, 한 상자 안의 재질은 `--at x0,x1,y0,y1,z0,z1`로 봅니다.
+   - 부품·삼각형이 아주 많은 원본(Alphard: 삼각형 300만 개, 노드 수천 개)은 `joinFirst`로 같은 재질끼리 먼저 합친 뒤 줄이고, `dropNormals`로 법선을 지워 갈라진 정점이 단순화를 막지 않게 합니다(화면이 불러올 때 다시 계산). `textureSize`로 텍스처를 더 줄입니다. 몸체 부품은 이름을 지워 합쳐지게 합니다(바퀴 `wheel_N`만 이름을 남김).
+   - Essentia는 콘셉트카라 공식 전장이 없어, 타이어 지름이 실제 GT 타이어(약 0.77m)가 되도록 맞춘 어림값(4.6m)을 씁니다. 원본 유리는 흰 반투명(거칠기 0.6)이라 젖빛 유리처럼 보여, `glass`(재질 정규식, RGBA 선형 색, 거칠기)로 실내가 비치는 짙은 유리로 바꿉니다.
+3. 화면은 `MODEL_ASSETS`(`src/entities/vehicle/config/model-assets.ts`)에 등록된 모델만 불러오고, 출처는 README의 '출처' 표에 적고, 푸터에는 그 표로 가는 링크만 둡니다(CC BY 4.0, Alphard는 Sketchfab Standard).
 
 화면은 직접 만든 모형을 먼저 그리고, `loadModelMiniature`로 GLB를 받으면 바꿔 끼웁니다. 받지 못하면 직접 만든 모형을 계속 씁니다.
 
