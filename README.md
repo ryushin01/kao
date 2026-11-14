@@ -1,7 +1,7 @@
 # KAO — Kinetic Aero One
 
 [![CI](https://github.com/ryushin01/kao/actions/workflows/ci.yml/badge.svg)](https://github.com/ryushin01/kao/actions/workflows/ci.yml)
-![version](https://img.shields.io/badge/version-0.7.1-8B0000)
+![version](https://img.shields.io/badge/version-0.7.2-8B0000)
 
 회원의 자동차·모터사이클·자전거가 달리는 동안 상태를 실시간으로 지켜보고, 문제가 생기면 원격으로 조치하는 관제 서비스입니다. 등록된 탈것은 실제 모양을 본뜬 3D 미니어처로 서울 도심 지도의 실제 도로 위를 달립니다.
 
@@ -19,13 +19,9 @@
 |---|---|
 | ![로소 마스 색 아벤타도르 3D 모델이 놓인 턴테이블과, 동작·한남 한강 순환을 시속 74km로 달리며 실차 신호(GPS 기준)로 들어온 엔진오일 과열 경고에 냉각 모드·출력 제한·운전자 알림 버튼이 있는 원격 조치 패널](docs/images/vehicle.jpg) | ![세단·슈퍼카·슈퍼바이크·자전거 분류 고르기와, 세단 대표 모델 G80 미니어처](docs/images/miniature.jpg) |
 
-| 로그인 | 지표 이력 |
+| 지표 이력 | 모바일 관제 센터 |
 |---|---|
-| ![아이디·비밀번호 입력란과 관제 요원·회원 01~04 데모 계정 버튼](docs/images/login.jpg) | ![냉각수 온도가 경고선과 위험선을 넘었다가 회복되는 60분 이력 그래프와 툴팁](docs/images/history.jpg) |
-
-| 모바일 관제 센터 |
-|---|
-| <img src="docs/images/mobile.jpg" alt="모바일 화면의 수신 상태·조치 필요 건수 요약과 카메라 시점 버튼" width="240"> |
+| ![냉각수 온도가 경고선과 위험선을 넘었다가 회복되는 60분 이력 그래프와 툴팁](docs/images/history.jpg) | <img src="docs/images/mobile.jpg" alt="모바일 화면의 수신 상태·조치 필요 건수 요약과 카메라 시점 버튼" width="240"> |
 
 ## 주요 기능
 
@@ -37,12 +33,10 @@
 | 탈것 상세 | 턴테이블 미니어처, 실시간 지표와 경고·위험 기준, 문제별 원격 조치, 지표 이력 그래프(10·30·60분), 경로 위치 |
 | 위험 알림 | 위험 등급 문제를 웹 푸시로 알림(관제 요원은 전체, 회원은 자기 탈것). Cloudflare Workers 크론이 5분마다 검사 |
 
-- **분류**: 세단·슈퍼카·슈퍼바이크·자전거 네 분류로 탈것을 나누고, 분류마다 대표 모델(G80, 아벤타도르, 파니갈레 V4 S, 스트라이다)을 3D 미니어처로 보여 줍니다. 같은 분류에 탈것이 늘어나도 `src/entities/vehicle/config/categories.ts` 하나로 관리합니다.
-- **서울 지도**: OpenStreetMap 도로·한강·공원과 높은 건물(10층 이상, 약 5천 동)로 광화문에서 여의도·반포까지를 3D로 그리고, 네 대가 실제 도로를 달립니다. 지도 데이터는 웹 워커에서 도형으로 만듭니다. G80은 광화문 도심 순환, 아벤타도르는 동작·한남대교 한강 순환, 파니갈레는 남산 순환, 스트라이다는 여의도 한강 자전거길입니다. 경로는 도로 이름·진행 방향을 지정한 경유점을 일방통행을 지키며 잇는 최단 경로로 만들고(`pnpm build:map`), 실차 GPS도 같은 경로에 맞춥니다. 속도도 도로 제한속도에 맞춰 도심·남산은 시속 50km, 강변북로·올림픽대로는 80km, 자전거길은 20km를 넘지 않습니다.
-- **미니어처**: G80·아벤타도르·파니갈레는 실제 3D 모델(아래 출처)을 실제 치수와 방향으로 맞추고 바퀴를 분리해 썼고, STRiDA LT는 Three.js로 직접 모델링했습니다. 바퀴는 속도에 맞춰 구르고, 이륜차는 지도의 굽은 길에서 실제 속도에 맞는 각도로 눕습니다. 도장 색은 회원 데이터대로 바뀝니다.
-- **원격 조치**: 냉각 모드, 출력·속도 제한, TPMS 재보정, 트랙션 강화, 절전 모드, 운전자 알림, 긴급 출동. 확인 대화상자를 거치고 두 번 눌러도 한 번만 보냅니다.
-- **서버리스 시뮬레이션**: 시뮬레이션은 시간의 순수 함수라 어느 서버 인스턴스든 같은 상태를 내고, 원격 조치만 DB에 저장합니다. 지표 이력도 지난 시각을 다시 계산해 그립니다.
-- **실차 연결**: 실제 차량이 측정값·GPS를 보내면 그 탈것은 실측값으로 바뀌고, 기준을 넘으면 실측 문제를 엽니다. 원격 조치는 명령으로 차량에 전달돼 적용·실패로 응답받고, 2분 안에 응답이 없으면 다시 조치할 수 있습니다. GPS는 경로 위 위치와 바퀴 수로 바꾸고, 지표 이력에는 실측값을 씁니다([실차 연결](docs/integration.md)).
+- **서울 지도**: OpenStreetMap 도로·한강·공원과 높은 건물(10층 이상, 약 5천 동)로 광화문에서 여의도·반포까지를 3D로 그립니다. 네 대는 도로 이름·진행 방향을 지정한 경유점을 일방통행을 지키며 잇는 실제 도로(G80 광화문 도심, 아벤타도르 한강 다리, 파니갈레 남산, 스트라이다 여의도 자전거길)를 제한속도에 맞춰 달립니다.
+- **미니어처**: 세단·슈퍼카·슈퍼바이크·자전거 네 분류의 대표 모델입니다. G80·아벤타도르·파니갈레는 실제 3D 모델(아래 출처)을 실제 치수로 맞추고 바퀴를 분리했고, STRiDA LT는 Three.js로 직접 모델링했습니다. 바퀴는 속도에 맞춰 구르고, 이륜차는 굽은 길에서 실제 속도에 맞는 각도로 눕습니다.
+- **원격 조치·실차 연결**: 냉각 모드, 출력·속도 제한, TPMS 재보정 등을 확인 대화상자를 거쳐 한 번만 보냅니다. 실제 차량이 측정값·GPS를 보내면 실측값으로 바뀌고, 조치는 명령으로 차량에 전달돼 적용·실패 응답을 받습니다([실차 연결](docs/integration.md)).
+- **서버리스·성능**: 시뮬레이션은 시간의 순수 함수라 어느 서버 인스턴스든 같은 상태를 냅니다. 3D는 화면에 다가올 때 받고, 지도 도형은 웹 워커에서 만들며, 셰이더는 그리기 전에 메인 스레드를 막지 않게 컴파일합니다.
 - **접근성**: 본문 바로가기, 애니메이션 정지(운영체제 '동작 줄이기' 따름), 색·모양·글자를 함께 쓰는 상태 표시, 새 문제를 `status`·`alert`로 알림, 3D 지도의 표 대체 콘텐츠
 
 ## 기술 스택
@@ -55,8 +49,7 @@
 | 3D | Three.js(직접 모델링한 미니어처, GLSL 블랙홀 셰이더, OrbitControls) |
 | 서버 | Nitro(h3) API, Server-Sent Events, 시간 기반 결정적 시뮬레이션, 서명 쿠키 로그인(scrypt) |
 | 데이터·알림 | Neon(Postgres, `@neondatabase/serverless`), Web Push(`web-push`, 서비스 워커) |
-| 구조 | Feature-Sliced Design v2.1, Steiger |
-| 품질 | ESLint(@nuxt/eslint), Vitest + Vue Test Utils(happy-dom), Storybook 10, Playwright + axe |
+| 구조·품질 | Feature-Sliced Design v2.1(Steiger), ESLint(@nuxt/eslint), Vitest + Vue Test Utils(happy-dom), Storybook 10, Playwright + axe |
 | 배포·CI | Vercel(싱가포르 함수), Cloudflare Workers(5분 위험 알림 크론), GitHub Actions(CI) |
 
 ## 시작하기
@@ -73,31 +66,21 @@ pnpm dev        # http://localhost:3000
 |---|---|
 | `pnpm build` / `pnpm preview` | 프로덕션 빌드 / 빌드 결과 실행 |
 | `pnpm lint` / `pnpm lint:fsd` / `pnpm typecheck` | ESLint / Steiger(FSD) / 타입 검사 |
-| `pnpm test` | 단위·컴포넌트 테스트 |
-| `pnpm test:e2e` | 프로덕션 빌드의 E2E·접근성 검사 (먼저 `build` 필요) |
-| `pnpm storybook` | Storybook (`http://localhost:6006`) |
-| `pnpm db:migrate` | `DATABASE_URL`이 있으면 스키마 적용·데모 계정 맞추기 |
-| `pnpm build:models` | `assets-src/`의 Sketchfab 원본을 `public/models/*.glb`로 변환 |
-| `pnpm live:demo` | 실차 장치 흉내: 측정값·GPS를 보내고 받은 명령에 응답(`--vehicle`, `--fault`) |
-| `pnpm build:map` | OpenStreetMap으로 서울 지도 데이터와 주행 경로 만들기(`--fetch`면 원본부터 다시 받음) |
+| `pnpm test` / `pnpm test:e2e` | 단위·컴포넌트 테스트 / 프로덕션 빌드의 E2E·접근성 검사(먼저 `build`) |
+
+3D 모델·서울 지도 만들기, 실차 데모 장치, DB 마이그레이션, Storybook 명령은 [개발 가이드](docs/development.md#명령)에 있습니다.
 
 ## 프로젝트 구조
 
 ```
-app/              Nuxt 라우트·진입점 (src를 다시 내보내기만 함)
-server/           Nitro API, 시뮬레이션·실차 연동(sim/), 저장소(store/), DB 스키마(db/)
-scripts/          3D 모델 변환, 서울 지도 만들기, DB 마이그레이션, 실차 데모 장치
-workers/          5분 위험 알림 크론(Cloudflare Workers)
-public/models/    변환한 3D 모델(GLB)
-public/maps/      서울 지도 데이터(OpenStreetMap에서 간추림)
-src/
-├─ app/           진입 컴포넌트, 전역 스타일
-├─ pages/         소개, 관제 센터, 탈것 상세, 오류
-├─ widgets/       관제 지도, 미니어처 전시, 블랙홀 배경, 헤더 등
-├─ features/      원격 조치, 로그인
-├─ entities/      탈것(미니어처 3D 모델, 실시간 스트림, 지표 UI), 세션
-└─ shared/        API 계약, 경로 좌표·GPS 변환, Three.js 무대, 기본 UI
-tests/e2e/        Playwright E2E
+app/        Nuxt 라우트·진입점 (src를 다시 내보내기만 함)
+server/     Nitro API, 시뮬레이션·실차 연동(sim/), 저장소(store/), DB 스키마(db/)
+scripts/    3D 모델 변환, 서울 지도 만들기, DB 마이그레이션, 실차 데모 장치
+workers/    5분 위험 알림 크론(Cloudflare Workers)
+public/     3D 모델(models/)과 서울 지도 데이터(maps/)
+src/        FSD 계층: pages(소개·관제 센터·탈것 상세), widgets(관제 지도·미니어처 전시·블랙홀 배경),
+            features(원격 조치·로그인), entities(탈것·세션), shared(API 계약·경로 좌표·Three.js 무대·기본 UI)
+tests/e2e/  Playwright E2E
 ```
 
 ## 출처

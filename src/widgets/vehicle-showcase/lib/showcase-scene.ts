@@ -13,7 +13,7 @@ import {
 } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { VehicleSnapshot } from '@shared/api'
-import { applyStudioEnvironment, createStage, disposeObject } from '@shared/lib'
+import { applyStudioEnvironment, createStage, disposeObject, nextTask, precompile } from '@shared/lib'
 import { createMiniature, loadModelMiniature, preloadModel, rollWheels } from '@entities/vehicle'
 import type { Miniature } from '@entities/vehicle'
 
@@ -36,7 +36,8 @@ export function createShowcaseScene({ canvas, vehicle, playing }: ShowcaseOption
   const stage = createStage({ canvas, fov: 30, far: 100, onFrame: (delta) => update(delta) })
   const { scene, camera, renderer } = stage
   renderer.shadowMap.enabled = true
-  const disposeEnvironment = applyStudioEnvironment(renderer, scene, 0.7)
+  // 반사 환경(조명 환경 계산)은 아래 prepare()에서 따로 만듭니다.
+  let disposeEnvironment = () => {}
 
   const controls = new OrbitControls(camera, canvas)
   controls.enableDamping = true
@@ -105,7 +106,13 @@ export function createShowcaseScene({ canvas, vehicle, playing }: ShowcaseOption
     stage.invalidate()
   }
 
+  /** 준비(prepare)가 끝나기 전에 받은 마지막 탈것. 끝나면 이 탈것으로 미니어처를 올립니다. */
+  let latest = vehicle
+  let prepared = false
+
   function setVehicle(next: ShowcaseOptions['vehicle']) {
+    latest = next
+    if (!prepared) return
     speed = next.speed
     lean = next.metrics.find((metric) => metric.key === 'lean')?.value ?? 0
     if (next.modelId !== currentModel) {
@@ -113,8 +120,12 @@ export function createShowcaseScene({ canvas, vehicle, playing }: ShowcaseOption
       currentModel = modelId
       // 직접 만든 모형을 먼저 보여 주고, 실제 3D 모델을 다 받으면 바꿉니다.
       mount(createMiniature(modelId, next.paint.hex))
-      void loadModelMiniature(modelId, next.paint.hex).then((model) => {
-        if (!disposed && model && currentModel === modelId) mount(model)
+      // 셰이더를 미리 컴파일한 뒤 바꿔 끼워, 바꾸는 순간 컴파일을 기다리며 멈추지 않게 합니다.
+      void loadModelMiniature(modelId, next.paint.hex).then(async (model) => {
+        if (disposed || !model || currentModel !== modelId) return
+        // 미리 컴파일하지 못해도 바꿔 끼웁니다(그러면 처음 그릴 때 컴파일합니다).
+        await precompile(renderer, model.root, camera, scene, { cancelled: () => disposed, hold: stage.hold }).catch(() => undefined)
+        if (!disposed && currentModel === modelId) mount(model)
       })
     }
     stage.invalidate()
@@ -139,7 +150,21 @@ export function createShowcaseScene({ canvas, vehicle, playing }: ShowcaseOption
     stage.invalidate()
   }
 
-  setVehicle(vehicle)
+  /**
+   * 무거운 준비(반사 환경 계산, 직접 만든 미니어처)를 작업을 나눠 하고, 장면의 셰이더를 막지 않게 미리 컴파일한 뒤
+   * 첫 화면을 그립니다(한 작업에 몰거나 처음 그릴 때 컴파일하면 메인 스레드가 오래 멈춥니다).
+   */
+  async function prepare() {
+    await nextTask()
+    if (disposed) return
+    disposeEnvironment = applyStudioEnvironment(renderer, scene, 0.7)
+    await nextTask()
+    if (disposed) return
+    prepared = true
+    setVehicle(latest)
+    await precompile(renderer, scene, camera, scene, { cancelled: () => disposed })
+  }
+  stage.hold(prepare())
   controls.autoRotate = playing
   stage.setPlaying(playing)
 

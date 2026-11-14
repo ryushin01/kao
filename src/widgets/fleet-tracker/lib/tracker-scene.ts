@@ -19,7 +19,7 @@ import type { Object3D, PerspectiveCamera } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { FleetFrame, HealthState, VehicleSnapshot } from '@shared/api'
 import { ROUTES, findRoute } from '@shared/config'
-import { applyStudioEnvironment, createRouteGeo, createStage, disposeObject, leanAngle, toLocal, turnRateAt } from '@shared/lib'
+import { applyStudioEnvironment, createRouteGeo, createStage, disposeObject, leanAngle, nextTask, precompile, toLocal, turnRateAt } from '@shared/lib'
 import type { RouteGeo } from '@shared/lib'
 import { createMiniature, loadModelMiniature, preloadModel, rollWheels } from '@entities/vehicle'
 import type { Miniature } from '@entities/vehicle'
@@ -205,7 +205,8 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
   })
   const { scene, overlay, camera, renderer } = stage
   // 지도 레이어와 건물은 조명 없이 칠한 색(MeshBasicMaterial)이라, 조명과 반사 환경은 미니어처가 있는 overlay에만 둡니다.
-  const disposeEnvironment = applyStudioEnvironment(renderer, overlay, 0.6)
+  // 반사 환경(조명 환경 계산)은 아래 prepare()에서 따로 만듭니다.
+  let disposeEnvironment = () => {}
   // 멀리 있는 곳은 어둠에 묻습니다(거리는 전체 보기에 맞춰 정함). 지도 끝은 edgeFade가 따로 흐립니다.
   const fog = new Fog('#050303', 55, 120)
   scene.fog = fog
@@ -249,14 +250,24 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
   ground.position.copy(OVERVIEW_TARGET)
   scene.add(ground)
 
-  // 서울 도로·한강·공원·높은 건물(OpenStreetMap). 받는 동안에는 경로만 보입니다.
+  // 서울 도로·한강·공원·높은 건물(OpenStreetMap). 받는 동안에는 경로만 보이고, 셰이더를 미리 컴파일한 뒤 넣습니다.
   let seoul: Group | null = null
   let fade: ReturnType<typeof edgeFade> | null = null
-  void mapRequest.then((layers) => {
+  void mapRequest.then(async (layers) => {
     if (disposed || !layers) return
-    seoul = buildSeoulMap(layers)
-    fade = edgeFade(layers.bounds, EDGE_FADE, METERS_PER_UNIT, GROUND_COLOR)
-    scene.add(seoul, fade.mesh)
+    const map = buildSeoulMap(layers)
+    const edge = edgeFade(layers.bounds, EDGE_FADE, METERS_PER_UNIT, GROUND_COLOR)
+    map.add(edge.mesh)
+    // 미리 컴파일하지 못해도 넣습니다(그러면 처음 그릴 때 컴파일합니다).
+    await precompile(renderer, map, camera, scene, { cancelled: () => disposed, hold: stage.hold }).catch(() => undefined)
+    if (disposed) {
+      disposeObject(map)
+      edge.dispose()
+      return
+    }
+    seoul = map
+    fade = edge
+    scene.add(map)
     stage.invalidate()
   })
 
@@ -327,11 +338,14 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
       health: vehicle.health,
     })
 
-    // 실제 3D 모델을 다 받으면 직접 만든 모형과 바꿔 끼웁니다.
-    void loadModelMiniature(vehicle.modelId, vehicle.paint.hex, 'lite').then((model) => {
-      const marker = markers.get(vehicle.id)
-      if (disposed || !model || !marker) return
+    // 실제 3D 모델을 다 받으면 셰이더를 미리 컴파일한 뒤 직접 만든 모형과 바꿔 끼웁니다.
+    void loadModelMiniature(vehicle.modelId, vehicle.paint.hex, 'lite').then(async (model) => {
+      if (disposed || !model) return
       model.root.scale.setScalar(size / model.length)
+      await precompile(renderer, model.root, camera, overlay, { cancelled: () => disposed, hold: stage.hold }).catch(() => undefined)
+      // 복제본은 캐시된 원본과 형상·재질을 함께 쓰므로, 그사이 장면이 닫혔으면 정리하지 않고 버립니다.
+      const marker = markers.get(vehicle.id)
+      if (disposed || !marker) return
       holder.remove(marker.miniature.root)
       disposeObject(marker.miniature.root)
       holder.add(model.root)
@@ -340,7 +354,13 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
     })
   }
 
+  /** 준비(prepare)가 끝나기 전에 받은 마지막 프레임. 끝나면 이 프레임으로 미니어처를 만듭니다. */
+  let latest = frame
+  let prepared = false
+
   function setFrame(next: FleetFrame) {
+    latest = next
+    if (!prepared) return
     timeScale = next.timeScale
     for (const vehicle of next.vehicles) {
       if (!markers.has(vehicle.id)) addMarker(vehicle)
@@ -466,6 +486,7 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
 
   function setFollow(id: string | null) {
     followId = id
+    if (!prepared) return
     const marker = id === null ? undefined : markers.get(id)
     emphasize(marker?.routeId ?? null)
     if (id === null) {
@@ -497,7 +518,28 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
   canvas.addEventListener('pointerdown', onPointerDown)
   canvas.addEventListener('pointerup', onPointerUp)
 
-  setFrame(frame)
+  /**
+   * 무거운 준비(반사 환경 계산, 직접 만든 미니어처)를 작업 여러 개로 나눠 하고, 장면의 셰이더를 막지 않게 미리 컴파일한 뒤
+   * 첫 화면을 그립니다. 한 작업에 몰면 메인 스레드가 수백 ms 멈추고, 처음 그릴 때 컴파일하면 끝날 때까지 기다리며 멈춥니다.
+   */
+  async function prepare() {
+    await nextTask()
+    if (disposed) return
+    disposeEnvironment = applyStudioEnvironment(renderer, overlay, 0.6)
+    for (const vehicle of latest.vehicles) {
+      await nextTask()
+      if (disposed) return
+      if (!markers.has(vehicle.id)) addMarker(vehicle)
+    }
+    prepared = true
+    setFrame(latest)
+    if (followId !== null) setFollow(followId)
+    await Promise.all([
+      precompile(renderer, scene, camera, scene, { cancelled: () => disposed }),
+      precompile(renderer, overlay, camera, overlay, { cancelled: () => disposed }),
+    ])
+  }
+  stage.hold(prepare())
   stage.setPlaying(playing)
 
   return {

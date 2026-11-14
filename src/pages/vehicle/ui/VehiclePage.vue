@@ -137,7 +137,9 @@ const onSent = (response: RemoteActionResponse) => applyAction(response)
 }
 
 .vehicle__crumbs li + li::before {
+  /* 구분자는 꾸밈이라 화면 낭독기가 읽지 않게 대체 글자를 비웁니다(대체 글자 문법을 모르는 브라우저는 첫 줄을 씀). */
   content: '/';
+  content: '/' / '';
   margin-right: var(--space-2);
   color: var(--color-text-muted);
 }
