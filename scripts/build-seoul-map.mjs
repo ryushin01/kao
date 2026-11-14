@@ -56,6 +56,13 @@ const SOURCES = {
     out: 'geom',
     select: (b) => `way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|secondary)$"](${b});`,
   },
+  // 신호등(차량 신호와 신호 있는 횡단보도): 경로가 지나는 신호에서 차가 섭니다.
+  signals: {
+    bbox: ROUTING_BBOX,
+    split: 1,
+    out: 'skel qt',
+    select: (b) => `node["highway"="traffic_signals"](${b});node["crossing"="traffic_signals"](${b});`,
+  },
   buildings: {
     bbox: DISPLAY_BBOX,
     split: 2,
@@ -147,7 +154,9 @@ for (const name of Object.keys(SOURCES)) {
   if (args.fetch || !exists) await fetchRaw(name)
 }
 const load = async (name) => JSON.parse(await readFile(new URL(`${name}.json`, RAW), 'utf8'))
-const [roadsRaw, minorRaw, areasRaw, outerRaw, buildingsRaw] = await Promise.all(['roads', 'minor', 'areas-outer', 'outer', 'buildings'].map(load))
+const [roadsRaw, minorRaw, areasRaw, outerRaw, buildingsRaw, signalsRaw] = await Promise.all(
+  ['roads', 'minor', 'areas-outer', 'outer', 'buildings', 'signals'].map(load),
+)
 
 // ── 도로 그래프와 경로 ─────────────────────────────────────────────────────
 
@@ -367,6 +376,65 @@ const ROUTE_PLANS = [
   },
 ]
 
+// ── 제한속도와 신호 ─────────────────────────────────────────────────────────
+
+const kmh = (value) => {
+  const number = Number.parseInt(value ?? '', 10)
+  return Number.isFinite(number) && number > 0 ? number : null
+}
+/** 이름이 같은 도로에 가장 많이 붙은 제한속도. 같은 도로인데 일부 구간에만 maxspeed가 있는 경우가 많습니다. */
+const NAMED_SPEED = (() => {
+  const counts = new Map()
+  for (const way of roadWays) {
+    const value = kmh(way.tags.maxspeed)
+    if (!value || !way.tags.name) continue
+    const byValue = counts.get(way.tags.name) ?? new Map()
+    byValue.set(value, (byValue.get(value) ?? 0) + 1)
+    counts.set(way.tags.name, byValue)
+  }
+  return new Map([...counts].map(([name, byValue]) => [name, [...byValue].sort((a, b) => b[1] - a[1])[0][0]]))
+})()
+/** 도로 등급 기본값(km/h): 도시고속도로 80, 일반 도로 50(안전속도 5030), 진출입로 40, 자전거길 20 */
+const CLASS_SPEED = { motorway: 80, trunk: 70, motorway_link: 40, trunk_link: 40, primary_link: 40, secondary_link: 40, tertiary_link: 40, cycleway: 20, path: 20, footway: 20 }
+const speedOf = (way) => kmh(way.tags.maxspeed) ?? NAMED_SPEED.get(way.tags.name) ?? CLASS_SPEED[way.tags.highway] ?? 50
+const SIGNALS = new Set(signalsRaw.elements.filter((el) => el.type === 'node').map((el) => el.id))
+/** 이만큼(m) 안에 붙은 신호는 한 번만 섭니다(한 교차로의 진입 신호·횡단보도 신호 등). */
+const SIGNAL_MERGE = 60
+
+/**
+ * 원래 경로(간추리기 전 노드)로 구간별 제한속도와 신호 위치를 한 바퀴 비율(0~1)로 셉니다.
+ * 간추린 경로는 길이가 거의 같아 같은 비율을 그대로 씁니다.
+ */
+function drivingRules(path, plan) {
+  const count = path.length
+  const lengths = []
+  const speeds = []
+  for (let i = 0; i < count; i += 1) {
+    const from = path[i]
+    const to = path[(i + 1) % count]
+    const edge = (edges.get(from) ?? []).find((item) => item.to === to && plan.allow(item.way))
+    lengths.push(distance(nodes.get(from), nodes.get(to)))
+    speeds.push(edge ? speedOf(edge.way) : 50)
+  }
+  const total = lengths.reduce((sum, value) => sum + value, 0)
+  const fraction = (meters) => Number((meters / total).toFixed(4))
+  const speedLimits = []
+  const signals = []
+  let along = 0
+  for (let i = 0; i < count; i += 1) {
+    if (!speedLimits.length || speedLimits.at(-1)[1] !== speeds[i]) speedLimits.push([fraction(along), speeds[i]])
+    // 자전거길은 신호를 건너뜁니다(한강 자전거길은 신호 없이 이어집니다).
+    if (plan.allow !== bike && SIGNALS.has(path[i])) {
+      const last = signals.at(-1)
+      if (last === undefined || along - last >= SIGNAL_MERGE) signals.push(along)
+    }
+    along += lengths[i]
+  }
+  // 닫힌 경로라 끝 신호가 첫 신호와 가까우면 하나로 칩니다.
+  if (signals.length > 1 && total - signals.at(-1) + signals[0] < SIGNAL_MERGE) signals.pop()
+  return { speedLimits, signals: signals.map(fraction) }
+}
+
 function buildRoute(plan) {
   const ids = plan.waypoints.map((point) => snap(point, plan.allow))
   const path = []
@@ -379,17 +447,23 @@ function buildRoute(plan) {
   const points = simplify([...path, path[0]].map((id) => nodes.get(id)), 1.5).slice(0, -1)
   let length = 0
   for (let i = 0; i < points.length; i += 1) length += distance(points[i], points[(i + 1) % points.length])
+  const { speedLimits, signals } = drivingRules(path, plan)
   return {
     id: plan.id,
     name: plan.name,
     via: plan.via,
     lengthKm: Math.round(length) / 1000,
+    speedLimits,
+    signals,
     path: points.map((p) => [Number(p.lat.toFixed(6)), Number(p.lng.toFixed(6))]),
   }
 }
 
 const routes = ROUTE_PLANS.map(buildRoute)
-for (const route of routes) console.log(`[map] 경로 ${route.id}: ${route.lengthKm}km, 점 ${route.path.length}개`)
+for (const route of routes) {
+  const limits = route.speedLimits.map(([at, value]) => `${Math.round(at * 100)}%:${value}`).join(' ')
+  console.log(`[map] 경로 ${route.id}: ${route.lengthKm}km, 점 ${route.path.length}개, 신호 ${route.signals.length}곳, 제한속도 ${limits}`)
+}
 
 const routesTs = `// 이 파일은 scripts/build-seoul-map.mjs가 만듭니다. 직접 고치지 말고 스크립트의 ROUTE_PLANS를 고친 뒤 pnpm build:map을 실행하세요.
 // 지도 데이터 © OpenStreetMap 기여자, ODbL 1.0 (https://www.openstreetmap.org/copyright)
@@ -406,10 +480,17 @@ export interface RouteDefinition {
   via: string
   /** 실제 한 바퀴 길이(km) */
   lengthKm: number
+  /**
+   * 구간별 제한속도: [이 위치(한 바퀴 비율 0~1)부터, km/h]. OpenStreetMap maxspeed, 없으면 이름이 같은 도로의 값,
+   * 그것도 없으면 도로 등급 기본값(도시고속도로 80, 일반 도로 50, 진출입로 40, 자전거길 20)입니다.
+   */
+  speedLimits: ReadonlyArray<readonly [number, number]>
+  /** 차가 서는 신호 위치(한 바퀴 비율). 60m 안에 붙은 신호는 하나로 칩니다. 자전거길은 비어 있습니다. */
+  signals: readonly number[]
   path: ReadonlyArray<readonly [number, number]>
 }
 
-export const ROUTES: readonly RouteDefinition[] = ${JSON.stringify(routes, null, 2).replace(/\[\s+(-?[\d.]+),\s+(-?[\d.]+)\s+\]/g, '[$1, $2]').replace(/"(\w+)":/g, '$1:').replace(/"/g, "'")}
+export const ROUTES: readonly RouteDefinition[] = ${JSON.stringify(routes, null, 2).replace(/\[\s+((?:-?[\d.]+,\s+)*-?[\d.]+)\s+\]/g, (_, list) => `[${list.split(/,\s+/).join(', ')}]`).replace(/"(\w+)":/g, '$1:').replace(/"/g, "'")}
 
 export function findRoute(id: string): RouteDefinition {
   const route = ROUTES.find((item) => item.id === id)

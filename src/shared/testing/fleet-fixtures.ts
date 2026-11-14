@@ -51,6 +51,7 @@ export const vehicleFixture: VehicleSnapshot = {
   source: 'simulated',
   progress: 0.42,
   mapProgress: 0.04,
+  mapSpeed: 72,
   lap: 3,
   positionSource: 'simulated',
   gps: null,

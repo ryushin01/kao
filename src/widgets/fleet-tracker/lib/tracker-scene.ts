@@ -117,6 +117,7 @@ interface Marker {
   target: number
   /** 실차 GPS 위치는 실제 속도로, 시뮬레이션 위치는 FleetFrame.timeScale배로 내다봅니다. */
   gps: boolean
+  /** 지도 위치에서의 속도(km/h). 내다보기·바퀴·기울기·꼬리에 씁니다(실제 위치의 속도와 다를 수 있음). */
   speed: number
   /** 이륜차가 눕는 최대 각도(°). 사륜차는 0 */
   maxLean: number
@@ -333,7 +334,7 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
       shown: vehicle.mapProgress,
       target: vehicle.mapProgress,
       gps: vehicle.positionSource === 'gps',
-      speed: vehicle.speed,
+      speed: vehicle.mapSpeed,
       maxLean: vehicle.kind === 'superbike' || vehicle.kind === 'bicycle' ? MAX_LEAN[vehicle.kind] : 0,
       health: vehicle.health,
     })
@@ -367,7 +368,7 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
       const marker = markers.get(vehicle.id)!
       marker.target = vehicle.mapProgress
       marker.gps = vehicle.positionSource === 'gps'
-      marker.speed = vehicle.speed
+      marker.speed = vehicle.mapSpeed
       if (marker.health !== vehicle.health) {
         marker.health = vehicle.health
         marker.ring.material.color.set(HEALTH_COLORS[vehicle.health])

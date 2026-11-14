@@ -13,6 +13,13 @@ export interface RouteDefinition {
   via: string
   /** 실제 한 바퀴 길이(km) */
   lengthKm: number
+  /**
+   * 구간별 제한속도: [이 위치(한 바퀴 비율 0~1)부터, km/h]. OpenStreetMap maxspeed, 없으면 이름이 같은 도로의 값,
+   * 그것도 없으면 도로 등급 기본값(도시고속도로 80, 일반 도로 50, 진출입로 40, 자전거길 20)입니다.
+   */
+  speedLimits: ReadonlyArray<readonly [number, number]>
+  /** 차가 서는 신호 위치(한 바퀴 비율). 60m 안에 붙은 신호는 하나로 칩니다. 자전거길은 비어 있습니다. */
+  signals: readonly number[]
   path: ReadonlyArray<readonly [number, number]>
 }
 
@@ -22,6 +29,16 @@ export const ROUTES: readonly RouteDefinition[] = [
     name: '광화문 도심 순환',
     via: '세종대로 → 을지로 → 남대문로 → 종로',
     lengthKm: 2.194,
+    speedLimits: [
+      [0, 50],
+      [0.0185, 60],
+      [0.2575, 30],
+      [0.3175, 60],
+      [0.529, 50],
+      [0.7486, 60],
+      [0.9856, 50]
+    ],
+    signals: [0, 0.5122, 0.6681, 0.7421, 0.8946],
     path: [
       [37.569997, 126.977054],
       [37.569634, 126.977028],
@@ -50,6 +67,19 @@ export const ROUTES: readonly RouteDefinition[] = [
     name: '동작·한남 한강 순환',
     via: '강변북로 → 한남대교 → 올림픽대로 → 동작대교',
     lengthKm: 8.813,
+    speedLimits: [
+      [0, 60],
+      [0.032, 40],
+      [0.1259, 80],
+      [0.3975, 40],
+      [0.5267, 50],
+      [0.5322, 60],
+      [0.636, 50],
+      [0.6463, 30],
+      [0.6806, 80],
+      [0.9505, 40]
+    ],
+    signals: [],
     path: [
       [37.528413, 127.011632],
       [37.526373, 127.013528],
@@ -137,6 +167,16 @@ export const ROUTES: readonly RouteDefinition[] = [
     name: '남산 순환',
     via: '퇴계로 → 장충단로 → 소월로',
     lengthKm: 9.814,
+    speedLimits: [
+      [0, 50],
+      [0.1857, 40],
+      [0.1936, 50],
+      [0.2544, 40],
+      [0.2614, 50],
+      [0.7796, 40],
+      [0.8242, 50]
+    ],
+    signals: [0, 0.1057, 0.1526, 0.1857, 0.2872, 0.3016, 0.4194, 0.4581, 0.5169, 0.5328, 0.5582, 0.6484, 0.6732, 0.7076, 0.7244, 0.7327, 0.7626, 0.788, 0.8372, 0.8852],
     path: [
       [37.560191, 126.98188],
       [37.560316, 126.982115],
@@ -304,6 +344,10 @@ export const ROUTES: readonly RouteDefinition[] = [
     name: '여의도 한강 자전거길',
     via: '한강남자전거길 → 여의샛강자전거길',
     lengthKm: 8.189,
+    speedLimits: [
+      [0, 20]
+    ],
+    signals: [],
     path: [
       [37.530714, 126.927318],
       [37.530545, 126.927571],

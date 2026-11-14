@@ -76,6 +76,11 @@ export interface VehicleSnapshot {
   progress: number
   /** 관제 지도 위 위치(0 이상 1 미만). 시뮬레이션은 움직임이 보이도록 FleetFrame.timeScale배 빠르게 돌고, GPS는 progress와 같습니다. */
   mapProgress: number
+  /**
+   * 관제 지도 위치에서의 속도(km/h). 시뮬레이션은 지도 위치가 실제 위치와 달라(신호에 서 있어도 지도에서는 달리는 중일 수 있음)
+   * 따로 주고, 지도는 이 속도의 timeScale배로 움직입니다. GPS는 speed와 같습니다.
+   */
+  mapSpeed: number
   /** 매시 정각부터 센 바퀴 수 */
   lap: number
   /** gps: 실차 GPS가 경로 위에 있음, simulated: 시뮬레이션 위치 */

@@ -1,4 +1,5 @@
 import type { ActionCode, VehicleKind, VehicleModelId } from '../../src/shared/api/contract'
+import type { Handling } from './sim/drive'
 
 export interface DeriveContext {
   speed: number
@@ -48,10 +49,14 @@ export interface VehicleSpec {
   paint: { name: string; hex: string }
   routeId: string
   /**
-   * 순항 속도 범위(km/h). 최고 속도는 경로 도로의 제한속도(OpenStreetMap maxspeed)에 맞춥니다:
-   * 도심(세종대로·남대문로) 50, 강변북로·올림픽대로 80, 남산(퇴계로·장충단로·소월로) 50. 자전거길은 태그가 없어 자전거에 맞게.
+   * 순항 속도 범위(km/h). 최고 속도는 이 탈것이 경로에서 내는 상한이고(제한속도가 더 높아도 넘지 않음), 속도·출력 제한
+   * 조치의 기준입니다: 도심 50(안전속도 5030), 강변북로·올림픽대로 80, 남산 50, 자전거 20. 최저 속도는 데모 장치가 씁니다.
    */
   cruise: readonly [number, number]
+  /** 주행 속도 표(제한속도·굽이·신호)의 몇 배로 달리는지(교통 흐름). 시간에 따라 이 범위에서 천천히 오갑니다. */
+  pace: readonly [number, number]
+  /** 가속·감속·굽은 길에서 견디는 횡가속(m/s²) */
+  handling: Handling
   metrics: MetricSpec[]
 }
 
@@ -87,6 +92,8 @@ export const VEHICLE_SPECS: VehicleSpec[] = [
     paint: { name: 'Vik Black', hex: '#0e0f11' },
     routeId: 'downtown',
     cruise: [15, 50],
+    pace: [0.7, 1],
+    handling: { accel: 1.6, decel: 2.5, lateral: 2 },
     metrics: [
       speedMetric(240),
       {
@@ -127,6 +134,8 @@ export const VEHICLE_SPECS: VehicleSpec[] = [
     paint: { name: 'Rosso Mars', hex: '#a3141c' },
     routeId: 'han-river',
     cruise: [45, 80],
+    pace: [0.8, 1],
+    handling: { accel: 2.5, decel: 3, lateral: 2.6 },
     metrics: [
       speedMetric(355),
       {
@@ -167,6 +176,8 @@ export const VEHICLE_SPECS: VehicleSpec[] = [
     paint: { name: 'Ducati Red', hex: '#b5121b' },
     routeId: 'namsan',
     cruise: [20, 50],
+    pace: [0.75, 1],
+    handling: { accel: 2.5, decel: 3, lateral: 2.6 },
     metrics: [
       speedMetric(300),
       {
@@ -209,6 +220,8 @@ export const VEHICLE_SPECS: VehicleSpec[] = [
     paint: { name: 'Aluminium', hex: '#c9ccd1' },
     routeId: 'yeouido',
     cruise: [10, 20],
+    pace: [0.65, 1],
+    handling: { accel: 0.7, decel: 1.2, lateral: 1.2 },
     metrics: [
       speedMetric(40),
       {
