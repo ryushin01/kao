@@ -51,11 +51,32 @@ function drawablesOf(root: Object3D) {
 const hasTransmission = (objects: Object3D[]) =>
   objects.some((object) => materialsOf(object).some((material) => ((material as MeshPhysicalMaterial).transmission ?? 0) > 0))
 
-/** 물체마다 compileAsync를 걸고(target이 있으면 그 렌더 타깃에 그릴 때의 셰이더로), 8ms마다 메인 스레드에 틈을 줍니다. */
-async function compileEach(renderer: WebGLRenderer, objects: Object3D[], camera: Camera, targetScene: Scene, target: WebGLRenderTarget | null) {
+export interface PrecompileOptions {
+  /** true를 돌려주면(장면이 닫힘) 남은 컴파일을 그만둡니다. 쉬었다 이어 갈 때마다 확인합니다. */
+  cancelled?: () => boolean
+  /**
+   * 그리기를 멈출 함수(stage.hold). 투과 패스용 컴파일을 기다리는 동안 그리면 이미 장면에 있는 물체의 '현재 셰이더'가
+   * 화면용으로 바뀌어, compileAsync가 투과용 셰이더 대신 화면용 셰이더를 보고 일찍 끝납니다. 그래서 그동안만 멈춥니다.
+   */
+  hold?: (promise: Promise<unknown>) => void
+}
+
+/**
+ * 물체마다 compileAsync를 걸고(target이 있으면 그 렌더 타깃에 그릴 때의 셰이더로), 8ms마다 메인 스레드에 틈을 줍니다.
+ * 그만둬야 하면(cancelled) false를 돌려줍니다.
+ */
+async function compileEach(
+  renderer: WebGLRenderer,
+  objects: Object3D[],
+  camera: Camera,
+  targetScene: Scene,
+  target: WebGLRenderTarget | null,
+  cancelled: () => boolean,
+) {
   const pending: Array<Promise<unknown>> = []
   let sliceStart = performance.now()
   for (const object of objects) {
+    if (cancelled()) return false
     // 렌더 타깃은 이 한 번의 컴파일 동안만 걸어 둡니다(틈에 다른 그리기가 끼어들어도 화면에 그리도록).
     const previous = renderer.getRenderTarget()
     if (target) renderer.setRenderTarget(target)
@@ -67,6 +88,7 @@ async function compileEach(renderer: WebGLRenderer, objects: Object3D[], camera:
     }
   }
   await Promise.all(pending)
+  return !cancelled()
 }
 
 /**
@@ -79,13 +101,16 @@ async function compileEach(renderer: WebGLRenderer, objects: Object3D[], camera:
  * 이 셰이더는 compile이 만들지 않으므로, 렌더 타깃을 건 상태로 root와 장면의 물체를 한 번 더 컴파일합니다.
  * 두 단계를 차례로 기다려야 재질마다 두 셰이더가 모두 준비됩니다(compileAsync는 재질의 마지막 셰이더만 확인).
  */
-export async function precompile(renderer: WebGLRenderer, root: Object3D, camera: Camera, targetScene: Scene) {
+export async function precompile(renderer: WebGLRenderer, root: Object3D, camera: Camera, targetScene: Scene, options: PrecompileOptions = {}) {
+  const cancelled = options.cancelled ?? (() => false)
   const objects = drawablesOf(root)
-  await compileEach(renderer, objects, camera, targetScene, null)
+  if (!(await compileEach(renderer, objects, camera, targetScene, null, cancelled))) return
   const sceneObjects = root === targetScene ? [] : drawablesOf(targetScene)
   if (!hasTransmission(objects) && !hasTransmission(sceneObjects)) return
   const target = new WebGLRenderTarget(1, 1)
-  await compileEach(renderer, [...new Set([...objects, ...sceneObjects])], camera, targetScene, target)
+  const pass = compileEach(renderer, [...new Set([...objects, ...sceneObjects])], camera, targetScene, target, cancelled)
+  options.hold?.(pass)
+  await pass
   target.dispose()
 }
 

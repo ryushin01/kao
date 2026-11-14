@@ -258,7 +258,7 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
     const map = buildSeoulMap(layers)
     const edge = edgeFade(layers.bounds, EDGE_FADE, METERS_PER_UNIT, GROUND_COLOR)
     map.add(edge.mesh)
-    await precompile(renderer, map, camera, scene)
+    await precompile(renderer, map, camera, scene, { cancelled: () => disposed, hold: stage.hold })
     if (disposed) {
       disposeObject(map)
       edge.dispose()
@@ -341,7 +341,7 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
     void loadModelMiniature(vehicle.modelId, vehicle.paint.hex, 'lite').then(async (model) => {
       if (disposed || !model) return
       model.root.scale.setScalar(size / model.length)
-      await precompile(renderer, model.root, camera, overlay)
+      await precompile(renderer, model.root, camera, overlay, { cancelled: () => disposed, hold: stage.hold })
       // 복제본은 캐시된 원본과 형상·재질을 함께 쓰므로, 그사이 장면이 닫혔으면 정리하지 않고 버립니다.
       const marker = markers.get(vehicle.id)
       if (disposed || !marker) return
@@ -533,7 +533,10 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
     prepared = true
     setFrame(latest)
     if (followId !== null) setFollow(followId)
-    await Promise.all([precompile(renderer, scene, camera, scene), precompile(renderer, overlay, camera, overlay)])
+    await Promise.all([
+      precompile(renderer, scene, camera, scene, { cancelled: () => disposed }),
+      precompile(renderer, overlay, camera, overlay, { cancelled: () => disposed }),
+    ])
   }
   stage.hold(prepare())
   stage.setPlaying(playing)

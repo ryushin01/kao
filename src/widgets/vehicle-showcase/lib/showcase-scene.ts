@@ -123,7 +123,7 @@ export function createShowcaseScene({ canvas, vehicle, playing }: ShowcaseOption
       // 셰이더를 미리 컴파일한 뒤 바꿔 끼워, 바꾸는 순간 컴파일을 기다리며 멈추지 않게 합니다.
       void loadModelMiniature(modelId, next.paint.hex).then(async (model) => {
         if (disposed || !model || currentModel !== modelId) return
-        await precompile(renderer, model.root, camera, scene)
+        await precompile(renderer, model.root, camera, scene, { cancelled: () => disposed, hold: stage.hold })
         if (!disposed && currentModel === modelId) mount(model)
       })
     }
@@ -161,7 +161,7 @@ export function createShowcaseScene({ canvas, vehicle, playing }: ShowcaseOption
     if (disposed) return
     prepared = true
     setVehicle(latest)
-    await precompile(renderer, scene, camera, scene)
+    await precompile(renderer, scene, camera, scene, { cancelled: () => disposed })
   }
   stage.hold(prepare())
   controls.autoRotate = playing
