@@ -56,6 +56,8 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
 
 ### 로그인과 화면 접근
 
+<img src="images/login.jpg" alt="아이디·비밀번호 입력란과 관제 요원·회원 01~04 데모 계정 버튼이 있는 로그인 화면" width="320">
+
 - 계정: 관제 요원(`operator`)과 회원(`member01`~`04`, 각자 탈것 하나). 비밀번호는 scrypt로 해시합니다. 데모 계정 목록은 `src/shared/api/contract.ts`의 `DEMO_ACCOUNTS`.
 - 화면 접근은 전역 라우트 미들웨어(`src/app/routes/auth-guard.ts`)가 정합니다: `/fleet`은 관제 요원만(회원은 자기 탈것으로), `/fleet/:id`는 관제 요원이나 그 탈것의 회원만.
 - API도 같은 규칙을 서버에서 다시 확인합니다(`server/utils/session.ts`).
@@ -96,6 +98,10 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
 
 화면은 직접 만든 모형을 먼저 그리고, `loadModelMiniature`로 GLB를 받으면 바꿔 끼웁니다. 받지 못하면 직접 만든 모형을 계속 씁니다.
 
+### 직접 만든 모형
+
+`src/entities/vehicle/lib/miniatures/`에 모델마다 파일이 하나씩 있습니다. 옆모습 윤곽을 밀어 낸 몸체(`extrudeProfile`), 바퀴 자리를 파낸 바닥선(`sillWithArches`), 원통·상자 부품으로 만들며 좌표는 실제 치수(m)입니다. 관제 지도에서는 카메라 거리에 맞춰 화면 크기를 일정하게 키우고, 이륜차는 `leanPivot`으로 굽은 쪽으로 기울입니다. 각도는 지도 위 경로가 굽은 정도(`turnRateAt`, 앞뒤 25m의 진행 방향 차이)와 실제 속도로 정합니다(`leanAngle` = atan(v²κ/g), 슈퍼바이크 35°·자전거 20°까지). 파니갈레의 기울기 지표도 같은 식으로 실제 위치에서 계산합니다.
+
 ## 성능
 
 3D는 무거우므로 화면에 보일 때가 되어서야 준비합니다.
@@ -103,19 +109,31 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
 - **소개 화면의 블랙홀 배경**은 셰이더 하나만 그리므로 three.js 없이 WebGL을 직접 씁니다(`widgets/event-horizon/lib/shader-canvas.ts`). 소개 화면 첫 로딩에서 three.js를 받지 않습니다.
 - **턴테이블과 관제 지도**는 화면 가까이(300px) 왔을 때(`whenNearViewport`) three.js와 3D 모델(관제 지도는 서울 지도 데이터도)을 받아 장면을 만듭니다.
 - 장면을 만들 때 3D 모델 다운로드(`preloadModel`)를 조명 환경(PMREM) 계산보다 먼저 걸고, meshopt 압축은 웹 워커 2개에서 풉니다. 반사 지도는 턴테이블·관제 지도 모두 한 면 256입니다(three.js 0.187의 `PMREMGenerator`는 256보다 작게 만들지 않습니다).
+- **셰이더 미리 컴파일**(`shared/lib/three/stage.ts`의 `precompile`): three.js는 처음 그릴 때 셰이더를 컴파일하고 끝날 때까지 기다려 메인 스레드가 수백 ms~수 초 멈춥니다. 장면은 `compileAsync`(브라우저의 `KHR_parallel_shader_compile`로 기다리지 않고 완료 확인)로 물체마다 나눠 미리 컴파일하고, 그동안 `stage.hold()`로 첫 화면을 미룹니다. 나중에 붙는 지도 바탕과 3D 모델도 컴파일을 마친 뒤 장면에 넣습니다. 유리 같은 투과 재질이 있으면 불투명 물체를 톤 매핑 없이 렌더 타깃에 한 번 더 그리므로(투과 패스), 그 셰이더도 렌더 타깃을 건 상태로 따로 컴파일합니다.
+- **장면 준비 나누기**: 반사 환경 계산과 직접 만든 미니어처는 작업 여러 개로 나눠 만들어, 한 작업이 길어지지 않게 합니다(준비가 끝나기 전에 온 프레임·시점 선택은 끝난 뒤 적용).
 
-Lighthouse(모바일 조건, GPU, 3회 중앙값)로 잰 결과입니다.
+Lighthouse(모바일 조건, GPU, 3회 중앙값)로 잰 결과입니다. 0.7.0 → 0.7.2는 셰이더 미리 컴파일과 장면 준비 나누기의 효과입니다.
 
 | 화면 | 점수 | TBT | 전체 전송량 |
 |---|---|---|---|
-| 소개 | 74 → 100 | 1,500 → 18ms | 3.1 → 0.6MB |
-| 아벤타도르 상세 | 70 → 81 | 2,703 → 774ms | 4.0 → 3.2MB |
+| 소개 | 100 | 57 → 22ms | 0.6MB |
+| 관제 센터 | 71 → 87 | 2,216 → 500ms | 2.8MB |
+| 아벤타도르 상세 | 76 → 93 | 1,078 → 316ms | 3.2MB |
 
 재 볼 때는 프로덕션 빌드를 띄우고 `CHROME_PATH=<Chrome> pnpm dlx lighthouse@13.6.0 <주소> --only-categories=performance --chrome-flags="--headless=new --use-angle=metal --enable-gpu"`처럼 GPU로 그리게 합니다. GPU 없이(SwiftShader) 재면 WebGL 그리기가 메인 스레드 시간에 섞여 TBT가 수 초로 부풀어 비교가 어렵습니다.
 
-### 직접 만든 모형
+## 명령
 
-`src/entities/vehicle/lib/miniatures/`에 모델마다 파일이 하나씩 있습니다. 옆모습 윤곽을 밀어 낸 몸체(`extrudeProfile`), 바퀴 자리를 파낸 바닥선(`sillWithArches`), 원통·상자 부품으로 만들며 좌표는 실제 치수(m)입니다. 관제 지도에서는 카메라 거리에 맞춰 화면 크기를 일정하게 키우고, 이륜차는 `leanPivot`으로 굽은 쪽으로 기울입니다. 각도는 지도 위 경로가 굽은 정도(`turnRateAt`, 앞뒤 25m의 진행 방향 차이)와 실제 속도로 정합니다(`leanAngle` = atan(v²κ/g), 슈퍼바이크 35°·자전거 20°까지). 파니갈레의 기울기 지표도 같은 식으로 실제 위치에서 계산합니다.
+| 명령 | 내용 |
+|---|---|
+| `pnpm dev` / `pnpm build` / `pnpm preview` | 개발 서버(`http://localhost:3000`) / 프로덕션 빌드 / 빌드 결과 실행 |
+| `pnpm lint` / `pnpm lint:fsd` / `pnpm typecheck` | ESLint / Steiger(FSD) / 타입 검사 |
+| `pnpm test` / `pnpm test:e2e` | 단위·컴포넌트 테스트 / 프로덕션 빌드의 E2E·접근성 검사(아래 테스트) |
+| `pnpm storybook` | 공통 UI·엔티티·기능 컴포넌트 스토리(`http://localhost:6006`) |
+| `pnpm db:migrate` | `DATABASE_URL`이 있으면 스키마 적용·데모 계정 맞추기([배포](deploy.md)) |
+| `pnpm build:models` | `assets-src/`의 Sketchfab 원본을 `public/models/*.glb`로 변환(위 미니어처) |
+| `pnpm build:map` | OpenStreetMap으로 서울 지도 데이터와 주행 경로 만들기(위 서울 지도, `--fetch`면 원본부터 다시 받음) |
+| `pnpm live:demo` | 실차 장치 흉내. 측정값·GPS를 보내고 받은 명령에 응답(`--vehicle`, `--fault`, [실차 연결](integration.md#데모-장치)) |
 
 ## 테스트
 
@@ -123,9 +141,6 @@ Lighthouse(모바일 조건, GPU, 3회 중앙값)로 잰 결과입니다.
 |---|---|
 | `pnpm test` | Vitest(happy-dom): 시뮬레이션(같은 시각 같은 결과, 조치 흐름, 이력), 경로 좌표 변환(왕복, 길이), 지도 도형(차분 부호화, 띠의 마이터 이음, 구멍 있는 다각형, 건물 면 방향과 색, 가장자리 흐림), 이름표 겹침 피하기, 실차 연동(실측 문제 열기·해결, 명령 응답·응답 없음, GPS 바퀴 수, 메모리 저장소로 수신부터 해결까지), 세션 서명·비밀번호·저장소, 공통 UI·그래프(키보드), 로그인 폼, 원격 조치(확인·더블 클릭·실패·회원 화면·실측 문제 안내), 조치 기록·화면 낭독기 알림, 블랙홀 배경의 WebGL 컨텍스트 복구 |
 | `pnpm test:e2e` | Playwright: 프로덕션 빌드(`pnpm build` 먼저)를 데스크톱·모바일에서 검사. axe(WCAG 2.2 AA 태그), 가로 넘침, 원격 조치 흐름, 로그인·권한, 404. 화면 검사는 3D 모델 요청을 막고(`tests/e2e/fixtures.ts`), 실제 모델 로드는 `models.spec.ts`에서 따로 확인. 블랙홀 배경이 실제 WebGL 컨텍스트를 잃었다 되찾으면 다시 그리는지(`event-horizon.spec.ts`). 실차 연동(`live.spec.ts`)은 탈것 하나를 실차 신호로 바꾸므로 다른 검사가 끝난 뒤 `live` 프로젝트로 돎 |
-| `pnpm live:demo` | 실차 장치 흉내. 측정값·GPS를 보내고 받은 명령에 응답([실차 연결](integration.md#데모-장치)) |
-| `pnpm build:map` | 서울 지도 데이터와 주행 경로 다시 만들기(`--fetch`면 OpenStreetMap 원본부터 다시 받음) |
-| `pnpm storybook` | 공통 UI·엔티티·기능 컴포넌트 스토리 |
 
 axe를 통과해도 KWCAG 2.2를 모두 만족하는 것은 아니므로 새 화면은 키보드, 화면 낭독기, 정지 기능을 직접 확인합니다.
 

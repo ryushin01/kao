@@ -396,10 +396,12 @@ onBeforeUnmount(() => {
   text-underline-offset: 0.2em;
 }
 
+/* 밝은 큰길 위에 겹쳐도 글자 대비(4.5:1 이상)가 유지되도록 출처처럼 어두운 바탕을 깝니다. */
 .tracker__hint {
-  margin: 0 0 0 auto;
-  padding-bottom: var(--space-1);
+  margin: 0 0 var(--space-1) auto;
+  padding: 0 var(--space-2);
   font-size: 0.6875rem;
+  background: rgb(0 0 0 / 0.65);
 }
 
 .tracker__table-wrap {
