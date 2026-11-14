@@ -531,14 +531,19 @@ export function computeHistory({ vehicleId, metricKey, from, to, points, actions
     while (cursor < mine.length && mine[cursor]!.at <= at) cursor += 1
     let live = false
     let liveValue: number | undefined
-    // 이 지표의 측정값이 없을 때 쓸, 그 시각 실차의 가장 새 속도와 경로 위치
+    // 이 지표의 측정값이 없을 때 쓸, 그 시각 실차의 가장 새 속도와 위치. 가장 새 GPS가 경로 밖이면
+    // 더 오래된 경로 위 위치를 찾지 않고 시뮬레이션 위치를 씁니다(관제 프레임과 같게).
     let liveSpeed: number | undefined
     let liveProgress: number | undefined
+    let positionSeen = false
     for (let j = cursor - 1; j >= 0 && at - mine[j]!.at <= LIVE_READING_MAX_AGE; j -= 1) {
       live = true
       const item = mine[j]!
       liveSpeed ??= item.speed
-      if (liveProgress === undefined && typeof item.position?.progress === 'number') liveProgress = item.position.progress
+      if (!positionSeen && item.position) {
+        positionSeen = true
+        liveProgress = item.position.progress ?? undefined
+      }
       const value = metric.key === 'speed' ? item.speed : item.metrics[metric.key]
       if (typeof value === 'number') {
         liveValue = value

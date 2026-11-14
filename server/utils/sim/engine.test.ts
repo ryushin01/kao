@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { findRoute } from '../../../src/shared/config/routes'
+import { createRouteGeo, turnRateAt } from '../../../src/shared/lib/route-geo'
 import { VEHICLE_SPECS } from '../fleet-specs'
 import { ACTION_LATENCY, checkAction, computeFrame, computeHistory, criticalIssues, dayStartOf, metricState, SPEED_CAP_DURATION, TIME_SCALE } from './engine'
 import type { ActionRecord, LiveIssueRecord, LiveReading } from './engine'
@@ -264,5 +265,21 @@ describe('도로에 맞는 속도와 기울기', () => {
     // 이력도 그 시각 실차의 속도로 채웁니다.
     const history = computeHistory({ vehicleId: 'kao-0003', metricKey: 'lean', from: now - 20_000, to: now, points: 5, actions: [], readings })!
     expect(history.samples.at(-1)!.value).toBeLessThanOrEqual(0.6)
+  })
+  it('이력과 관제 프레임은 같은 시각에 같은 실차 위치를 씁니다(가장 새 GPS가 경로 밖이면 둘 다 시뮬레이션 위치)', () => {
+    const now = DAY + 9 * 3600_000 + 888_000
+    // 오래된 경로 위 위치는 남산 순환에서 가장 급한 굽이로 둡니다(그 위치를 쓰면 기울기가 35° 가까이 나옴).
+    const geo = createRouteGeo(findRoute('namsan'))
+    let bend = 0
+    for (let p = 0; p < 1; p += 0.001) if (Math.abs(turnRateAt(geo, p)) > Math.abs(turnRateAt(geo, bend))) bend = p
+    const onRoute = { lat: 37.55, lng: 126.99, progress: bend, odometer: bend }
+    const readings: LiveReading[] = [
+      { vehicleId: 'kao-0003', at: now - 6000, speed: 45, metrics: { coolant: 88 }, position: onRoute },
+      { vehicleId: 'kao-0003', at: now - 2000, speed: 45, metrics: { coolant: 88 }, position: { ...onRoute, progress: null } },
+    ]
+    const frameLean = computeFrame({ now, actions: [], readings, vehicleIds: ['kao-0003'] }).vehicles[0]!.metrics.find((metric) => metric.key === 'lean')!.value
+    const history = computeHistory({ vehicleId: 'kao-0003', metricKey: 'lean', from: now - 20_000, to: now, points: 5, actions: [], readings })!
+    expect(history.samples.at(-1)!.value).toBe(frameLean)
+    expect(frameLean).toBeLessThan(30)
   })
 })
