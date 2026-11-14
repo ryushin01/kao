@@ -1,7 +1,7 @@
 # KAO — Kinetic Aero One
 
 [![CI](https://github.com/ryushin01/kao/actions/workflows/ci.yml/badge.svg)](https://github.com/ryushin01/kao/actions/workflows/ci.yml)
-![version](https://img.shields.io/badge/version-0.5.0-8B0000)
+![version](https://img.shields.io/badge/version-0.5.1-8B0000)
 
 회원의 자동차·모터사이클·자전거가 달리는 동안 상태를 실시간으로 지켜보고, 문제가 생기면 원격으로 조치하는 관제 서비스입니다. 등록된 탈것은 실제 모양을 본뜬 3D 미니어처로 서울 도심 지도의 실제 도로 위를 달립니다.
 
@@ -35,7 +35,7 @@
 | 로그인 | 관제 요원은 4대 전체와 원격 조치, 회원은 자기 탈것만(조치 버튼 없이 상태 안내). 데모 계정 버튼 |
 | 관제 센터 | SSE로 0.5초마다 받는 주행 데이터, 서울 도심 3D 관제 지도(실제 도로·한강, 시점 고르기·따라가기), 주행 위치 표, 분류 필터, 위험 등급순 조치 대기열, 원격 조치 기록 |
 | 탈것 상세 | 턴테이블 미니어처, 실시간 지표와 경고·위험 기준, 문제별 원격 조치, 지표 이력 그래프(10·30·60분), 경로 위치 |
-| 위험 알림 | 위험 등급 문제를 웹 푸시로 알림(관제 요원은 전체, 회원은 자기 탈것) |
+| 위험 알림 | 위험 등급 문제를 웹 푸시로 알림(관제 요원은 전체, 회원은 자기 탈것). Cloudflare Workers 크론이 5분마다 검사 |
 
 - **분류**: 세단·슈퍼카·슈퍼바이크·자전거 네 분류로 탈것을 나누고, 분류마다 대표 모델(G80, 아벤타도르, 파니갈레 V4 S, 스트라이다)을 3D 미니어처로 보여 줍니다. 같은 분류에 탈것이 늘어나도 `src/entities/vehicle/config/categories.ts` 하나로 관리합니다.
 - **서울 지도**: OpenStreetMap 도로·한강·공원으로 광화문에서 여의도·반포까지를 3D로 그리고, 네 대가 실제 도로를 달립니다. G80은 광화문 도심 순환, 아벤타도르는 동작·한남대교 한강 순환, 파니갈레는 남산 순환, 스트라이다는 여의도 한강 자전거길입니다. 경로는 도로 이름·진행 방향을 지정한 경유점을 일방통행을 지키며 잇는 최단 경로로 만들고(`pnpm build:map`), 실차 GPS도 같은 경로에 맞춥니다.
@@ -47,7 +47,7 @@
 
 ## 기술 스택
 
-![Nuxt, Vue, Three.js, TypeScript, PostgreSQL, Vercel, pnpm, Vitest, GitHub Actions](https://skillicons.dev/icons?i=nuxtjs,vue,threejs,ts,postgres,vercel,pnpm,vitest,githubactions)
+![Nuxt, Vue, Three.js, TypeScript, PostgreSQL, Vercel, Cloudflare, pnpm, Vitest, GitHub Actions](https://skillicons.dev/icons?i=nuxtjs,vue,threejs,ts,postgres,vercel,cloudflare,pnpm,vitest,githubactions)
 
 | 구분 | 사용 기술 |
 |---|---|
@@ -57,7 +57,7 @@
 | 데이터·알림 | Neon(Postgres, `@neondatabase/serverless`), Web Push(`web-push`, 서비스 워커) |
 | 구조 | Feature-Sliced Design v2.1, Steiger |
 | 품질 | ESLint(@nuxt/eslint), Vitest + Vue Test Utils(happy-dom), Storybook 10, Playwright + axe |
-| 배포·CI | Vercel(싱가포르 함수), GitHub Actions(CI, 5분 알림 검사) |
+| 배포·CI | Vercel(싱가포르 함수), Cloudflare Workers(5분 위험 알림 크론), GitHub Actions(CI) |
 
 ## 시작하기
 
@@ -87,6 +87,7 @@ pnpm dev        # http://localhost:3000
 app/              Nuxt 라우트·진입점 (src를 다시 내보내기만 함)
 server/           Nitro API, 시뮬레이션·실차 연동(sim/), 저장소(store/), DB 스키마(db/)
 scripts/          3D 모델 변환, 서울 지도 만들기, DB 마이그레이션, 실차 데모 장치
+workers/          5분 위험 알림 크론(Cloudflare Workers)
 public/models/    변환한 3D 모델(GLB)
 public/maps/      서울 지도 데이터(OpenStreetMap에서 간추림)
 src/
@@ -108,7 +109,7 @@ tests/e2e/        Playwright E2E
 | [Ducati Panigale V4](https://sketchfab.com/3d-models/ducati-panigale-v4-47f87e3d70f644289e34cbff91255d0c) | [ROY](https://sketchfab.com/roy.gearloft.in) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | 서울 도심 지도 데이터(도로·한강·공원) | [© OpenStreetMap 기여자](https://www.openstreetmap.org/copyright) | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) |
 
-3D 모델은 크기·방향 조정, 바퀴 분리, 도장 색 변경, 압축을 거쳤고, STRiDA LT 미니어처는 Three.js 코드로 직접 만들었습니다. 지도 데이터는 Overpass API로 받아 간추리고 그 도로로 주행 경로를 만들었습니다(`public/maps/seoul.json`, `src/shared/config/routes.ts`도 ODbL을 따릅니다). 사이트 바닥글의 '3D 모델·지도 데이터 출처' 링크가 이 표로 옵니다.
+3D 모델은 크기·방향 조정, 바퀴 분리, 도장 색 변경, 압축을 거쳤고, STRiDA LT 미니어처는 Three.js 코드로 직접 만들었습니다. 지도 데이터는 Overpass API로 받아 간추리고 그 도로로 주행 경로를 만들었습니다(`public/maps/seoul.json`, `src/shared/config/routes.ts`도 ODbL을 따릅니다). 사이트 바닥글의 '3D 모델·지도 데이터 출처' 링크가 이 표로 오고, 지도 데이터는 OpenStreetMap 재단의 출처 표시 지침대로 관제 지도 왼쪽 아래에도 '© OpenStreetMap 기여자'를 띄웁니다.
 
 ## 문서
 

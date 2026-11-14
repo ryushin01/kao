@@ -1,0 +1,18 @@
+# KAO 위험 알림 크론(Cloudflare Workers 크론 트리거).
+# GitHub Actions 예약 실행이 거의 돌지 않아(2026-11-14 확인), Cloudflare가 5분마다 운영 서버의 /api/cron/notify를 부릅니다.
+# 배포와 비밀 등록은 docs/deploy.md를 참고하세요.
+name = "kao-notify-cron"
+main = "index.js"
+compatibility_date = "2026-10-01"
+# HTTP 주소는 열지 않습니다(크론으로만 실행).
+workers_dev = false
+preview_urls = false
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+SITE_URL = "https://kao-ryushin01.vercel.app"
+
+[observability]
+enabled = true
