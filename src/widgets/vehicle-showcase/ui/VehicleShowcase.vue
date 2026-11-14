@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import type { VehicleSnapshot } from '@shared/api'
-import { isWebGLAvailable, useMotion } from '@shared/lib'
+import { isWebGLAvailable, useMotion, whenNearViewport } from '@shared/lib'
 import { HudButton } from '@shared/ui'
 import { MODEL_PROFILES } from '@entities/vehicle'
 import type { ShowcaseScene } from '../lib/showcase-scene'
@@ -24,14 +24,22 @@ const label = computed(
   () => `${profile.value.displayName} 미니어처, ${props.vehicle.paint.name} 색상. 턴테이블 위 3D 모델`,
 )
 
-onMounted(async () => {
+let unmounted = false
+let stopWatching = () => {}
+
+// 화면 가까이 왔을 때 three.js와 3D 모델을 받아 장면을 만듭니다(소개 화면 아래쪽에 있을 때 첫 로딩을 가볍게).
+async function start() {
+  const { createShowcaseScene } = await import('../lib/showcase-scene')
+  if (unmounted || !canvas.value) return
+  scene.value = createShowcaseScene({ canvas: canvas.value, vehicle: props.vehicle, playing: !paused.value })
+}
+
+onMounted(() => {
   if (!canvas.value || !isWebGLAvailable()) {
     supported.value = false
     return
   }
-  const { createShowcaseScene } = await import('../lib/showcase-scene')
-  if (!canvas.value) return
-  scene.value = createShowcaseScene({ canvas: canvas.value, vehicle: props.vehicle, playing: !paused.value })
+  stopWatching = whenNearViewport(canvas.value, () => void start())
 })
 
 watch(
@@ -41,6 +49,8 @@ watch(
 watch(paused, (value) => scene.value?.setPlaying(!value))
 
 onBeforeUnmount(() => {
+  unmounted = true
+  stopWatching()
   scene.value?.dispose()
   scene.value = null
 })

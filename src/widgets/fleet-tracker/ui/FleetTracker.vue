@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, useId, watch } f
 import type { FleetFrame } from '@shared/api'
 import { HEALTH_LABELS } from '@shared/api'
 import { findRoute } from '@shared/config'
-import { formatNumber, formatPercent, isWebGLAvailable, useMotion } from '@shared/lib'
+import { formatNumber, formatPercent, isWebGLAvailable, useMotion, whenNearViewport } from '@shared/lib'
 import { HudPanel, StatusBadge } from '@shared/ui'
 import { MODEL_PROFILES } from '@entities/vehicle'
 import type { TrackerScene } from '../lib/tracker-scene'
@@ -32,14 +32,13 @@ const setLabel = (vehicleId: string) => (el: unknown) => {
   labels.value[vehicleId] = el as HTMLElement | null
 }
 
-onMounted(async () => {
-  if (!canvas.value || !isWebGLAvailable()) {
-    supported.value = false
-    return
-  }
-  // three.js 장면은 브라우저에서만 불러옵니다.
+let unmounted = false
+let stopWatching = () => {}
+
+// three.js 장면은 브라우저에서, 지도가 화면 가까이 왔을 때 만듭니다(탈것 상세처럼 아래쪽에 있을 때 첫 로딩을 가볍게).
+async function start() {
   const { createTrackerScene } = await import('../lib/tracker-scene')
-  if (!canvas.value) return
+  if (unmounted || !canvas.value) return
   scene.value = createTrackerScene({
     canvas: canvas.value,
     frame: props.frame,
@@ -55,6 +54,14 @@ onMounted(async () => {
     },
   })
   if (follow.value !== 'all') scene.value.setFollow(follow.value)
+}
+
+onMounted(() => {
+  if (!canvas.value || !isWebGLAvailable()) {
+    supported.value = false
+    return
+  }
+  stopWatching = whenNearViewport(canvas.value, () => void start())
 })
 
 watch(
@@ -65,6 +72,8 @@ watch(follow, (value) => scene.value?.setFollow(value === 'all' ? null : value))
 watch(paused, (value) => scene.value?.setPlaying(!value))
 
 onBeforeUnmount(() => {
+  unmounted = true
+  stopWatching()
   scene.value?.dispose()
   scene.value = null
 })

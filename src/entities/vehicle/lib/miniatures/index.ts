@@ -21,6 +21,6 @@ export function rollWheels(miniature: Miniature, distance: number) {
   for (const wheel of miniature.wheels) wheel.object.rotation.z -= distance / wheel.radius
 }
 
-export { loadModelMiniature } from './gltf-model'
+export { loadModelMiniature, preloadModel } from './gltf-model'
 
 export type { Miniature }

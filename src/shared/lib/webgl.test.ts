@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 /** 모듈이 결과를 기억하므로 경우마다 새로 불러옵니다. */
 async function load() {
   vi.resetModules()
-  return import('./stage')
+  return import('./webgl')
 }
 
 describe('isWebGLAvailable', () => {

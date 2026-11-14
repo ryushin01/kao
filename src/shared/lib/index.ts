@@ -1,5 +1,7 @@
 export { formatClock, formatNumber, formatPercent, toIsoString } from './format'
 export { initMotionPreference, useMotion } from './motion'
 export { applyStudioEnvironment } from './three/environment'
-export { createStage, disposeObject, isWebGLAvailable } from './three/stage'
+export { createStage, disposeObject } from './three/stage'
+export { whenNearViewport } from './viewport'
+export { isWebGLAvailable } from './webgl'
 export type { Stage } from './three/stage'

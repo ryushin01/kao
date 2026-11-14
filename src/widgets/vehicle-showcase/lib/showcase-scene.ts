@@ -14,7 +14,7 @@ import {
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { VehicleSnapshot } from '@shared/api'
 import { applyStudioEnvironment, createStage, disposeObject } from '@shared/lib'
-import { createMiniature, loadModelMiniature, rollWheels } from '@entities/vehicle'
+import { createMiniature, loadModelMiniature, preloadModel, rollWheels } from '@entities/vehicle'
 import type { Miniature } from '@entities/vehicle'
 
 export interface ShowcaseOptions {
@@ -25,6 +25,8 @@ export interface ShowcaseOptions {
 
 /** 턴테이블 위에 미니어처 한 대를 올려 돌려 봅니다. */
 export function createShowcaseScene({ canvas, vehicle, playing }: ShowcaseOptions) {
+  // 조명 환경 계산(GPU)보다 먼저 3D 모델 다운로드를 걸어 둡니다.
+  preloadModel(vehicle.modelId)
   let speed = vehicle.speed
   let lean = 0
   let miniature: Miniature | null = null
