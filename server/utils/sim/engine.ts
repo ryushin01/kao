@@ -11,6 +11,21 @@ import type {
 import { findRoute } from '../../../src/shared/config/routes'
 import { VEHICLE_SPECS } from '../fleet-specs'
 import type { MetricSpec, VehicleSpec } from '../fleet-specs'
+import {
+  isLiveIssueId,
+  lapOf,
+  LIVE_READING_MAX_AGE,
+  liveActionLog,
+  liveIssueMetric,
+  liveIssueView,
+  liveStateOf,
+  metricState,
+  worse,
+} from './live'
+import type { ActionRecord, LiveIssueRecord, LiveReading } from './types'
+
+export { metricState } from './live'
+export type { ActionRecord, CommandAck, LiveIssueRecord, LivePosition, LiveReading } from './types'
 
 /**
  * 시간의 순수 함수로 계산하는 주행 시뮬레이션.
@@ -23,6 +38,8 @@ import type { MetricSpec, VehicleSpec } from '../fleet-specs'
  * - 문제: 45초 칸마다 시드 난수로 '문제 후보'를 뽑고, 하루 시작(KST 0시)부터 차례로 받아들일지 정합니다.
  *   같은 지표에 진행 중인 문제가 있거나 동시에 2건이면 건너뜁니다. 문제는 조치하거나 15분이 지나면 끝납니다.
  * - 지표: 기준값 + 문제로 생긴 치우침(선형으로 커지고, 끝나면 지수로 회복) + 시각으로 정한 잡음
+ *
+ * 30초 안에 실차 측정값이 들어온 탈것은 측정값·GPS·실측 문제(live.ts)를 시뮬레이션 대신 씁니다.
  */
 
 /** 관제 지도에서 움직임이 보이도록 지도 위치(mapProgress)만 빠르게 돌리는 배속. 바퀴 수와 진행률은 실제 속도 기준입니다. */
@@ -48,24 +65,7 @@ const RECOVERY_PER_SECOND = 0.35
 const RESOLVED_KEEP = 3
 const RESOLVED_VISIBLE_MS = 20 * 60_000
 const LOG_KEEP = 30
-const LIVE_READING_MAX_AGE = 30_000
 const KST_OFFSET = 9 * 3600_000
-
-export interface ActionRecord {
-  id: string
-  issueId: string
-  vehicleId: string
-  action: ActionCode
-  sentAt: number
-}
-
-/** 실제 차량에서 들어온 최근 측정값 */
-export interface LiveReading {
-  vehicleId: string
-  at: number
-  speed?: number
-  metrics: Record<string, number>
-}
 
 interface Episode {
   id: string
@@ -110,15 +110,6 @@ export function dayStartOf(time: number) {
   return Math.floor((time + KST_OFFSET) / 86_400_000) * 86_400_000 - KST_OFFSET
 }
 
-export function metricState(spec: Pick<MetricSpec, 'warn' | 'crit' | 'direction'>, value: number): HealthState {
-  const beyond = (limit: number | null) => limit !== null && (spec.direction === 'high' ? value >= limit : value <= limit)
-  if (beyond(spec.crit)) return 'critical'
-  if (beyond(spec.warn)) return 'warning'
-  return 'nominal'
-}
-
-const SEVERITY_RANK: Record<HealthState, number> = { nominal: 0, warning: 1, critical: 2 }
-
 // ── 속도와 위치 ────────────────────────────────────────────────────────────
 
 function speedWave(vehicle: VehicleSpec) {
@@ -152,9 +143,22 @@ function speedCapAt(vehicle: VehicleSpec, actions: ActionRecord[], time: number)
   return cap
 }
 
-function capValue(vehicle: VehicleSpec, action: ActionCode) {
+export function capValue(vehicle: VehicleSpec, action: ActionCode) {
   const [, high] = vehicle.cruise
   return action === 'speed-limit' ? Math.min(80, high) : Math.round(high * 0.6)
+}
+
+/** 실차가 적용했다고 응답한 속도·출력 제한(응답 시각부터 SPEED_CAP_DURATION 동안) */
+function liveSpeedCap(vehicle: VehicleSpec, actions: ActionRecord[], now: number): number | null {
+  let cap: number | null = null
+  for (const action of actions) {
+    if (action.vehicleId !== vehicle.id || action.ack?.result !== 'applied') continue
+    if (action.action !== 'speed-limit' && action.action !== 'power-limit') continue
+    if (now < action.ack.at || now >= action.ack.at + SPEED_CAP_DURATION) continue
+    const value = capValue(vehicle, action.action)
+    cap = cap === null ? value : Math.min(cap, value)
+  }
+  return cap
 }
 
 function speedAt(vehicle: VehicleSpec, actions: ActionRecord[], time: number) {
@@ -282,6 +286,7 @@ function issueOf(episode: Episode, time: number): Issue | null {
     detectedAt: Math.round(detectedAt),
     status: 'open',
     actions: [...fault.actions],
+    source: 'simulated',
   }
   if (episode.action) {
     const doneAt = episode.action.sentAt + ACTION_LATENCY
@@ -332,41 +337,63 @@ function reading(metric: MetricSpec, value: number): MetricReading {
 
 export interface FrameInput {
   now: number
-  /** 오늘(KST) 보낸 원격 조치 */
+  /** 오늘(KST) 보낸 원격 조치. 실차 명령은 차량 응답(ack)까지 들어 있습니다. */
   actions: ActionRecord[]
+  /** 최근 실차 측정값 */
   readings?: LiveReading[]
+  /** 실측 문제: 해결되지 않은 것 전부와 오늘 해결한 것 */
+  liveIssues?: LiveIssueRecord[]
   /** 볼 수 있는 탈것(없으면 전체) */
   vehicleIds?: readonly string[]
 }
 
-export function computeFrame({ now, actions, readings = [], vehicleIds }: FrameInput): FleetFrame {
+function liveIssuesOf(vehicle: VehicleSpec, records: LiveIssueRecord[], actions: ActionRecord[], now: number): Issue[] {
+  return records
+    .filter((record) => record.vehicleId === vehicle.id)
+    .flatMap((record) => {
+      const metric = vehicle.metrics.find((item) => item.key === record.metricKey)
+      return metric?.fault ? [liveIssueView(record, metric, actions, now)] : []
+    })
+}
+
+export function computeFrame({ now, actions, readings = [], liveIssues = [], vehicleIds }: FrameInput): FleetFrame {
   const dayStart = dayStartOf(now)
   const todays = actions.filter((action) => action.sentAt >= dayStart && action.sentAt <= now)
-  const daily = episodesFor(dayStart, todays)
+  // 시뮬레이션(위치, 속도, 문제 일정)은 시뮬레이션 문제에 보낸 조치만으로 계산합니다.
+  const simulated = todays.filter((action) => !isLiveIssueId(action.issueId))
+  const daily = episodesFor(dayStart, simulated)
   const episodes = episodesNear(daily, now)
   const visible = VEHICLE_SPECS.filter((vehicle) => !vehicleIds || vehicleIds.includes(vehicle.id))
 
   const vehicles = visible.map((vehicle): VehicleSnapshot => {
-    const live = readings
-      .filter((item) => item.vehicleId === vehicle.id && now - item.at <= LIVE_READING_MAX_AGE)
-      .sort((a, b) => b.at - a.at)[0]
-    // 실차 신호가 들어온 탈것에는 시뮬레이션 문제를 붙이지 않습니다(상태는 실측 지표로 판단).
+    const live = liveStateOf(readings, vehicle.id, now)
+    // 실차 신호가 들어온 탈것에는 시뮬레이션 문제 대신 실측 문제를 붙입니다.
     const mine = live ? [] : episodes.filter((episode) => episode.vehicle.id === vehicle.id)
-    const issues = mine.map((episode) => issueOf(episode, now)).filter((issue): issue is Issue => issue !== null)
+    const issues = live
+      ? liveIssuesOf(vehicle, liveIssues, todays, now)
+      : mine.map((episode) => issueOf(episode, now)).filter((issue): issue is Issue => issue !== null)
     const active = issues.filter((issue) => issue.status !== 'resolved')
     const resolved = issues
       .filter((issue) => issue.status === 'resolved' && now - (issue.resolvedAt ?? 0) <= RESOLVED_VISIBLE_MS)
+      .sort((a, b) => (a.resolvedAt ?? 0) - (b.resolvedAt ?? 0))
       .slice(-RESOLVED_KEEP)
-    const position = positionAt(vehicle, todays, now)
-    const simulatedSpeed = speedAt(vehicle, todays, now)
-    const speed = live?.speed ?? simulatedSpeed
+    const gps = live?.position
+    const onRoute = gps !== undefined && gps.progress !== null
+    const simulatedPosition = positionAt(vehicle, simulated, now)
+    const position =
+      gps && gps.progress !== null
+        ? { progress: gps.progress, mapProgress: gps.progress, lap: lapOf(gps) }
+        : simulatedPosition
+    const speed = live?.speed ?? speedAt(vehicle, simulated, now)
     const metrics = vehicle.metrics.map((metric) => {
-      if (metric.key === 'speed') return reading(metric, speed)
+      if (metric.key === 'speed') return reading(metric, clamp(speed, metric.min, metric.max))
       const liveValue = live?.metrics[metric.key]
-      return reading(metric, typeof liveValue === 'number' ? liveValue : metricValue(vehicle, metric, mine, todays, now))
+      return reading(metric, typeof liveValue === 'number' ? clamp(liveValue, metric.min, metric.max) : metricValue(vehicle, metric, mine, simulated, now))
     })
-    const states: HealthState[] = live ? metrics.map((metric) => metric.state) : active.map((issue) => issue.severity)
-    const health = states.reduce<HealthState>((worst, state) => (SEVERITY_RANK[state] > SEVERITY_RANK[worst] ? state : worst), 'nominal')
+    const states: HealthState[] = live
+      ? [...metrics.map((metric) => metric.state), ...active.map((issue) => issue.severity)]
+      : active.map((issue) => issue.severity)
+    const health = states.reduce<HealthState>(worse, 'nominal')
     return {
       id: vehicle.id,
       modelId: vehicle.modelId,
@@ -382,8 +409,10 @@ export function computeFrame({ now, actions, readings = [], vehicleIds }: FrameI
       progress: round(position.progress, 5),
       mapProgress: round(position.mapProgress, 5),
       lap: position.lap,
+      positionSource: onRoute ? 'gps' : 'simulated',
+      gps: gps ? { lat: gps.lat, lng: gps.lng, at: gps.at, onRoute } : null,
       speed: round(speed, 1),
-      speedCap: speedCapAt(vehicle, todays, now),
+      speedCap: live ? liveSpeedCap(vehicle, todays, now) : speedCapAt(vehicle, simulated, now),
       health,
       metrics,
       issues: [...resolved, ...active],
@@ -392,10 +421,16 @@ export function computeFrame({ now, actions, readings = [], vehicleIds }: FrameI
 
   const visibleIds = new Set(visible.map((vehicle) => vehicle.id))
   const titles = new Map(daily.map((episode) => [episode.id, episode.metric.fault!.title]))
+  const liveRecords = new Map(liveIssues.map((record) => [record.id, record]))
   const log: ActionLogEntry[] = todays
     .filter((action) => visibleIds.has(action.vehicleId))
     .flatMap((action) => {
       const vehicle = VEHICLE_SPECS.find((item) => item.id === action.vehicleId)!
+      if (isLiveIssueId(action.issueId)) {
+        const metricKey = liveIssueMetric(action.issueId, vehicle.id)
+        const title = vehicle.metrics.find((metric) => metric.key === metricKey)?.fault?.title ?? '문제'
+        return liveActionLog(action, `${vehicle.model} · ${title}: ${ACTIONS[action.action].label}`, now, liveRecords.get(action.issueId))
+      }
       const label = `${vehicle.model} · ${titles.get(action.issueId) ?? '문제'}: ${ACTIONS[action.action].label}`
       const entries: ActionLogEntry[] = [
         { id: `${action.id}-sent`, vehicleId: action.vehicleId, issueId: action.issueId, action: action.action, at: action.sentAt, phase: 'sent', message: `${label} 명령 전송` },
@@ -417,10 +452,10 @@ export type ActionCheck =
   | { ok: false; statusCode: 404 | 409 | 422; message: string }
 
 /** 지금 이 문제에 이 조치를 보낼 수 있는지 확인합니다. */
-export function checkAction(now: number, actions: ActionRecord[], vehicleId: string, issueId: string, action: ActionCode): ActionCheck {
+export function checkAction(input: Omit<FrameInput, 'vehicleIds'>, vehicleId: string, issueId: string, action: ActionCode): ActionCheck {
   const vehicle = VEHICLE_SPECS.find((item) => item.id === vehicleId)
   if (!vehicle) return { ok: false, statusCode: 404, message: '등록되지 않은 탈것입니다.' }
-  const frame = computeFrame({ now, actions, vehicleIds: [vehicleId] })
+  const frame = computeFrame({ ...input, vehicleIds: [vehicleId] })
   const issue = frame.vehicles[0]!.issues.find((item) => item.id === issueId)
   if (!issue) return { ok: false, statusCode: 404, message: '문제를 찾지 못했습니다. 이미 정리된 문제일 수 있습니다.' }
   if (issue.status !== 'open') {
@@ -439,29 +474,55 @@ export interface HistoryInput {
   to: number
   points: number
   actions: ActionRecord[]
+  /** 이 탈것의 실차 측정값(from보다 30초 앞부터 to까지) */
+  readings?: LiveReading[]
 }
 
-/** 지난 시각의 지표 값을 다시 계산합니다(시간의 순수 함수이므로 따로 저장하지 않습니다). */
-export function computeHistory({ vehicleId, metricKey, from, to, points, actions }: HistoryInput) {
+/**
+ * 지난 시각의 지표 값. 그 시각 30초 안에 실차 측정값이 있으면 그 값을 쓰고, 없으면 시뮬레이션을 다시 계산합니다
+ * (시뮬레이션은 시간의 순수 함수라 따로 저장하지 않습니다). 실차 신호가 있던 시각에 보내지 않은 지표는
+ * 화면과 같게 시뮬레이션 문제 없이 계산합니다.
+ */
+export function computeHistory({ vehicleId, metricKey, from, to, points, actions, readings = [] }: HistoryInput) {
   const vehicle = VEHICLE_SPECS.find((item) => item.id === vehicleId)
   const metric = vehicle?.metrics.find((item) => item.key === metricKey)
   if (!vehicle || !metric) return null
+  const mine = readings.filter((item) => item.vehicleId === vehicleId).sort((a, b) => a.at - b.at)
   const step = (to - from) / Math.max(1, points - 1)
   const samples: Array<{ at: number; value: number }> = []
+  let cursor = 0
+  let liveSamples = 0
   for (let i = 0; i < points; i += 1) {
     const at = Math.round(from + step * i)
-    const dayStart = dayStartOf(at)
-    const todays = actions.filter((action) => action.sentAt >= dayStart && action.sentAt <= at)
-    const episodes = episodesNear(episodesFor(dayStart, todays), at).filter((episode) => episode.vehicle.id === vehicleId)
-    const value = metric.key === 'speed' ? speedAt(vehicle, todays, at) : metricValue(vehicle, metric, episodes, todays, at)
+    while (cursor < mine.length && mine[cursor]!.at <= at) cursor += 1
+    let live = false
+    let liveValue: number | undefined
+    for (let j = cursor - 1; j >= 0 && at - mine[j]!.at <= LIVE_READING_MAX_AGE; j -= 1) {
+      live = true
+      const value = metric.key === 'speed' ? mine[j]!.speed : mine[j]!.metrics[metric.key]
+      if (typeof value === 'number') {
+        liveValue = value
+        break
+      }
+    }
+    let value: number
+    if (liveValue !== undefined) {
+      value = clamp(liveValue, metric.min, metric.max)
+      liveSamples += 1
+    } else {
+      const dayStart = dayStartOf(at)
+      const todays = actions.filter((action) => action.sentAt >= dayStart && action.sentAt <= at && !isLiveIssueId(action.issueId))
+      const episodes = live ? [] : episodesNear(episodesFor(dayStart, todays), at).filter((episode) => episode.vehicle.id === vehicleId)
+      value = metric.key === 'speed' ? speedAt(vehicle, todays, at) : metricValue(vehicle, metric, episodes, todays, at)
+    }
     samples.push({ at, value: round(value, metric.precision) })
   }
-  return { metric: reading(metric, samples.at(-1)?.value ?? metric.nominal), samples }
+  return { metric: reading(metric, samples.at(-1)?.value ?? metric.nominal), samples, liveSamples }
 }
 
 /** 지금 위험 등급인 열린 문제(웹 푸시 알림 대상) */
-export function criticalIssues(now: number, actions: ActionRecord[], readings: LiveReading[] = []) {
-  return computeFrame({ now, actions, readings }).vehicles.flatMap((vehicle) =>
+export function criticalIssues(input: Omit<FrameInput, 'vehicleIds'>) {
+  return computeFrame(input).vehicles.flatMap((vehicle) =>
     vehicle.issues
       .filter((issue) => issue.status === 'open' && issue.severity === 'critical')
       .map((issue) => ({ vehicle, issue })),

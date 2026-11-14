@@ -10,4 +10,4 @@ export function useStore(): Store {
   return store
 }
 
-export type { PushSubscriptionRecord, Store, UserRecord } from './types'
+export type { AckOutcome, PushSubscriptionRecord, Store, UserRecord } from './types'

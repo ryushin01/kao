@@ -22,11 +22,17 @@ const scene = shallowRef<TrackerScene | null>(null)
 const { paused } = useMotion()
 
 const vehicles = computed(() => props.frame.vehicles)
+const gpsCount = computed(() => vehicles.value.filter((vehicle) => vehicle.positionSource === 'gps').length)
 const description = computed(
   () =>
     `관제 지도. ${vehicles.value.length}대의 미니어처가 각자의 경로를 달리고 있습니다. ` +
-    `움직임이 보이도록 실제보다 ${props.frame.timeScale}배 빠르게 움직이며, 실제 속도 기준 위치와 상태는 지도 아래 표에 있습니다.`,
+    (gpsCount.value > 0 ? `실차 GPS로 위치를 받는 ${gpsCount.value}대는 실제 위치에, 나머지는 ` : '') +
+    `움직임이 보이도록 실제보다 ${props.frame.timeScale}배 빠르게 움직이며, 실제 위치와 상태는 지도 아래 표에 있습니다.`,
 )
+const positionLabel = (vehicle: FleetFrame['vehicles'][number]) => {
+  if (vehicle.positionSource === 'gps') return 'GPS'
+  return vehicle.gps ? 'GPS 경로 밖(시뮬레이션 위치)' : '시뮬레이션'
+}
 
 const setLabel = (vehicleId: string) => (el: unknown) => {
   labels.value[vehicleId] = el as HTMLElement | null
@@ -123,11 +129,12 @@ onBeforeUnmount(() => {
 
     <div class="tracker__table-wrap" role="region" :aria-labelledby="`${id}-caption`" tabindex="0">
       <table class="tracker__table">
-        <caption :id="`${id}-caption`" class="hud-label">주행 위치 표(실제 속도 기준)</caption>
+        <caption :id="`${id}-caption`" class="hud-label">주행 위치 표(실제 속도·GPS 기준)</caption>
         <thead>
           <tr>
             <th scope="col">탈것</th>
             <th scope="col">경로</th>
+            <th scope="col">위치 기준</th>
             <th scope="col">바퀴(정각부터)</th>
             <th scope="col">진행</th>
             <th scope="col">속도</th>
@@ -138,6 +145,7 @@ onBeforeUnmount(() => {
           <tr v-for="vehicle in vehicles" :key="vehicle.id">
             <th scope="row">{{ MODEL_PROFILES[vehicle.modelId].displayName }}</th>
             <td>{{ findRoute(vehicle.routeId).name }}</td>
+            <td>{{ positionLabel(vehicle) }}</td>
             <td class="tabular">{{ vehicle.lap }}</td>
             <td class="tabular">{{ formatPercent(vehicle.progress) }}</td>
             <td class="tabular">

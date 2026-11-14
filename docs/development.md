@@ -32,7 +32,9 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
 | `GET /api/vehicles/:id/history?metric=&minutes=` | 로그인(볼 수 있는 탈것) | 10·30·60분 지표 이력 120점 |
 | `POST/DELETE /api/push/subscriptions`, `POST /api/push/test` | 로그인 | 웹 푸시 구독·해지, 시험 알림 |
 | `GET /api/cron/notify` | `CRON_SECRET` | 위험 등급 문제 웹 푸시 |
-| `POST /api/ingest/telemetry` | `INGEST_TOKEN` | 실차 측정값 수신([실차 연결](integration.md)) |
+| `POST /api/ingest/telemetry` | `INGEST_TOKEN` | 실차 측정값·GPS 수신. 응답에 차량이 받아 갈 명령([실차 연결](integration.md)) |
+| `GET /api/ingest/commands?vehicleId=` | `INGEST_TOKEN` | 차량이 아직 응답하지 않은 원격 조치 명령 |
+| `POST /api/ingest/commands/:id/ack` | `INGEST_TOKEN` | 명령 적용 결과 `{ vehicleId, result: applied \| failed, message? }` |
 
 쿠키를 쓰는 변경 요청은 `Origin`이 같은 사이트일 때만 받습니다(SameSite=Lax에 더한 CSRF 방어).
 
@@ -42,11 +44,15 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
 
 - **속도·위치**: 속도는 사인파 두 개의 합이라 거리를 적분식으로 바로 구합니다. 속도·출력 제한 조치가 걸린 90초는 제한을 넘은 만큼 수치 적분으로 뺍니다. 바퀴 수(`lap`, 매시 정각부터)와 진행률(`progress`)은 실제 속도로 달린 거리로 셉니다. 관제 지도 위치(`mapProgress`)만 움직임이 보이도록 같은 거리를 12배(`TIME_SCALE`) 해서 구하므로, 실제로 한 바퀴를 돌면 지도에서는 정확히 12바퀴를 돕니다. 화면의 카드·주행 위치 표·상세는 실제 속도 기준 값을 쓰고, 지도 제목에는 "지도 12배속"이라고 밝힙니다.
 - **문제**: KST 0시부터 45초 칸마다 시드 난수로 후보를 뽑고, 같은 지표에 진행 중인 문제가 있거나 동시에 2건이면 건너뜁니다. 문제는 지표를 나쁜 쪽으로 천천히 밀고(경고 단계 2분 이상), 조치하면 멈춘 뒤 지수로 회복합니다. 조치가 없으면 15분 뒤 저절로 끝납니다. 문제 id는 `탈것-지표-날짜-칸`이라 조치 기록과 이어집니다.
-- **이력**: 지난 시각을 다시 계산하므로 따로 저장하지 않습니다.
+- **이력**: 시뮬레이션은 지난 시각을 다시 계산하므로 따로 저장하지 않습니다. 실차 측정값이 있던 시각은 저장한 측정값을 씁니다.
+
+### 실차 연동(`server/utils/sim/live.ts`, `server/utils/ingest.ts`)
+
+30초 안에 측정값이 들어온 탈것은 시뮬레이션 대신 실측값·GPS·실측 문제를 씁니다. 시뮬레이션처럼 상태는 저장한 기록(측정값, 실측 문제, 명령과 차량 응답)만으로 계산하는 순수 함수(`live.ts`)이고, 수신 API(`ingest.ts`)가 측정값이 올 때마다 실측 문제를 열고·올리고·해결해 저장합니다. 원격 조치는 실측 문제면 명령으로 쌓였다가 차량이 받아 가 응답(applied·failed)하고, 2분 안에 응답이 없거나 실패하면 다시 조치할 수 있게 엽니다. 규칙과 API 형식은 [실차 연결](integration.md)에 있습니다. 시뮬레이션의 위치·문제 일정은 실차 명령의 영향을 받지 않습니다.
 
 ### 저장소(`server/utils/store/`)
 
-`DATABASE_URL`이 있으면 Neon(`postgres.ts`), 없으면 메모리(`memory.ts`)를 씁니다. 로컬 개발·테스트·미리보기 배포는 메모리 저장소이며 데모 계정이 들어 있습니다. 스키마는 `server/db/schema.sql`, 적용은 `pnpm db:migrate`([배포](deploy.md)).
+`DATABASE_URL`이 있으면 Neon(`postgres.ts`), 없으면 메모리(`memory.ts`)를 씁니다. 로컬 개발·테스트·미리보기 배포는 메모리 저장소이며 데모 계정이 들어 있습니다. 테이블은 계정(`users`), 원격 조치와 실차 명령 응답(`remote_actions`), 실측 문제(`live_issues`), 측정값·GPS(`telemetry_readings`, 하루 보관), 웹 푸시 구독·발송 기록입니다. 스키마는 `server/db/schema.sql`, 적용은 `pnpm db:migrate`([배포](deploy.md)).
 
 ### 로그인과 화면 접근
 
@@ -98,8 +104,9 @@ Lighthouse(모바일 조건, GPU, 3회 중앙값)로 잰 결과입니다.
 
 | 명령 | 내용 |
 |---|---|
-| `pnpm test` | Vitest(happy-dom): 시뮬레이션(같은 시각 같은 결과, 조치 흐름, 이력), 세션 서명·비밀번호·저장소, 공통 UI·그래프(키보드), 로그인 폼, 원격 조치(확인·더블 클릭·실패·회원 화면) |
-| `pnpm test:e2e` | Playwright: 프로덕션 빌드(`pnpm build` 먼저)를 데스크톱·모바일에서 검사. axe(WCAG 2.2 AA 태그), 가로 넘침, 원격 조치 흐름, 로그인·권한, 404. 화면 검사는 3D 모델 요청을 막고(`tests/e2e/fixtures.ts`), 실제 모델 로드는 `models.spec.ts`에서 따로 확인 |
+| `pnpm test` | Vitest(happy-dom): 시뮬레이션(같은 시각 같은 결과, 조치 흐름, 이력), 실차 연동(실측 문제 열기·해결, 명령 응답·응답 없음, GPS 바퀴 수, 메모리 저장소로 수신부터 해결까지), 세션 서명·비밀번호·저장소, 공통 UI·그래프(키보드), 로그인 폼, 원격 조치(확인·더블 클릭·실패·회원 화면·실측 문제 안내), 조치 기록·화면 낭독기 알림, 블랙홀 배경의 WebGL 컨텍스트 복구 |
+| `pnpm test:e2e` | Playwright: 프로덕션 빌드(`pnpm build` 먼저)를 데스크톱·모바일에서 검사. axe(WCAG 2.2 AA 태그), 가로 넘침, 원격 조치 흐름, 로그인·권한, 404. 화면 검사는 3D 모델 요청을 막고(`tests/e2e/fixtures.ts`), 실제 모델 로드는 `models.spec.ts`에서 따로 확인. 블랙홀 배경이 실제 WebGL 컨텍스트를 잃었다 되찾으면 다시 그리는지(`event-horizon.spec.ts`). 실차 연동(`live.spec.ts`)은 탈것 하나를 실차 신호로 바꾸므로 다른 검사가 끝난 뒤 `live` 프로젝트로 돎 |
+| `pnpm live:demo` | 실차 장치 흉내. 측정값·GPS를 보내고 받은 명령에 응답([실차 연결](integration.md#데모-장치)) |
 | `pnpm storybook` | 공통 UI·엔티티·기능 컴포넌트 스토리 |
 
 axe를 통과해도 KWCAG 2.2를 모두 만족하는 것은 아니므로 새 화면은 키보드, 화면 낭독기, 정지 기능을 직접 확인합니다.

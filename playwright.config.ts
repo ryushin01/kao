@@ -16,15 +16,17 @@ export default defineConfig({
     launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] },
   },
   projects: [
-    { name: 'desktop', use: { ...devices['Desktop Chrome'] } },
-    { name: 'mobile', use: { ...devices['Pixel 7'] } },
+    { name: 'desktop', use: { ...devices['Desktop Chrome'] }, testIgnore: /live\.spec\.ts/ },
+    { name: 'mobile', use: { ...devices['Pixel 7'] }, testIgnore: /live\.spec\.ts/ },
+    // 실차 연동 검사는 탈것 하나를 실차 신호로 바꿉니다. 아무 탈것의 시뮬레이션 문제를 고르는 다른 검사가 모두 끝난 뒤에 돕니다.
+    { name: 'live', use: { ...devices['Desktop Chrome'] }, testMatch: /live\.spec\.ts/, dependencies: ['desktop', 'mobile'] },
   ],
   // 프로덕션 빌드로 검사합니다.
   webServer: {
     command: 'node .output/server/index.mjs',
     port: PORT,
     // 언제 열어도 조치할 문제가 있도록 문제를 자주 내는 시뮬레이션으로 띄웁니다.
-    env: { PORT: String(PORT), NITRO_PORT: String(PORT), KAO_SIM_PROFILE: 'busy' },
+    env: { PORT: String(PORT), NITRO_PORT: String(PORT), KAO_SIM_PROFILE: 'busy', INGEST_TOKEN: 'e2e-ingest-token' },
     reuseExistingServer: false,
   },
 })

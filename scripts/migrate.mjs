@@ -36,9 +36,10 @@ for (const account of DEMO_ACCOUNTS) {
   `
 }
 
-// 오래된 기록 정리: 측정값은 하루, 원격 조치는 7일, 알림 기록은 7일
+// 오래된 기록 정리: 측정값은 하루, 원격 조치·해결한 실측 문제·알림 기록은 7일
 const now = Date.now()
 await sql`delete from telemetry_readings where at < ${now - 86_400_000}`
 await sql`delete from remote_actions where sent_at < ${now - 7 * 86_400_000}`
+await sql`delete from live_issues where resolved_at < ${now - 7 * 86_400_000}`
 await sql`delete from push_deliveries where sent_at < now() - interval '7 days'`
 console.log(`[migrate] 스키마 ${statements.length}문, 데모 계정 ${DEMO_ACCOUNTS.length}개 적용`)

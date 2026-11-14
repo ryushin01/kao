@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/vue3-vite'
 import type { RemoteActionRequest, RemoteActionResponse } from '@shared/api'
-import { issueFixture, vehicleFixture } from '@shared/testing'
+import { issueFixture, liveIssueFixture, vehicleFixture } from '@shared/testing'
 import RemoteActionPanel from './RemoteActionPanel.vue'
 
 const fakeSend = async (_vehicleId: string, body: RemoteActionRequest): Promise<RemoteActionResponse> => {
@@ -26,6 +26,12 @@ export const Resolving: Story = { args: { issue: { ...issueFixture, status: 'res
 export const Resolved: Story = {
   args: { issue: { ...issueFixture, status: 'resolved', resolvedBy: 'cooling-mode', resolvedAt: issueFixture.detectedAt + 90_000 } },
 }
+/** 실차 측정값으로 연 문제: 명령을 보내고 차량 응답을 기다리는 중 */
+export const LiveAwaiting: Story = { args: { issue: liveIssueFixture } }
+/** 실차가 명령을 적용했고 지표가 기준 안으로 돌아오기를 기다리는 중 */
+export const LiveRecovering: Story = { args: { issue: { ...liveIssueFixture, stage: 'recovering' } } }
+/** 실차 측정값으로 연 문제(조치 전) */
+export const LiveOpen: Story = { args: { issue: { ...liveIssueFixture, status: 'open', stage: undefined } } }
 export const Failure: Story = {
   args: { send: async () => Promise.reject(new Error('이미 조치 중이거나 해결된 문제입니다. 목록을 새로 확인해 주세요.')) },
 }

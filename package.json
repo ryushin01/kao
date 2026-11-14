@@ -1,6 +1,6 @@
 {
   "name": "kao",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "description": "KAO(Kinetic Aero One) — 회원 탈것의 주행을 실시간으로 지켜보고 문제를 원격으로 조치하는 서비스",
@@ -22,7 +22,8 @@
     "build-storybook": "storybook build",
     "build:models": "node scripts/build-models.mjs",
     "vercel-build": "node scripts/migrate.mjs && nuxt build",
-    "db:migrate": "node scripts/migrate.mjs"
+    "db:migrate": "node scripts/migrate.mjs",
+    "live:demo": "node scripts/live-demo.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.0",

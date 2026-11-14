@@ -1,6 +1,5 @@
 import {
   AmbientLight,
-  CatmullRomCurve3,
   Color,
   DirectionalLight,
   GridHelper,
@@ -15,11 +14,11 @@ import {
   Vector2,
   Vector3,
 } from 'three'
-import type { Object3D, PerspectiveCamera } from 'three'
+import type { CatmullRomCurve3, Object3D, PerspectiveCamera } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { FleetFrame, HealthState, VehicleSnapshot } from '@shared/api'
 import { ROUTES, findRoute } from '@shared/config'
-import { applyStudioEnvironment, createStage, disposeObject } from '@shared/lib'
+import { applyStudioEnvironment, createStage, disposeObject, routeCurve } from '@shared/lib'
 import { createMiniature, loadModelMiniature, preloadModel, rollWheels } from '@entities/vehicle'
 import type { Miniature } from '@entities/vehicle'
 
@@ -45,6 +44,8 @@ interface Marker {
   ring: Mesh<RingGeometry, MeshBasicMaterial>
   shown: number
   target: number
+  /** 실차 GPS 위치는 실제 속도로, 시뮬레이션 위치는 FleetFrame.timeScale배로 내다봅니다. */
+  gps: boolean
   speed: number
   lean: number
   health: HealthState
@@ -59,14 +60,8 @@ export interface TrackerSceneOptions {
   onPick: (id: string) => void
 }
 
-function curveFor(routeId: string) {
-  const route = findRoute(routeId)
-  return new CatmullRomCurve3(
-    route.points.map(([x, z]) => new Vector3(x, 0, z)),
-    true,
-    'centripetal',
-  )
-}
+// 서버가 GPS를 경로 위치로 바꿀 때와 같은 곡선(@shared/lib route-geo)을 써야 지도 위치가 맞습니다.
+const curveFor = (routeId: string) => routeCurve(findRoute(routeId))
 
 export function createTrackerScene({ canvas, frame, playing, onProject, onPick }: TrackerSceneOptions) {
   // 조명 환경 계산(GPU)보다 먼저 지도용 3D 모델 다운로드를 걸어 둡니다.
@@ -156,6 +151,7 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
       ring,
       shown: vehicle.mapProgress,
       target: vehicle.mapProgress,
+      gps: vehicle.positionSource === 'gps',
       speed: vehicle.speed,
       lean: 0,
       health: vehicle.health,
@@ -180,6 +176,7 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
       if (!markers.has(vehicle.id)) addMarker(vehicle)
       const marker = markers.get(vehicle.id)!
       marker.target = vehicle.mapProgress
+      marker.gps = vehicle.positionSource === 'gps'
       marker.speed = vehicle.speed
       marker.lean = vehicle.metrics.find((metric) => metric.key === 'lean')?.value ?? (vehicle.kind === 'bicycle' ? 8 : 0)
       if (marker.health !== vehicle.health) {
@@ -193,7 +190,7 @@ export function createTrackerScene({ canvas, frame, playing, onProject, onPick }
   function place(marker: Marker, delta: number) {
     if (playing && delta > 0) {
       // 속도로 앞으로 내다보고, 서버 위치와의 차이는 천천히 메웁니다.
-      const rate = ((marker.speed / 3600) * timeScale) / marker.lengthKm
+      const rate = ((marker.speed / 3600) * (marker.gps ? 1 : timeScale)) / marker.lengthKm
       marker.shown += rate * delta
       let gap = marker.target - marker.shown
       if (gap > 0.5) gap -= 1
