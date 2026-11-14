@@ -15,11 +15,12 @@ test.describe('실제 3D 모델', () => {
     const login = await page.request.post('/api/auth/login', { data: { login: 'operator', password: 'kao-demo-2026' } })
     expect(login.ok()).toBe(true)
     await page.goto('/fleet/kao-0002')
-    // GPU 없는 환경에서는 three.js를 불러와 장면을 만드는 데 몇 초가 걸립니다.
+    // CPU로 그리는 CI에서는 three.js를 불러와 첫 모델을 그리는 동안 다음 위젯이 늦게 뜹니다.
     await expect.poll(() => loaded, { timeout: 30_000 }).toContain('/models/lamborghini-aventador.glb')
     await expect.poll(() => loaded, { timeout: 30_000 }).toContain('/models/lamborghini-aventador.lite.glb')
     await expect(page.getByRole('img', { name: /Lamborghini Aventador 미니어처/ })).toBeVisible()
-    await expect(page.getByRole('contentinfo').getByRole('link', { name: /2022 Lamborghini Aventador LP780-4 Ultimae/ })).toBeVisible()
+    // 모델 출처(CC BY 4.0)는 README 표에 있고, 바닥글은 그 표로 잇습니다.
+    await expect(page.getByRole('contentinfo').getByRole('link', { name: '3D 모델 출처 (README)' })).toHaveAttribute('href', 'https://github.com/ryushin01/kao#출처')
     expect(errors).toEqual([])
   })
 })

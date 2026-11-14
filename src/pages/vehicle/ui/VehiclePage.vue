@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { NuxtLink } from '#components'
 import { createError, useFetch, useHead, useRoute } from '#imports'
+import { FLEET_URL } from '@shared/api'
 import type { FleetFrame, RemoteActionResponse } from '@shared/api'
 import { findRoute } from '@shared/config'
 import { formatNumber, formatPercent } from '@shared/lib'
@@ -20,7 +21,7 @@ const { user } = useSession()
 const isOperator = computed(() => user.value?.role === 'operator')
 const vehicleId = computed(() => String(route.params.id))
 
-const { data } = await useFetch<FleetFrame>('/api/fleet', { key: 'fleet' })
+const { data } = await useFetch<FleetFrame>(FLEET_URL, { key: 'fleet' })
 if (!data.value?.vehicles.some((vehicle) => vehicle.id === vehicleId.value)) {
   throw createError({ statusCode: 404, statusMessage: '등록되지 않은 탈것입니다.', fatal: true })
 }
