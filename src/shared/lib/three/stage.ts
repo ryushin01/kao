@@ -110,8 +110,11 @@ export async function precompile(renderer: WebGLRenderer, root: Object3D, camera
   const target = new WebGLRenderTarget(1, 1)
   const pass = compileEach(renderer, [...new Set([...objects, ...sceneObjects])], camera, targetScene, target, cancelled)
   options.hold?.(pass)
-  await pass
-  target.dispose()
+  try {
+    await pass
+  } finally {
+    target.dispose()
+  }
 }
 
 export function disposeObject(root: { traverse: (fn: (object: unknown) => void) => void }) {
