@@ -56,6 +56,8 @@ export interface Store {
   listLiveIssues(since: number): Promise<LiveIssueRecord[]>
   /** 한 탈것의 해결되지 않은 실측 문제 */
   listOpenLiveIssues(vehicleId: string): Promise<LiveIssueRecord[]>
+  /** 한 탈것의 지표마다 실측 문제에 반영한 가장 새 측정 시각(해결한 문제 포함) */
+  liveIssueWatermarks(vehicleId: string): Promise<Record<string, number>>
   /** 새 실측 문제. 같은 지표에 해결되지 않은 문제가 이미 있으면(다른 요청이 먼저 열었으면) 넣지 않습니다. */
   insertLiveIssue(record: LiveIssueRecord): Promise<boolean>
   /**

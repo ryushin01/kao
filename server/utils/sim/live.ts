@@ -129,6 +129,8 @@ export interface EvaluateInput {
   reading: LiveReading
   /** 이 탈것의 아직 해결되지 않은 실측 문제 */
   open: readonly LiveIssueRecord[]
+  /** 지표마다 이미 반영한 가장 새 측정 시각(해결한 문제 포함). 이보다 오래된 측정값으로는 새 문제를 열지 않습니다. */
+  checkedAt?: Readonly<Record<string, number>>
   actions: readonly ActionRecord[]
   now: number
 }
@@ -138,7 +140,7 @@ export interface EvaluateInput {
  * 문제에 이미 반영한 측정값(checkedAt)보다 오래된 측정값은 건너뛰고, 측정값이 30초 넘게 끊겼다 돌아오면
  * 그 사이를 알 수 없으므로 해결 대기(CLEAR_HOLD)를 처음부터 다시 셉니다.
  */
-export function evaluateLiveIssues({ vehicle, reading, open, actions, now }: EvaluateInput): LiveIssueChange[] {
+export function evaluateLiveIssues({ vehicle, reading, open, checkedAt = {}, actions, now }: EvaluateInput): LiveIssueChange[] {
   const changes: LiveIssueChange[] = []
   for (const metric of vehicle.metrics) {
     const value = reading.metrics[metric.key]
@@ -147,7 +149,8 @@ export function evaluateLiveIssues({ vehicle, reading, open, actions, now }: Eva
     const state = metricState(metric, value)
     const issue = open.find((item) => item.metricKey === metric.key && item.resolvedAt === null)
     if (!issue) {
-      if (state === 'nominal') continue
+      // 겹친 요청에서 더 새 측정값이 이미 문제를 해결했다면, 늦게 온 이상값으로 다시 열지 않습니다.
+      if (state === 'nominal' || reading.at <= (checkedAt[metric.key] ?? Number.NEGATIVE_INFINITY)) continue
       changes.push({
         previous: null,
         record: {

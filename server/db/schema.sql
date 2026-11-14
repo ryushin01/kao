@@ -84,3 +84,4 @@ create table if not exists live_issues (
 );
 create unique index if not exists live_issues_open on live_issues (vehicle_id, metric_key) where resolved_at is null;
 create index if not exists live_issues_resolved_at on live_issues (resolved_at);
+create index if not exists live_issues_vehicle_metric on live_issues (vehicle_id, metric_key);

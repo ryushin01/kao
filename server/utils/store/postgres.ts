@@ -223,6 +223,12 @@ export function createPostgresStore(url: string): Store {
       `) as LiveIssueRow[]
       return rows.map(toLiveIssue)
     },
+    async liveIssueWatermarks(vehicleId) {
+      const rows = (await sql`
+        select metric_key, max(checked_at) as checked_at from live_issues where vehicle_id = ${vehicleId} group by metric_key
+      `) as Array<{ metric_key: string; checked_at: string }>
+      return Object.fromEntries(rows.map((row) => [row.metric_key, Number(row.checked_at)]))
+    },
     async insertLiveIssue(record) {
       const rows = await sql`
         insert into live_issues (id, vehicle_id, metric_key, severity, detected_at, cleared_at, resolved_at, checked_at)

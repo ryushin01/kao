@@ -110,6 +110,14 @@ describe('실차 수신(메모리 저장소)', () => {
     expect(after.position).toMatchObject({ onRoute: true, lap: 2 })
     const vehicle = (await frameFor(operator, tick(100))).vehicles.find((item) => item.id === G80.id)!
     expect(vehicle).toMatchObject({ positionSource: 'gps', lap: 2 })
+    // 측정값으로는 늦었지만(지표만 담은 더 새 측정값이 먼저 옴) 가장 최근 GPS보다 새 위치면 바퀴 수를 이어 갑니다.
+    const t1 = now
+    await recordTelemetry(G80, { at: tick(2000), metrics: { battery: 14.1 } }, now)
+    const delayed = await recordTelemetry(G80, { at: t1 + 1000, metrics: {}, gps: at(0.05) }, tick(100))
+    expect(delayed).toMatchObject({ stale: true, position: { onRoute: true, lap: 2 } })
+    const next = await recordTelemetry(G80, { at: tick(1000), metrics: {}, gps: at(0.07) }, now)
+    expect(next.position).toMatchObject({ lap: 2 })
+    expect(next.position!.progress).toBeCloseTo(0.07, 2)
     // 경로에서 1km쯤 떨어진 곳은 경로 위 위치로 쓰지 않습니다.
     expect(locateOnRoute(G80, at(0.5).lat + 0.01, at(0.5).lng)).toBeNull()
   })

@@ -98,7 +98,9 @@ export async function recordTelemetry(vehicle: VehicleSpec, input: TelemetryInpu
   if (input.gps) {
     const progress = locateOnRoute(vehicle, input.gps.lat, input.gps.lng)
     const before = previous?.position ? { at: previous.at, position: previous.position } : null
-    const odometer = stale ? (before?.position.odometer ?? progress ?? 0) : nextOdometer(before, progress, input.at)
+    // 바퀴 수는 GPS 측정값끼리만 이어 붙입니다. 측정값으로는 늦었어도 가장 최근 GPS보다 새 위치면 그대로 이어 갑니다.
+    // 가장 최근 GPS보다 오래된 위치는 다음 기준점이 될 일이 없어(시각 순으로 고름) 거리를 그대로 둡니다.
+    const odometer = before && input.at < before.at ? before.position.odometer : nextOdometer(before, progress, input.at)
     position = { lat: input.gps.lat, lng: input.gps.lng, progress, odometer }
   }
   const reading: LiveReading = { vehicleId: vehicle.id, at: input.at, speed: input.speed, metrics: input.metrics, position }
@@ -108,9 +110,9 @@ export async function recordTelemetry(vehicle: VehicleSpec, input: TelemetryInpu
     const actions = await todaysActions(now, true)
     // 같은 탈것의 요청이 겹쳐 그사이 문제가 바뀌었으면(저장 실패) 다시 읽어 판단합니다. 이미 반영한 측정값은 건너뛰므로 다시 해도 안전합니다.
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const open = await store.listOpenLiveIssues(vehicle.id)
+      const [open, checkedAt] = await Promise.all([store.listOpenLiveIssues(vehicle.id), store.liveIssueWatermarks(vehicle.id)])
       let conflicted = false
-      for (const change of evaluateLiveIssues({ vehicle, reading, open, actions, now })) {
+      for (const change of evaluateLiveIssues({ vehicle, reading, open, checkedAt, actions, now })) {
         const saved = change.previous
           ? await store.updateLiveIssue(change.record, change.previous.checkedAt)
           : await store.insertLiveIssue(change.record)

@@ -127,6 +127,15 @@ describe('evaluateLiveIssues', () => {
     expect(evaluate(95, at, [issue], [applied])[0]!.record.resolvedAt).toBe(at)
   })
 
+  it('지표에 이미 반영한 측정 시각(해결한 문제 포함)보다 오래된 이상값으로는 새 문제를 열지 않습니다', () => {
+    const late = (checkedAt: Record<string, number>) =>
+      evaluateLiveIssues({ vehicle: G80, reading: reading(T + 1_000, { coolant: 110 }), open: [], checkedAt, actions: [], now: T + 5_000 })
+    expect(late({ coolant: T + 3_000 })).toEqual([])
+    expect(late({ coolant: T + 1_000 })).toEqual([])
+    expect(late({ coolant: T })).toHaveLength(1)
+    expect(late({ battery: T + 3_000 })).toHaveLength(1)
+  })
+
   it('기준이 없거나 문제 설명이 없는 지표(속도, 회전수)는 문제로 열지 않습니다', () => {
     expect(evaluateLiveIssues({ vehicle: G80, reading: reading(T, { rpm: 6900, speed: 239 }), open: [], actions: [], now: T })).toEqual([])
   })

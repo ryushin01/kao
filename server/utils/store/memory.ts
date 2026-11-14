@@ -105,6 +105,13 @@ export function createMemoryStore(): Store {
     async listOpenLiveIssues(vehicleId) {
       return liveIssues.filter((issue) => issue.vehicleId === vehicleId && issue.resolvedAt === null).map((issue) => ({ ...issue }))
     },
+    async liveIssueWatermarks(vehicleId) {
+      const marks: Record<string, number> = {}
+      for (const issue of liveIssues) {
+        if (issue.vehicleId === vehicleId) marks[issue.metricKey] = Math.max(marks[issue.metricKey] ?? Number.NEGATIVE_INFINITY, issue.checkedAt)
+      }
+      return marks
+    },
     async insertLiveIssue(record) {
       const taken = liveIssues.some(
         (issue) => issue.id === record.id || (issue.vehicleId === record.vehicleId && issue.metricKey === record.metricKey && issue.resolvedAt === null),
