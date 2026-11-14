@@ -136,8 +136,30 @@ const MODELS = {
   },
 }
 
-const [onlyId] = process.argv.slice(2).filter((arg) => !arg.startsWith('--'))
+/** 값을 받는 옵션의 값(다음 인자). 다음 인자가 없거나 다른 옵션(--)이면 undefined입니다. 음수 좌표(-1.8,…)는 값으로 받습니다. */
+function optionValue(flag) {
+  const index = process.argv.indexOf(flag)
+  const value = index < 0 ? undefined : process.argv[index + 1]
+  return value === undefined || value.startsWith('--') ? undefined : value
+}
+/** --at x0,x1,y0,y1,z0,z1: 이 상자 안에 꼭짓점이 있는 재질과 개수를 봅니다(재질 위치 찾기). */
+const atBox = process.argv.includes('--at') ? parseBox(optionValue('--at')) : null
+/** --wheel-bounds <재질 정규식>: 바퀴 재질의 앞뒤·좌우 범위를 봅니다(바퀴 좌표 정하기). */
+const wheelPattern = process.argv.includes('--wheel-bounds') ? new RegExp(optionValue('--wheel-bounds') ?? 'tire|tyre', 'i') : null
+// 옵션의 값은 모델 id로 읽지 않습니다.
+const operands = new Set([optionValue('--at'), optionValue('--wheel-bounds')].filter((value) => value !== undefined))
+const [onlyId] = process.argv.slice(2).filter((arg) => !arg.startsWith('--') && !operands.has(arg))
 const inspectOnly = process.argv.includes('--inspect')
+
+function parseBox(text) {
+  const values = (text ?? '').split(',').map((value) => (value.trim() === '' ? NaN : Number(value)))
+  const [x0, x1, y0, y1, z0, z1] = values
+  if (values.length !== 6 || values.some((value) => !Number.isFinite(value)) || x0 > x1 || y0 > y1 || z0 > z1) {
+    console.error(`--at에는 x0,x1,y0,y1,z0,z1 여섯 숫자를 각 축의 작은 값부터 씁니다(받은 값: ${text ?? '없음'}). 예: --at -1.8,0.8,1.84,2,-0.6,0.6`)
+    process.exit(1)
+  }
+  return values
+}
 await MeshoptEncoder.ready
 await MeshoptDecoder.ready
 await MeshoptSimplifier.ready
@@ -272,9 +294,10 @@ async function build(id, config) {
   const matrix = normalizeMatrix(getBounds(scene), config.forward, config.length)
   for (const mesh of root.listMeshes()) transformMesh(mesh, matrix)
 
-  if (process.argv.includes('--at')) {
+  if (atBox) {
     // 이 상자(x0,x1,y0,y1,z0,z1) 안에 꼭짓점이 있는 재질과 개수
-    const [x0, x1, y0, y1, z0, z1] = process.argv[process.argv.indexOf('--at') + 1].split(',').map(Number)
+    const [x0, x1, y0, y1, z0, z1] = atBox
+    console.log(`=== ${id}`)
     const counts = new Map()
     for (const mesh of root.listMeshes()) {
       for (const prim of mesh.listPrimitives()) {
@@ -292,9 +315,10 @@ async function build(id, config) {
     return
   }
 
-  if (process.argv.includes('--wheel-bounds')) {
+  if (wheelPattern) {
     // 바퀴 재질(타이어·휠) 꼭짓점을 앞뒤·좌우 네 구역으로 나눠 범위를 봅니다(바퀴 좌표 정할 때).
-    const pattern = new RegExp(process.argv[process.argv.indexOf('--wheel-bounds') + 1] ?? 'tire|tyre', 'i')
+    const pattern = wheelPattern
+    console.log(`=== ${id}`)
     const zones = new Map()
     for (const mesh of root.listMeshes()) {
       for (const prim of mesh.listPrimitives()) {
