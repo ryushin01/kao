@@ -1,2 +1,4 @@
+/* 영문·숫자: Kode Mono(가변). 한글 서울알림체는 통파일이라 AppRoot가 페이지를 다 받은 뒤 붙입니다. */
+@import '@fontsource-variable/kode-mono/wght.css';
 @import './tokens.css';
 @import './base.css';
