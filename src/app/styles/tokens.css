@@ -19,7 +19,9 @@
   --color-warning: #f5b544;
   --color-critical: #ff5c4d;
 
-  --font-sans: 'Kode Mono Variable', 'Seoul Alrim', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', system-ui, sans-serif;
+  --font-sans: 'Kode Mono Variable', 'KaoSans', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', system-ui, sans-serif;
+  /* 제목(h1·h2): 원과 직선으로 짠 오빗. 오빗에 없는 드문 글자는 KaoSans로 보입니다. */
+  --font-title: 'Kode Mono Variable', 'Orbit', 'KaoSans', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
 
   --space-1: 0.25rem;
