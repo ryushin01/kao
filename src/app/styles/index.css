@@ -1,4 +1,10 @@
-/* 영문·숫자: Kode Mono(가변). 한글 서울알림체는 통파일이라 AppRoot가 페이지를 다 받은 뒤 붙입니다. */
+/*
+ * 영문·숫자: Kode Mono(가변). 한글 본문: KaoSans(스포카 한 산스 네오를 줄인 판, OFL 예약 이름 때문에 이름을 바꿈).
+ * 한글 제목(h1·h2): 오빗. 화면에 쓰는 글자만 담은 파일(pnpm fonts로 만듦)을 먼저 받고,
+ * 나머지 글자 조각(public/fonts/*-rest.css)은 AppRoot가 페이지를 다 받은 뒤 붙입니다.
+ */
 @import '@fontsource-variable/kode-mono/wght.css';
+@import './fonts/kao-sans.css';
+@import './fonts/orbit.css';
 @import './tokens.css';
 @import './base.css';
