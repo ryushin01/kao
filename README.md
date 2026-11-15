@@ -90,7 +90,7 @@ tests/e2e/  Playwright E2E
 | Kode Mono | 영문·숫자 (제목·본문) | 400~700 가변 | Isa Ozler | SIL OFL 1.1 | [Google Fonts](https://fonts.google.com/specimen/Kode+Mono) · [Fontsource](https://fontsource.org/fonts/kode-mono) |
 | 서울알림체 | 한글 (제목·본문) | Medium(400·500)·Bold(600·700)·ExtraBold(800) | 서울특별시 | 서울서체 이용 안내(무료·자유 사용, 유료 양도·판매 금지) | [서울특별시 서울서체](https://www.seoul.go.kr/seoul/font.do) |
 
-모두 같은 사이트에서 제공합니다(외부 글꼴 CDN 없음). 서울알림체는 공식 TTF를 글자를 고르거나 바꾸지 않고 웹 압축 형식(woff2)으로만 감싸 통째로 쓰고(굵기마다 약 0.6MB, `public/fonts/seoul-alrim`), 첫 화면을 막지 않게 페이지를 다 받은 뒤 붙입니다. 이용 안내 원문은 `public/fonts/seoul-alrim/LICENSE.txt`에 있습니다.
+모두 같은 사이트에서 제공합니다(외부 글꼴 CDN 없음). 서울알림체는 공식 TTF를 글자를 고르거나 바꾸지 않고 웹 압축 형식(woff2)으로만 감싸 통째로 쓰고(굵기마다 약 0.6MB, `public/fonts/seoul-alrim`), 글자가 중간에 바뀌지 않게 다 받을 때까지 관제 신호 로딩 화면을 보여 줍니다(8초가 지나면 운영체제 한글 고딕으로 엶). 이용 안내 원문은 `public/fonts/seoul-alrim/LICENSE.txt`에 있습니다.
 
 ## 출처
 
