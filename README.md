@@ -21,7 +21,7 @@
 
 | 지표 이력 | 모바일 관제 센터 |
 |---|---|
-| ![냉각수 온도가 경고선과 위험선을 넘었다가 회복되는 60분 이력 그래프와 툴팁](docs/images/history.jpg) | <img src="docs/images/mobile.jpg" alt="모바일 화면의 수신 상태·조치 필요 건수 요약과 카메라 시점 버튼" width="240"> |
+| ![지표 하나를 고른 60분 이력 그래프에 경고선·위험선과 시각별 값 툴팁이 있는 화면](docs/images/history.jpg) | <img src="docs/images/mobile.jpg" alt="모바일 화면의 수신 상태·조치 필요 건수 요약과 카메라 시점 버튼" width="240"> |
 
 ## 주요 기능
 
@@ -67,6 +67,7 @@ pnpm dev        # http://localhost:3000
 | `pnpm build` / `pnpm preview` | 프로덕션 빌드 / 빌드 결과 실행 |
 | `pnpm lint` / `pnpm lint:fsd` / `pnpm typecheck` | ESLint / Steiger(FSD) / 타입 검사 |
 | `pnpm test` / `pnpm test:e2e` | 단위·컴포넌트 테스트 / 프로덕션 빌드의 E2E·접근성 검사(먼저 `build`) |
+| `pnpm screenshots` | README 화면 다시 찍기 (먼저 `pnpm build`, 실제 3D 모델과 실차 신호 흉내로 찍음) |
 
 3D 모델·서울 지도 만들기, 실차 데모 장치, DB 마이그레이션, Storybook 명령은 [개발 가이드](docs/development.md#명령)에 있습니다.
 
