@@ -15,7 +15,7 @@ onMounted(initMotionPreference)
 useHead({
   link: FONT_FILES.map((href) => ({ rel: 'preload', href, as: 'font', type: 'font/woff2', crossorigin: '' })),
   // 글꼴 정의가 상태 스크립트보다 먼저 와야 document.fonts.load가 이 글꼴을 기다립니다.
-  style: [{ key: 'seoul-alrim', innerHTML: FONT_FACE_CSS, tagPriority: 'critical' }],
+  style: [{ key: 'seoul-alrim', id: 'font-faces', innerHTML: FONT_FACE_CSS, tagPriority: 'critical' }],
   script: [{ key: 'font-loader', innerHTML: FONT_LOADER_SCRIPT, tagPosition: 'head', tagPriority: 'low' }],
 })
 

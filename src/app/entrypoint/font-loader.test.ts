@@ -30,4 +30,22 @@ describe('font-loader', () => {
     vi.advanceTimersByTime(1)
     expect(state()).toBe('ready')
   })
+
+  it('제한 시간이 지나면 글꼴 정의를 꺼서, 글꼴이 늦게 와도 글자가 바뀌지 않는다', async () => {
+    vi.useFakeTimers()
+    document.documentElement.lang = 'ko'
+    const faces = document.createElement('style')
+    faces.id = 'font-faces'
+    document.head.append(faces)
+    let finish: (value: unknown) => void = () => {}
+    stubFonts(() => new Promise((resolve) => (finish = resolve)))
+    run()
+    vi.advanceTimersByTime(FONT_LOADER_TIMEOUT_MS)
+    expect(state()).toBe('ready')
+    expect(faces.disabled).toBe(true)
+    finish([])
+    await vi.runAllTimersAsync()
+    expect(faces.disabled).toBe(true)
+    faces.remove()
+  })
 })
