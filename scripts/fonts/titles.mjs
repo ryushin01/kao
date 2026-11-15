@@ -5,12 +5,53 @@
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import ts from 'typescript'
 
 const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src')
 
-/** 코드 조각 안의 문자열 값 */
+/** 코드 조각 안의 문자열 값(여러 줄 템플릿 문자열 포함) */
 const strings = (code) =>
   [...code.matchAll(/'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)"|`([^`]*)`/g)].map((m) => m[1] ?? m[2] ?? m[3])
+
+/**
+ * <script>에서 이 이름들에 넣는 값의 문자열을 모읍니다. 값이 여러 줄에 걸쳐 있어도 끝까지 읽습니다.
+ * 변수 선언(const heading = computed(() => …))과 객체 속성(withDefaults의 기본값 title: '…')을 봅니다.
+ */
+function assignedStrings(script, names) {
+  const out = []
+  const source = ts.createSourceFile('script.ts', script, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS)
+  const collect = (node) => {
+    if (ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node))
+      out.push(node.text)
+    ts.forEachChild(node, collect)
+  }
+  const visit = (node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && names.has(node.name.text) && node.initializer)
+      collect(node.initializer)
+    else if (ts.isPropertyAssignment(node) && names.has(node.name.getText(source))) collect(node.initializer)
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return out
+}
+
+/** Vue 파일 하나에서 h1·h2 제목에 쓰는 글자 */
+export function collectTitles(text) {
+  const out = []
+  const script = text.match(/<script[^>]*>([\s\S]*?)<\/script>/)?.[1] ?? ''
+  for (const [, inner] of text.matchAll(/<h[12]\b[^>]*>([\s\S]*?)<\/h[12]>/g)) {
+    const plain = inner
+      .replace(/\{\{([\s\S]*?)\}\}/g, (_, expr) => {
+        out.push(...strings(expr))
+        out.push(...assignedStrings(script, new Set(expr.match(/[A-Za-z_$][\w$]*/g) ?? [])))
+        return ' '
+      })
+      .replace(/<[^>]+>/g, ' ')
+    out.push(plain)
+  }
+  for (const [, value] of text.matchAll(/\btitle="([^"]*)"/g)) out.push(value)
+  return out
+}
 
 async function* vueFiles(dir) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -22,22 +63,6 @@ async function* vueFiles(dir) {
 
 export default async function titles() {
   const out = []
-  for await (const file of vueFiles(SRC)) {
-    const text = await readFile(file, 'utf8')
-    const script = text.match(/<script[^>]*>([\s\S]*?)<\/script>/)?.[1] ?? ''
-    for (const [, inner] of text.matchAll(/<h[12]\b[^>]*>([\s\S]*?)<\/h[12]>/g)) {
-      const plain = inner
-        .replace(/\{\{([\s\S]*?)\}\}/g, (_, expr) => {
-          out.push(...strings(expr))
-          for (const id of new Set(expr.match(/[A-Za-z_$][\w$]*/g) ?? [])) {
-            for (const [line] of script.matchAll(new RegExp(`\\b${id}\\b[^\\n]*`, 'g'))) out.push(...strings(line))
-          }
-          return ' '
-        })
-        .replace(/<[^>]+>/g, ' ')
-      out.push(plain)
-    }
-    for (const [, value] of text.matchAll(/\btitle="([^"]*)"/g)) out.push(value)
-  }
+  for await (const file of vueFiles(SRC)) out.push(...collectTitles(await readFile(file, 'utf8')))
   return out.join('')
 }
