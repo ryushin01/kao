@@ -32,6 +32,9 @@ test.describe('데스크톱', () => {
 
     const miniature = page.locator('section[aria-labelledby="miniature-title"]')
     await miniature.scrollIntoViewIfNeeded()
+    // MPV(토요타 알파드)를 골라 그 모델이 표시된 뒤 찍습니다.
+    await miniature.getByRole('radio', { name: /^MPV/ }).check()
+    await expect(miniature.locator('.spec')).toContainText('MPV')
     await settle(page, 4000)
     await shoot(miniature, 'miniature')
 
@@ -53,7 +56,10 @@ test.describe('데스크톱', () => {
     const history = page.locator('section.history')
     await expect(history.getByRole('group', { name: /이력 그래프/ })).toBeVisible({ timeout: 15_000 })
     await history.scrollIntoViewIfNeeded()
-    await settle(page, 1500)
+    // 기본 10분 대신 최근 60분을 보여 줍니다.
+    await history.getByRole('radio', { name: '최근 60분' }).check()
+    await expect(history.getByRole('radio', { name: '최근 60분' })).toBeChecked()
+    await settle(page, 2500)
     // 그래프 오른쪽 부분에 포인터를 올려 툴팁을 띄웁니다.
     const graph = history.getByRole('group', { name: /이력 그래프/ })
     const box = await graph.boundingBox()
@@ -64,7 +70,8 @@ test.describe('데스크톱', () => {
 })
 
 test.describe('탈것 상세', () => {
-  test.use({ viewport: { width: 1440, height: 1000 } })
+  // 턴테이블이 저절로 돌지 않게 해 "처음 시점"에서 찍습니다.
+  test.use({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' })
 
   test('실차 신호의 엔진오일 과열 경고', async ({ page, baseURL }) => {
     // 실차 신호 흉내: 아벤타도르(kao-0002)에 엔진오일 과열을 보냅니다.
