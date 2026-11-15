@@ -22,7 +22,7 @@ export default defineConfig({
     // 실차 연동 검사는 탈것 하나를 실차 신호로 바꿉니다. 아무 탈것의 시뮬레이션 문제를 고르는 다른 검사가 모두 끝난 뒤에 돕니다.
     { name: 'live', use: { ...devices['Desktop Chrome'] }, testMatch: /live\.spec\.ts/, dependencies: ['desktop', 'mobile'] },
     // README 화면 촬영(pnpm screenshots). 화면 파일을 덮어쓰므로 SCREENSHOTS=1일 때만 넣습니다.
-    ...(process.env.SCREENSHOTS
+    ...(process.env.SCREENSHOTS === '1'
       ? [{ name: 'screenshots', use: { ...devices['Desktop Chrome'] }, testMatch: /readme\.screenshots\.ts/ }]
       : []),
   ],
