@@ -1,0 +1,25 @@
+/* 서울알림체: 서울시 공식 TTF를 글자 그대로 웹 압축 형식(woff2)으로만 감싸 통째로 씁니다. AppRoot가 페이지를 다 받은 뒤 붙입니다. */
+@font-face {
+  font-family: 'Seoul Alrim';
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url('./seoul-alrim/SeoulAlrim-Medium.woff2') format('woff2');
+  unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF;
+}
+@font-face {
+  font-family: 'Seoul Alrim';
+  font-style: normal;
+  font-weight: 600 700;
+  font-display: swap;
+  src: url('./seoul-alrim/SeoulAlrim-Bold.woff2') format('woff2');
+  unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF;
+}
+@font-face {
+  font-family: 'Seoul Alrim';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url('./seoul-alrim/SeoulAlrim-ExtraBold.woff2') format('woff2');
+  unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7A3, U+D7B0-D7FF;
+}
