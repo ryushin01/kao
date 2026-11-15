@@ -1,7 +1,7 @@
 # KAO — Kinetic Aero One
 
 [![CI](https://github.com/ryushin01/kao/actions/workflows/ci.yml/badge.svg)](https://github.com/ryushin01/kao/actions/workflows/ci.yml)
-![version](https://img.shields.io/badge/version-0.11.0-8B0000)
+![version](https://img.shields.io/badge/version-0.12.0-8B0000)
 
 회원의 자동차·모터사이클·자전거가 달리는 동안 상태를 실시간으로 지켜보고, 문제가 생기면 원격으로 조치하는 관제 서비스입니다. 등록된 탈것은 실제 모양을 본뜬 3D 미니어처로 서울 도심 지도의 실제 도로 위를 달립니다.
 
@@ -82,6 +82,15 @@ src/        FSD 계층: pages(소개·관제 센터·탈것 상세), widgets(관
             features(원격 조치·로그인), entities(탈것·세션), shared(API 계약·경로 좌표·Three.js 무대·기본 UI)
 tests/e2e/  Playwright E2E
 ```
+
+## 웹 폰트
+
+| 글꼴 | 쓰는 곳 | 굵기 | 저작자 | 라이선스 | 원본 |
+|---|---|---|---|---|---|
+| Kode Mono | 영문·숫자 (제목·본문) | 400~700 가변 | Isa Ozler | SIL OFL 1.1 | [Google Fonts](https://fonts.google.com/specimen/Kode+Mono) · [Fontsource](https://fontsource.org/fonts/kode-mono) |
+| 서울알림체 | 한글 (제목·본문) | Medium(400·500)·Bold(600·700)·ExtraBold(800) | 서울특별시 | 서울서체 이용 안내(무료·자유 사용, 유료 양도·판매 금지) | [서울특별시 서울서체](https://www.seoul.go.kr/seoul/font.do) |
+
+모두 같은 사이트에서 제공합니다(외부 글꼴 CDN 없음). 서울알림체는 공식 TTF를 글자를 고르거나 바꾸지 않고 웹 압축 형식(woff2)으로만 감싸 통째로 쓰고(굵기마다 약 0.6MB, `public/fonts/seoul-alrim`), 첫 화면을 막지 않게 페이지를 다 받은 뒤 붙입니다. 이용 안내 원문은 `public/fonts/seoul-alrim/LICENSE.txt`에 있습니다.
 
 ## 출처
 
