@@ -36,6 +36,13 @@ p {
   margin: 0;
 }
 
+/* 한글 제목 글꼴(오빗)은 굵기가 하나라 가짜 굵기를 만들지 않습니다. */
+h1,
+h2 {
+  font-family: var(--font-title);
+  font-synthesis-weight: none;
+}
+
 h1,
 h2,
 h3 {
