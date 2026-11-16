@@ -1,5 +1,5 @@
 import { createError, defineEventHandler, readBody, setResponseHeader } from 'h3'
-import { isLoginBlocked, LOGIN_WINDOW_MS, loginAttemptKeys } from '../../utils/login-guard'
+import { LOGIN_WINDOW_MS, loginAttemptKeys, loginLimits } from '../../utils/login-guard'
 import { DUMMY_PASSWORD_HASH, verifyPassword } from '../../utils/password'
 import { assertSameOrigin, clientAddress, startSession, toSessionUser } from '../../utils/session'
 import { useStore } from '../../utils/store'
@@ -19,7 +19,13 @@ export default defineEventHandler(async (event) => {
   const now = Date.now()
   const keys = loginAttemptKeys(login, clientAddress(event))
   const attempts = await store.reserveLoginAttempt([keys.account, keys.address], now, LOGIN_WINDOW_MS)
-  if (isLoginBlocked(attempts, keys)) {
+  const over = loginLimits(attempts, keys)
+  if (over.account || over.address) {
+    // 비밀번호를 확인하지 않고 막은 시도라, 제한을 넘지 않은 쪽의 수에서는 되돌립니다(같은 주소의 다른 사람을 막지 않게).
+    await Promise.all([
+      over.account ? null : store.releaseLoginAttempt(keys.account, attempts[keys.account]!.windowStart),
+      over.address ? null : store.releaseLoginAttempt(keys.address, attempts[keys.address]!.windowStart),
+    ])
     setResponseHeader(event, 'retry-after', LOGIN_WINDOW_MS / 1000)
     throw createError({
       statusCode: 429,

@@ -112,6 +112,18 @@ describe('로그인 시도 제한', () => {
     expect((await post('/api/auth/login', { login: 'member06', password: 'kao-demo-2026' }, {}, address)).status).toBe(429)
   })
 
+  it('막힌 아이디를 계속 두드려도 같은 주소의 다른 아이디는 주소 제한에 걸리지 않습니다', { timeout: 60_000 }, async () => {
+    const address = '10.0.5.1'
+    for (let i = 0; i < LOGIN_LIMIT_PER_ACCOUNT; i += 1) {
+      expect((await post('/api/auth/login', { login: 'member07', password: `wrong-${i}` }, {}, address)).status).toBe(401)
+    }
+    // 비밀번호를 확인하지 않고 막은 시도는 주소의 수에 쌓이지 않습니다.
+    for (let i = 0; i < LOGIN_LIMIT_PER_ADDRESS; i += 1) {
+      expect((await post('/api/auth/login', { login: 'member07', password: `retry-${i}` }, {}, address)).status).toBe(429)
+    }
+    expect((await post('/api/auth/login', { login: 'member03', password: 'kao-demo-2026' }, {}, address)).status).toBe(200)
+  })
+
   it('없는 아이디도 실패로 세고 같은 문구로 답합니다', async () => {
     const unknown = await post('/api/auth/login', { login: 'nobody', password: 'x' }, {}, '10.0.4.1')
     const wrong = await post('/api/auth/login', { login: 'member04', password: 'x' }, {}, '10.0.4.1')
