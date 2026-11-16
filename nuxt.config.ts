@@ -78,6 +78,7 @@ export default defineNuxtConfig({
     '/maps/**': STATIC_ASSET_CACHE,
     '/fonts/**': STATIC_ASSET_CACHE,
     '/favicon.svg': STATIC_ASSET_CACHE,
+    '/favicon.ico': STATIC_ASSET_CACHE,
     '/apple-touch-icon.png': STATIC_ASSET_CACHE,
     '/icon-192.png': STATIC_ASSET_CACHE,
     '/icon-512.png': STATIC_ASSET_CACHE,

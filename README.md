@@ -1,13 +1,13 @@
 # KAO — Kinetic Aero One
 
 [![CI](https://github.com/ryushin01/kao/actions/workflows/ci.yml/badge.svg)](https://github.com/ryushin01/kao/actions/workflows/ci.yml)
-![version](https://img.shields.io/badge/version-1.0.0-8B0000)
+![version](https://img.shields.io/badge/version-1.0.1-8B0000)
 
 회원의 자동차·모터사이클·자전거가 달리는 동안 상태를 실시간으로 지켜보고, 문제가 생기면 원격으로 조치하는 관제 서비스입니다. 등록된 탈것은 실제 모양을 본뜬 3D 미니어처로 서울 도심 지도의 실제 도로 위를 달립니다.
 
 **[데모 바로 보기](https://kao-ryushin01.vercel.app/)** · 로그인 화면에서 데모 계정 버튼(관제 요원, 회원 01~07)을 누르면 됩니다. 비밀번호는 모두 `kao-demo-2026`입니다.
 
-> **프로젝트 상태:** 1.0.0. 런칭을 가정해 보안·실시간 안정성·성능·웹 앱을 다듬은 포트폴리오 프로젝트입니다. 실제 차량 대신 서버의 주행 시뮬레이션이 데이터를 만들고, 실제 차량은 [실차 연결 API](docs/integration.md)로 붙일 수 있습니다(데모 장치 스크립트로 시험). 회원·등록번호·주행 기록은 모두 가상 데이터입니다.
+> **프로젝트 상태:** 1.0.1. 런칭을 가정해 보안·실시간 안정성·성능·웹 앱을 다듬은 포트폴리오 프로젝트입니다. 실제 차량 대신 서버의 주행 시뮬레이션이 데이터를 만들고, 실제 차량은 [실차 연결 API](docs/integration.md)로 붙일 수 있습니다(데모 장치 스크립트로 시험). 회원·등록번호·주행 기록은 모두 가상 데이터입니다.
 
 ## 화면
 

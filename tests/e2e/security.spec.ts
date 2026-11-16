@@ -29,12 +29,17 @@ test('웹 앱 매니페스트·아이콘·robots·공유 미리보기를 제공�
   const body = (await manifest.json()) as { display: string; start_url: string; icons: Array<{ src: string; sizes: string; purpose?: string }> }
   expect(body.display).toBe('standalone')
   expect(body.start_url).toBe('/fleet')
-  for (const icon of [...body.icons.map((item) => item.src), '/badge-96.png', '/og-image.jpg']) {
+  for (const icon of [...body.icons.map((item) => item.src), '/favicon.svg', '/favicon.ico', '/apple-touch-icon.png', '/badge-96.png', '/og-image.jpg']) {
     const response = await request.get(icon)
     expect(response.ok(), icon).toBe(true)
     expect(response.headers()['cache-control'], icon).toContain('max-age=86400')
   }
   expect(body.icons.some((icon) => icon.purpose === 'maskable')).toBe(true)
+
+  // SVG 파비콘을 읽지 못하는 브라우저·도구가 찾는 /favicon.ico: Nuxt의 자리 표시 글자가 아니라 16·32·48 ICO
+  const ico = await (await request.get('/favicon.ico')).body()
+  expect(ico.subarray(0, 4).toString('hex'), '/favicon.ico 머리').toBe('00000100')
+  expect(Array.from({ length: ico.readUInt16LE(4) }, (_, index) => ico[6 + 16 * index]), '/favicon.ico 크기').toEqual([16, 32, 48])
 
   const robots = await (await request.get('/robots.txt')).text()
   expect(robots).toContain('Disallow: /fleet')

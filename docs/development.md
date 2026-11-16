@@ -164,7 +164,7 @@ Lighthouse(모바일 조건, GPU, 3회 중앙값)로 잰 결과입니다. 0.7.0 
 | `pnpm build:map` | OpenStreetMap으로 서울 지도 데이터와 주행 경로 만들기(위 서울 지도, `--fetch`면 원본부터 다시 받음) |
 | `pnpm live:demo` | 실차 장치 흉내. 측정값·GPS를 보내고 받은 명령에 응답(`--vehicle`, `--fault`, `--detour`, [실차 연결](integration.md#데모-장치)) |
 | `pnpm device` | 실차 장치 토큰 만들기·목록·폐기(`add --vehicle <id> [--webhook <https 주소>]`, `list`, `revoke <id>`, 운영 DB) |
-| `pnpm icons` | 파비콘으로 웹 앱·알림 아이콘(192·512·마스크·흰 배지)을, README 첫 화면 사진으로 공유 미리보기(1200×630)를 만들기 |
+| `pnpm icons` | 파비콘(`public/favicon.svg`)으로 `favicon.ico`(16·32·48)·iPhone 홈 화면 아이콘(180)·웹 앱·알림 아이콘(192·512·마스크·흰 배지)을, README 첫 화면 사진으로 공유 미리보기(1200×630)를 만들기. 파비콘을 바꾸면 꼭 다시 실행 |
 
 ## 테스트
 
