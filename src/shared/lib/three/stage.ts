@@ -117,12 +117,29 @@ export async function precompile(renderer: WebGLRenderer, root: Object3D, camera
   }
 }
 
-export function disposeObject(root: { traverse: (fn: (object: unknown) => void) => void }) {
+const SHARED = 'sharedResource'
+
+/**
+ * 캐시해 둔 원본(3D 모델)과 복제본이 함께 쓰는 형상·재질에 표시합니다. 장면 안에서 모델을 바꿀 때는
+ * 이 자원을 지우지 않아(다시 고르면 다시 올리고 셰이더도 다시 만들게 되므로), 장면을 닫을 때 정리합니다.
+ */
+export function markShared(root: Object3D) {
   root.traverse((object) => {
     if (!(object instanceof Mesh)) return
-    object.geometry.dispose()
-    const materials: Material[] = Array.isArray(object.material) ? object.material : [object.material]
-    for (const material of materials) material.dispose()
+    object.geometry.userData[SHARED] = true
+    for (const material of materialsOf(object)) material.userData[SHARED] = true
+  })
+}
+
+/**
+ * root 안 메시의 형상·재질을 정리합니다. keepShared면 markShared로 표시한 공유 자원은 남깁니다(모델을 바꿔 내릴 때).
+ * 장면을 닫을 때는 모두 정리해야 렌더러가 공유 자원에 걸어 둔 dispose 리스너가 풀려 렌더러가 메모리에서 빠집니다.
+ */
+export function disposeObject(root: { traverse: (fn: (object: unknown) => void) => void }, { keepShared = false } = {}) {
+  root.traverse((object) => {
+    if (!(object instanceof Mesh)) return
+    if (!(keepShared && object.geometry.userData[SHARED])) object.geometry.dispose()
+    for (const material of materialsOf(object)) if (!(keepShared && material.userData[SHARED])) material.dispose()
   })
 }
 
@@ -138,7 +155,11 @@ export function createStage({ canvas, fov = 35, near = 0.1, far = 400, maxPixelR
   const timer = new Timer()
 
   let playing = true
-  let visible = true
+  /** 캔버스가 화면 안에 있는지(IntersectionObserver) */
+  let inView = true
+  /** 탭이 보이는지(visibilitychange). 둘을 나눠 두어, 다른 탭에서 돌아와도 화면 밖 장면은 그리지 않습니다. */
+  let pageVisible = typeof document === 'undefined' || document.visibilityState !== 'hidden'
+  const active = () => playing && inView && pageVisible
   let frameId = 0
   let pendingRender = false
   let holds = 0
@@ -161,11 +182,11 @@ export function createStage({ canvas, fov = 35, near = 0.1, far = 400, maxPixelR
   const loop = () => {
     frameId = 0
     render()
-    if (playing && visible) frameId = requestAnimationFrame(loop)
+    if (active()) frameId = requestAnimationFrame(loop)
   }
 
   const start = () => {
-    if (frameId === 0 && playing && visible) {
+    if (frameId === 0 && active()) {
       timer.update()
       frameId = requestAnimationFrame(loop)
     }
@@ -211,14 +232,14 @@ export function createStage({ canvas, fov = 35, near = 0.1, far = 400, maxPixelR
   resize()
 
   const intersection = new IntersectionObserver(([entry]) => {
-    visible = entry?.isIntersecting ?? true
-    if (visible) start()
+    inView = entry?.isIntersecting ?? true
+    start()
   })
   intersection.observe(canvas)
 
   const onVisibility = () => {
-    visible = document.visibilityState === 'visible'
-    if (visible) start()
+    pageVisible = document.visibilityState !== 'hidden'
+    start()
   }
   document.addEventListener('visibilitychange', onVisibility)
 

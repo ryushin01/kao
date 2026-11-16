@@ -41,12 +41,18 @@ let request: Promise<SeoulMapLayers | null> | null = null
 
 /**
  * 지도 도형은 한 번만 만들고, 화면을 다시 열 때는 만들어 둔 배열로 메시만 다시 만듭니다.
- * 받지 못하면 null이고, 관제 지도는 바탕 없이 경로만 그립니다.
+ * 받지 못하면 null이고, 관제 지도는 바탕 없이 경로만 그립니다. 실패는 기억하지 않아 다음에 지도를 열 때 다시 받습니다.
  */
 export function loadSeoulMap(unit: number) {
-  request ??= (typeof Worker === 'function' ? buildInWorker(unit) : Promise.reject(new Error('웹 워커 없음')))
-    .catch(() => buildOnMainThread(unit))
-    .catch(() => null)
+  if (!request) {
+    const attempt = (typeof Worker === 'function' ? buildInWorker(unit) : Promise.reject(new Error('웹 워커 없음')))
+      .catch(() => buildOnMainThread(unit))
+      .catch(() => null)
+    request = attempt
+    void attempt.then((layers) => {
+      if (!layers && request === attempt) request = null
+    })
+  }
   return request
 }
 
