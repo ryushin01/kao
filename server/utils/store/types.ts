@@ -19,6 +19,14 @@ export interface PushSubscriptionRecord {
 
 export type AckOutcome = 'ok' | 'missing' | 'closed'
 
+/** 로그인 세션. id는 쿠키에 담은 세션 토큰의 SHA-256(16진수)이고, 토큰 자체는 저장하지 않습니다. */
+export interface SessionRecord {
+  id: string
+  userId: string
+  createdAt: number
+  expiresAt: number
+}
+
 /** 실차 장치(차량 단말·제조사 연동 하나). 토큰은 탈것 하나에 묶이고, 저장소에는 토큰의 SHA-256만 둡니다. */
 export interface DeviceRecord {
   id: string
@@ -63,6 +71,15 @@ export interface Store {
   revokeDevice(id: string, now: number): Promise<boolean>
   findUserByLogin(login: string): Promise<UserRecord | null>
   findUserById(id: string): Promise<UserRecord | null>
+  createSession(record: SessionRecord): Promise<void>
+  /** 끝나지 않은(expiresAt > now) 세션의 계정. 없거나 끝났으면 null */
+  findSessionUser(id: string, now: number): Promise<UserRecord | null>
+  /** 로그아웃: 그 세션만 지웁니다(같은 계정의 다른 세션은 그대로). */
+  deleteSession(id: string): Promise<void>
+  /** 로그인 실패 기록: since 뒤로 키마다 몇 번 실패했는지 */
+  countLoginFailures(keys: string[], since: number): Promise<Record<string, number>>
+  recordLoginFailure(keys: string[], at: number): Promise<void>
+  clearLoginFailures(key: string): Promise<void>
   savePushSubscription(record: PushSubscriptionRecord): Promise<void>
   deletePushSubscription(endpoint: string, userId: string): Promise<void>
   listPushSubscriptions(): Promise<Array<PushSubscriptionRecord & { role: UserRole; vehicleIds: string[] }>>

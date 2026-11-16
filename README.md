@@ -1,7 +1,7 @@
 # KAO — Kinetic Aero One
 
 [![CI](https://github.com/ryushin01/kao/actions/workflows/ci.yml/badge.svg)](https://github.com/ryushin01/kao/actions/workflows/ci.yml)
-![version](https://img.shields.io/badge/version-0.15.0-8B0000)
+![version](https://img.shields.io/badge/version-0.16.0-8B0000)
 
 회원의 자동차·모터사이클·자전거가 달리는 동안 상태를 실시간으로 지켜보고, 문제가 생기면 원격으로 조치하는 관제 서비스입니다. 등록된 탈것은 실제 모양을 본뜬 3D 미니어처로 서울 도심 지도의 실제 도로 위를 달립니다.
 
@@ -47,7 +47,7 @@
 |---|---|
 | 프레임워크 | Nuxt 4, Vue 3, TypeScript 6 |
 | 3D | Three.js(직접 모델링한 미니어처, GLSL 블랙홀 셰이더, OrbitControls) |
-| 서버 | Nitro(h3) API, Server-Sent Events, 시간 기반 결정적 시뮬레이션, 서명 쿠키 로그인(scrypt) |
+| 서버 | Nitro(h3) API, Server-Sent Events(gzip), 시간 기반 결정적 시뮬레이션, 서버 세션 로그인(scrypt, 시도 제한), 보안 헤더 |
 | 데이터·알림 | Neon(Postgres, `@neondatabase/serverless`), Web Push(`web-push`, 서비스 워커) |
 | 구조·품질 | Feature-Sliced Design v2.1(Steiger), ESLint(@nuxt/eslint), Vitest + Vue Test Utils(happy-dom), Storybook 10, Playwright + axe |
 | 배포·CI | Vercel(싱가포르 함수), Cloudflare Workers(5분 위험 알림 크론), GitHub Actions(CI) |

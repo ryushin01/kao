@@ -5,6 +5,7 @@ import type { SessionUser } from '@shared/api'
 import { HudPanel } from '@shared/ui'
 import { homePathFor, useSession } from '@entities/session'
 import { LoginForm } from '@features/auth'
+import { safeRedirect } from '../lib/safe-redirect'
 
 useHead({ title: '로그인 — KAO' })
 
@@ -15,8 +16,7 @@ async function onSuccess(user: SessionUser) {
   session.setUser(user)
   await session.refresh()
   // 같은 사이트 안의 경로로만 돌아갑니다(열린 리디렉트 방지).
-  const redirect = typeof route.query.redirect === 'string' && /^\/(?!\/)/.test(route.query.redirect) ? route.query.redirect : null
-  await navigateTo(redirect ?? homePathFor(user))
+  await navigateTo(safeRedirect(route.query.redirect) ?? homePathFor(user))
 }
 </script>
 

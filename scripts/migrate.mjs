@@ -6,7 +6,7 @@
 import { readFile } from 'node:fs/promises'
 import { neon } from '@neondatabase/serverless'
 import { DEMO_ACCOUNTS, DEMO_PASSWORD } from '../src/shared/api/contract.ts'
-import { hashPassword, verifyPassword } from '../server/utils/password.ts'
+import { hashPassword, verifyPasswordSync } from '../server/utils/password.ts'
 
 const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL
 if (!url) {
@@ -27,7 +27,7 @@ for (const statement of statements) await sql.query(statement)
 
 for (const account of DEMO_ACCOUNTS) {
   const [existing] = await sql`select password_hash from users where login = ${account.login}`
-  const hash = existing && verifyPassword(DEMO_PASSWORD, existing.password_hash) ? existing.password_hash : hashPassword(DEMO_PASSWORD)
+  const hash = existing && verifyPasswordSync(DEMO_PASSWORD, existing.password_hash) ? existing.password_hash : hashPassword(DEMO_PASSWORD)
   await sql`
     insert into users (id, login, name, role, vehicle_ids, password_hash)
     values (${`user-${account.login}`}, ${account.login}, ${account.name}, ${account.role}, ${account.vehicleIds}, ${hash})
@@ -36,10 +36,12 @@ for (const account of DEMO_ACCOUNTS) {
   `
 }
 
-// 오래된 기록 정리: 측정값은 하루, 원격 조치·해결한 실측 문제·알림 기록은 7일
+// 오래된 기록 정리: 측정값·로그인 실패는 하루, 원격 조치·해결한 실측 문제·알림 기록은 7일, 끝난 세션
 const now = Date.now()
 await sql`delete from telemetry_readings where at < ${now - 86_400_000}`
 await sql`delete from remote_actions where sent_at < ${now - 7 * 86_400_000}`
 await sql`delete from live_issues where resolved_at < ${now - 7 * 86_400_000}`
 await sql`delete from push_deliveries where sent_at < now() - interval '7 days'`
+await sql`delete from sessions where expires_at < ${now}`
+await sql`delete from login_failures where at < ${now - 86_400_000}`
 console.log(`[migrate] 스키마 ${statements.length}문, 데모 계정 ${DEMO_ACCOUNTS.length}개 적용`)

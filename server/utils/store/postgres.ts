@@ -196,6 +196,34 @@ export function createPostgresStore(url: string): Store {
       const rows = (await sql`select * from users where id = ${id}`) as UserRow[]
       return rows[0] ? toUser(rows[0]) : null
     },
+    async createSession(record) {
+      await sql`
+        insert into sessions (id, user_id, created_at, expires_at)
+        values (${record.id}, ${record.userId}, ${record.createdAt}, ${record.expiresAt})
+      `
+    },
+    async findSessionUser(id, now) {
+      // 요청마다 한 번 묻습니다(이전에 계정만 찾던 것과 같은 질의 수).
+      const rows = (await sql`
+        select u.* from sessions s join users u on u.id = s.user_id where s.id = ${id} and s.expires_at > ${now}
+      `) as UserRow[]
+      return rows[0] ? toUser(rows[0]) : null
+    },
+    async deleteSession(id) {
+      await sql`delete from sessions where id = ${id}`
+    },
+    async countLoginFailures(keys, since) {
+      const rows = (await sql`
+        select key, count(*)::int as count from login_failures where key = any(${keys}) and at >= ${since} group by key
+      `) as Array<{ key: string; count: number }>
+      return Object.fromEntries(rows.map((row) => [row.key, row.count]))
+    },
+    async recordLoginFailure(keys, at) {
+      await sql`insert into login_failures (key, at) select unnest(${keys}::text[]), ${at}`
+    },
+    async clearLoginFailures(key) {
+      await sql`delete from login_failures where key = ${key}`
+    },
     async savePushSubscription(record) {
       await sql`
         insert into push_subscriptions (endpoint, p256dh, auth, user_id)

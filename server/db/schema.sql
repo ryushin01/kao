@@ -100,3 +100,20 @@ create table if not exists devices (
   webhook_secret text
 );
 create index if not exists devices_vehicle on devices (vehicle_id) where revoked_at is null;
+
+-- 로그인 세션(0.16.0). 쿠키에는 무작위 세션 토큰(서명 포함)을 두고, 여기에는 토큰의 SHA-256만 남깁니다.
+-- 로그아웃하면 그 세션만 지우므로 쿠키가 새어도 서버에서 끊을 수 있습니다.
+create table if not exists sessions (
+  id text primary key,
+  user_id text not null references users (id) on delete cascade,
+  created_at bigint not null,
+  expires_at bigint not null
+);
+create index if not exists sessions_expires_at on sessions (expires_at);
+
+-- 로그인 실패(0.16.0). key는 'login:<아이디>|<IP>'와 'ip:<IP>'이고, 15분 안의 실패 수로 시도를 막습니다.
+create table if not exists login_failures (
+  key text not null,
+  at bigint not null
+);
+create index if not exists login_failures_key_at on login_failures (key, at);

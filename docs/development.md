@@ -25,7 +25,7 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
 | 경로 | 권한 | 내용 |
 |---|---|---|
 | `GET /api/showroom` | 공개 | 소개 화면용 모델·도장·열린 문제 수(위치·회원 정보 제외) |
-| `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/session` | 공개 | 로그인(서명 쿠키 `kao_session`, 7일), 로그아웃, 현재 사용자와 웹 푸시 공개 키 |
+| `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/session` | 공개 | 로그인(서버 세션, 쿠키 `kao_session`, 7일. 실패가 쌓이면 429), 로그아웃(그 세션만 끊음), 현재 사용자와 웹 푸시 공개 키 |
 | `GET /api/fleet` | 로그인 | 볼 수 있는 탈것의 현재 프레임 |
 | `GET /api/fleet/stream` | 로그인 | 0.5초마다 프레임을 보내는 SSE. 50초마다 닫고 1초 뒤 다시 연결(`retry`). 브라우저가 받으면 gzip(이벤트마다 플러시) |
 | `POST /api/vehicles/:id/actions` | 관제 요원 | `{ issueId, action }`. 맞지 않는 조치 422, 이미 조치 중 409 |
@@ -36,7 +36,9 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
 | `GET /api/ingest/commands?vehicleId=` | 장치 토큰·`INGEST_TOKEN` | 차량이 아직 응답하지 않은 원격 조치 명령 |
 | `POST /api/ingest/commands/:id/ack` | 장치 토큰·`INGEST_TOKEN` | 명령 적용 결과 `{ vehicleId, result: applied \| failed, message? }` |
 
-쿠키를 쓰는 변경 요청은 `Origin`이 같은 사이트일 때만 받습니다(SameSite=Lax에 더한 CSRF 방어).
+쿠키를 쓰는 변경 요청은 `Origin`이 같은 사이트일 때만 받습니다(SameSite=Lax에 더한 CSRF 방어. 주소로 읽을 수 없는 `Origin: null`도 403).
+
+모든 응답에 보안 헤더를 붙입니다(`nuxt.config.ts`의 `routeRules`): `Content-Security-Policy: frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'`와 `X-Frame-Options: DENY`(원격 조치 화면을 다른 사이트가 겹쳐 띄우는 클릭재킹 방지), `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`(카메라·마이크·위치 등 끔), `Cross-Origin-Opener-Policy`. Nuxt가 설정 스크립트를 인라인으로 넣어 `script-src`까지 막는 CSP는 쓰지 않습니다. Nuxt가 붙이는 `X-Powered-By`는 `server/plugins/hide-powered-by.ts`가 뺍니다.
 
 ### 실시간 스트림
 
@@ -67,7 +69,10 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
 
 <img src="images/login.jpg" alt="아이디·비밀번호 입력란과 관제 요원·회원 01~07 데모 계정 버튼이 있는 로그인 화면" width="320">
 
-- 계정: 관제 요원(`operator`)과 회원(`member01`~`07`, 각자 탈것 하나). 비밀번호는 scrypt로 해시합니다. 데모 계정 목록은 `src/shared/api/contract.ts`의 `DEMO_ACCOUNTS`.
+- 계정: 관제 요원(`operator`)과 회원(`member01`~`07`, 각자 탈것 하나). 비밀번호는 scrypt로 해시하고, 요청을 처리할 때는 비동기 scrypt로 확인합니다(동기로 하면 같은 인스턴스의 관제 스트림까지 멈춤). 없는 아이디도 같은 비용의 가짜 해시를 확인해 응답 시간으로 계정이 있는지 알 수 없습니다. 데모 계정 목록은 `src/shared/api/contract.ts`의 `DEMO_ACCOUNTS`.
+- 세션(`server/utils/session.ts`): 로그인마다 무작위 토큰을 만들어 쿠키에는 `<토큰>.<서명>`을, DB(`sessions`)에는 토큰의 SHA-256만 둡니다. 요청마다 세션과 계정을 한 번에 조회하고, 로그아웃은 그 세션만 지웁니다(데모 계정을 여러 사람이 함께 쓰므로 계정의 다른 세션은 그대로).
+- 시도 제한(`server/utils/login-guard.ts`): 15분 동안 같은 아이디·같은 주소로 10번, 같은 주소로 50번 실패하면 429(`Retry-After: 900`). 아이디만으로 막으면 남이 일부러 틀려 데모 계정을 잠글 수 있어 아이디는 주소와 묶어 셉니다. 실패 기록은 DB(`login_failures`)에 두어 인스턴스끼리 함께 보고, 주소는 Vercel이 덮어쓰는 `x-forwarded-for`(직접 띄운 서버는 연결 주소)입니다.
+- 로그인 뒤에는 `redirect`로 받은 같은 사이트 경로로 돌아갑니다. `//`, `/\`, 탭·줄바꿈이 든 주소는 버립니다(`src/pages/login/lib/safe-redirect.ts`).
 - 화면 접근은 전역 라우트 미들웨어(`src/app/routes/auth-guard.ts`)가 정합니다: `/fleet`은 관제 요원만(회원은 자기 탈것으로), `/fleet/:id`는 관제 요원이나 그 탈것의 회원만.
 - API도 같은 규칙을 서버에서 다시 확인합니다(`server/utils/session.ts`).
 
