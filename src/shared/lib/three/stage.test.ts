@@ -1,7 +1,7 @@
 import { BoxGeometry, Group, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, Scene } from 'three'
 import type { Camera, WebGLRenderer } from 'three'
 import { describe, expect, it, vi } from 'vitest'
-import { precompile } from './stage'
+import { disposeObject, markShared, precompile, sharedResourcesOf } from './stage'
 
 /** compileAsync를 부른 순서와 그때 걸려 있던 렌더 타깃을 적어 두는 가짜 렌더러(WebGL 없이) */
 function fakeRenderer() {
@@ -64,5 +64,29 @@ describe('precompile', () => {
     }) as unknown as WebGLRenderer['compileAsync']
     await precompile(renderer, root, camera, new Scene(), { cancelled: () => closed })
     expect(calls.map((call) => call.name)).toEqual(['m0', 'm1'])
+  })
+})
+
+describe('disposeObject', () => {
+  it('모델을 바꿔 내릴 때(keepShared)는 캐시 원본과 함께 쓰는 형상·재질을 남기고, 장면을 닫을 때는 모두 정리합니다', () => {
+    const geometry = new BoxGeometry()
+    const material = new MeshBasicMaterial()
+    markShared(new Mesh(geometry, material))
+    // 복제본: 형상과 대부분의 재질은 원본과 함께 쓰고, 도장 재질만 새로 만듭니다.
+    const owned = new MeshPhysicalMaterial()
+    const root = new Group()
+    root.add(new Mesh(geometry, owned), new Mesh(geometry, material))
+    const disposed: string[] = []
+    geometry.addEventListener('dispose', () => disposed.push('geometry'))
+    material.addEventListener('dispose', () => disposed.push('shared material'))
+    owned.addEventListener('dispose', () => disposed.push('owned material'))
+
+    // 바꿔 내린 뒤 들고 있을 것은 공유 형상·재질 하나씩뿐입니다(모델 트리 전체가 아님).
+    expect(sharedResourcesOf(root)).toEqual([geometry, material])
+    disposeObject(root, { keepShared: true })
+    expect(disposed).toEqual(['owned material'])
+    disposed.length = 0
+    disposeObject(root)
+    expect(disposed.sort()).toEqual(['geometry', 'geometry', 'owned material', 'shared material'])
   })
 })

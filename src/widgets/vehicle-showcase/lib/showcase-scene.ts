@@ -13,9 +13,9 @@ import {
 } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { VehicleSnapshot } from '@shared/api'
-import { applyStudioEnvironment, createStage, disposeObject, nextTask, precompile } from '@shared/lib'
-import { createMiniature, loadModelMiniature, preloadModel, rollWheels } from '@entities/vehicle'
-import type { Miniature } from '@entities/vehicle'
+import { applyStudioEnvironment, createStage, disposeObject, nextTask, precompile, sharedResourcesOf } from '@shared/lib/three'
+import { createMiniature, loadModelMiniature, preloadModel, rollWheels } from '@entities/vehicle/index.three'
+import type { Miniature } from '@entities/vehicle/index.three'
 import { frameShowcase } from './framing'
 
 export interface ShowcaseOptions {
@@ -87,10 +87,18 @@ export function createShowcaseScene({ canvas, vehicle, playing }: ShowcaseOption
     controls.update()
   }
 
+  /**
+   * 바꿔 내린 모델이 쓰던, 캐시 원본과 함께 쓰는 형상·재질. 장면을 닫을 때 정리합니다(다시 고르면 그대로 씀).
+   * 모델 트리 전체가 아니라 공유 자원만 들고 있어, 분류를 여러 번 바꿔도 모델 수(최대 일곱) 넘게 쌓이지 않습니다.
+   */
+  const retiredShared = new Set<{ dispose: () => void }>()
+
   function mount(next: Miniature) {
     if (miniature) {
       scene.remove(miniature.root)
-      disposeObject(miniature.root)
+      for (const resource of sharedResourcesOf(miniature.root)) retiredShared.add(resource)
+      // 이 장면이 만든 자원(도장 재질, 직접 만든 모형)은 지금 지웁니다.
+      disposeObject(miniature.root, { keepShared: true })
     }
     miniature = next
     miniature.root.traverse((object) => {
@@ -179,6 +187,9 @@ export function createShowcaseScene({ canvas, vehicle, playing }: ShowcaseOption
       disposed = true
       controls.dispose()
       disposeEnvironment()
+      // 바꿔 내린 모델의 공유 자원도 정리해야 이 렌더러가 걸어 둔 dispose 리스너가 풀려 메모리에서 빠집니다.
+      for (const resource of retiredShared) resource.dispose()
+      retiredShared.clear()
       stage.dispose()
     },
   }

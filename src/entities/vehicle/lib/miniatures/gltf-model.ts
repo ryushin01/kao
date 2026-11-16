@@ -3,6 +3,7 @@ import type { Material, MeshStandardMaterial, Object3D } from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js'
 import type { VehicleModelId } from '@shared/api'
+import { markShared } from '@shared/lib/three'
 import { MODEL_ASSETS } from '../../config/model-assets'
 import type { Miniature } from './parts'
 
@@ -29,6 +30,8 @@ function load(modelId: VehicleModelId, detail: ModelDetail): Promise<Group | nul
         gltf.scene.traverse((object) => {
           if (object instanceof Mesh && !object.geometry.getAttribute('normal')) object.geometry.computeVertexNormals()
         })
+        // 복제본이 함께 쓰는 형상·재질이라, 장면에서 모델을 바꿔 내릴 때는 지우지 않습니다(도장 재질은 복제본마다 새로 만듦).
+        markShared(gltf.scene)
         return gltf.scene
       })
       .catch(() => {

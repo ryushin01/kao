@@ -1,3 +1,5 @@
+import { createFrameLoop } from '@shared/lib'
+
 /**
  * 화면 전체에 프래그먼트 셰이더 하나만 그리는 작은 WebGL 무대입니다.
  * 소개 화면 첫 로딩에서 three.js(약 600KB)를 받지 않으려고 three.js 대신 WebGL을 직접 씁니다.
@@ -92,11 +94,7 @@ export function createShaderCanvas({ canvas, fragmentShader, maxPixelRatio = 1, 
     return locations.get(name) ?? null
   }
 
-  let playing = true
-  let visible = true
   let lost = false
-  let frameId = 0
-  let pendingRender = false
   let last = performance.now()
 
   const render = () => {
@@ -114,27 +112,15 @@ export function createShaderCanvas({ canvas, fragmentShader, maxPixelRatio = 1, 
     gl.drawArrays(gl.TRIANGLES, 0, 3)
   }
 
-  const loop = () => {
-    frameId = 0
-    render()
-    if (playing && visible) frameId = requestAnimationFrame(loop)
-  }
-
-  const start = () => {
-    if (frameId === 0 && playing && visible) {
+  // 재생 중이고 화면 안에 있고 탭이 보일 때만 매 프레임 그립니다(@shared/lib frame-loop, 3D 무대와 같은 규칙).
+  const frames = createFrameLoop({
+    draw: render,
+    onStart: () => {
       last = performance.now()
-      frameId = requestAnimationFrame(loop)
-    }
-  }
-
-  const invalidate = () => {
-    if (frameId !== 0 || pendingRender) return
-    pendingRender = true
-    requestAnimationFrame(() => {
-      pendingRender = false
-      render()
-    })
-  }
+    },
+    pageVisible: document.visibilityState !== 'hidden',
+  })
+  const invalidate = () => frames.invalidate()
 
   const resize = () => {
     const parent = canvas.parentElement
@@ -168,24 +154,16 @@ export function createShaderCanvas({ canvas, fragmentShader, maxPixelRatio = 1, 
   if (canvas.parentElement) resizeObserver.observe(canvas.parentElement)
   resize()
 
-  const intersection = new IntersectionObserver(([entry]) => {
-    visible = entry?.isIntersecting ?? true
-    if (visible) start()
-  })
+  const intersection = new IntersectionObserver(([entry]) => frames.setInView(entry?.isIntersecting ?? true))
   intersection.observe(canvas)
 
-  const onVisibility = () => {
-    visible = document.visibilityState === 'visible'
-    if (visible) start()
-  }
+  const onVisibility = () => frames.setPageVisible(document.visibilityState !== 'hidden')
   document.addEventListener('visibilitychange', onVisibility)
 
-  // 브라우저가 컨텍스트를 거둬 가면 그리기를 멈춥니다. preventDefault()를 불러야 브라우저가 되돌려 줍니다.
+  // 브라우저가 컨텍스트를 거둬 가면 그리기를 멈춥니다(반복은 돌아도 그리지 않음). preventDefault()를 불러야 브라우저가 되돌려 줍니다.
   const onLost = (event: Event) => {
     event.preventDefault()
     lost = true
-    if (frameId) cancelAnimationFrame(frameId)
-    frameId = 0
   }
   // 되찾은 컨텍스트에서는 이전 프로그램·버퍼·uniform 위치가 모두 무효라 다시 만듭니다.
   const onRestored = () => {
@@ -197,26 +175,21 @@ export function createShaderCanvas({ canvas, fragmentShader, maxPixelRatio = 1, 
     }
     lost = false
     resize()
-    start()
+    frames.resume()
   }
   canvas.addEventListener('webglcontextlost', onLost)
   canvas.addEventListener('webglcontextrestored', onRestored)
 
-  start()
+  frames.resume()
 
   return {
     setUniform(name, value) {
       uniforms.set(name, value)
     },
-    setPlaying(next) {
-      playing = next
-      if (playing) start()
-      else invalidate()
-    },
+    setPlaying: (next) => frames.setPlaying(next),
     invalidate,
     dispose() {
-      if (frameId) cancelAnimationFrame(frameId)
-      frameId = 0
+      frames.dispose()
       resizeObserver.disconnect()
       intersection.disconnect()
       ratioQuery?.removeEventListener('change', onRatioChange)

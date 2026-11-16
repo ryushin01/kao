@@ -1,6 +1,14 @@
 # 버전 기록
 
 
+## 0.17.0 — 2026-11-16
+
+- 경량화: 소개·로그인 화면 첫 로딩에서 three.js를 뺌. `@entities/vehicle`·`@shared/lib` 공개 API가 3D 코드를 함께 내보내, 모델 이름·숫자 포맷만 쓰는 화면 조각에도 three.js 일부(295KB)가 붙어 있었음. 3D 코드는 `@entities/vehicle/index.three`·`@shared/lib/three`로 나눠 지연 로딩하는 3D 장면만 가져옴(Steiger 통과). 소개 화면 JS 535KB → 264KB(gzip 약 179KB → 104KB)
+- 3D 모델·서울 지도·글꼴 조각·아이콘을 하루 캐시 + 일주일 `stale-while-revalidate`(이전 `max-age=0`이라 열 때마다 파일마다 다시 확인)
+- 화면 밖으로 내린 3D 장면·블랙홀 배경이, 다른 탭에 갔다 오면 화면 밖인데도 다시 매 프레임 그리던 것을 고침(화면 안 여부와 탭 표시 여부를 따로 봄). 자동 회전·따라가기에서 카메라 컨트롤이 그릴 때마다 다시 그리기를 요청하는 연쇄로 화면 밖에서도 계속 그리던 것도 막음(보이지 않는 동안의 요청은 다시 보일 때 한 번, 반복 중 같은 프레임 두 번 그리기도 없앰). 두 무대의 그리기 반복을 `createFrameLoop`으로 공통화하고 시험을 붙임(리뷰 반영)
+- 서울 지도 데이터를 한 번 못 받으면 새로 고칠 때까지 지도 바탕이 없던 것을, 다음에 지도를 열 때 다시 받게 함
+- 소개 화면에서 분류를 바꿀 때 다른 장면과 함께 쓰는 3D 모델 원본의 형상·재질까지 지워, 같은 분류를 다시 고르면 다시 올리고 셰이더를 다시 만들던 것을 고침(공유 자원은 모델 트리 대신 그 형상·재질만 들고 있다가 장면을 닫을 때 정리, 리뷰 반영)
+
 ## 0.16.0 — 2026-11-16
 
 - 보안 헤더: 모든 응답에 `Content-Security-Policy: frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'`, `X-Frame-Options: DENY`(원격 조치 화면의 클릭재킹 방지), `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, `Cross-Origin-Opener-Policy`. `X-Powered-By: Nuxt`를 뺌
