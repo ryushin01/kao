@@ -7,7 +7,7 @@ import type { FleetFrame, RemoteActionResponse } from '@shared/api'
 import { findRoute } from '@shared/config'
 import { formatNumber, formatPercent } from '@shared/lib'
 import { HudPanel, StatusBadge } from '@shared/ui'
-import { useSession } from '@entities/session'
+import { useSession, useSessionExpiry } from '@entities/session'
 import { CATEGORY_LABELS, MODEL_PROFILES, MetricReadout, useLiveFleet } from '@entities/vehicle'
 import { RemoteActionPanel } from '@features/remote-action'
 import { ActionLog } from '@widgets/action-log'
@@ -25,7 +25,8 @@ const { data } = await useFetch<FleetFrame>(FLEET_URL, { key: 'fleet' })
 if (!data.value?.vehicles.some((vehicle) => vehicle.id === vehicleId.value)) {
   throw createError({ statusCode: 404, statusMessage: '등록되지 않은 탈것입니다.', fatal: true })
 }
-const { frame, applyAction } = useLiveFleet(data)
+// 화면을 연 채 세션이 끝나면 로그인 화면으로 보내고, 로그인하면 이 화면으로 돌아옵니다.
+const { frame, applyAction } = useLiveFleet(data, { onUnauthorized: useSessionExpiry() })
 
 const vehicle = computed(() => frame.value!.vehicles.find((item) => item.id === vehicleId.value)!)
 const profile = computed(() => MODEL_PROFILES[vehicle.value.modelId])

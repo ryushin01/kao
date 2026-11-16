@@ -6,6 +6,7 @@ import { FLEET_URL } from '@shared/api'
 import type { FleetFrame, RemoteActionResponse, VehicleKind } from '@shared/api'
 import { formatClock, toIsoString } from '@shared/lib'
 import { HudPanel } from '@shared/ui'
+import { useSessionExpiry } from '@entities/session'
 import { CATEGORY_LABELS, MODEL_PROFILES, VEHICLE_CATEGORIES, VehicleCard, activeIssues, fleetSummary, useLiveFleet } from '@entities/vehicle'
 import { RemoteActionPanel } from '@features/remote-action'
 import { ActionLog } from '@widgets/action-log'
@@ -15,7 +16,8 @@ import { LiveAnnouncer } from '@widgets/live-announcer'
 useHead({ title: '관제 센터 — KAO' })
 
 const { data } = await useFetch<FleetFrame>(FLEET_URL, { key: 'fleet' })
-const { frame, status, applyAction } = useLiveFleet(data)
+// 화면을 연 채 세션이 끝나면 로그인 화면으로 보내고, 로그인하면 이 화면으로 돌아옵니다.
+const { frame, status, applyAction } = useLiveFleet(data, { onUnauthorized: useSessionExpiry() })
 
 const summary = computed(() => (frame.value ? fleetSummary(frame.value) : null))
 
@@ -288,66 +290,7 @@ const onSent = (response: RemoteActionResponse) => applyAction(response)
 }
 
 @media (width < 64rem) {
-  .fleet__filter {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.fleet__filter legend {
-  float: left;
-  width: 100%;
-  margin-bottom: var(--space-2);
-  font-size: 0.875rem;
-  color: var(--color-text-muted);
-}
-
-.fleet__filter label {
-  position: relative;
-}
-
-.fleet__filter input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.fleet__filter span {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 2.75rem;
-  padding: 0 var(--space-4);
-  border: 1px solid var(--color-line-strong);
-  font-size: 0.875rem;
-}
-
-.fleet__filter small {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: var(--color-text-muted);
-}
-
-.fleet__filter input:checked + span {
-  border-color: var(--color-crimson);
-  background: var(--color-crimson);
-  color: #fff;
-}
-
-.fleet__filter input:checked + span small {
-  color: #fff;
-}
-
-.fleet__filter input:focus-visible + span {
-  outline: 2px solid var(--color-crimson-text);
-  outline-offset: 3px;
-}
-
-.fleet__columns {
+  .fleet__columns {
     grid-template-columns: minmax(0, 1fr);
   }
 }

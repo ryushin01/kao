@@ -1,1 +1,1 @@
-export { homePathFor, useSession } from './model/session'
+export { homePathFor, useSession, useSessionExpiry } from './model/session'

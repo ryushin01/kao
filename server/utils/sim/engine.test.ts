@@ -247,6 +247,35 @@ describe('computeHistory', () => {
     expect(history.liveSamples).toBe(live.length)
     expect(history.samples[0]!.value).not.toBe(101.5)
   })
+
+  it('속도·출력 제한 조치가 많이 쌓여도 프레임·이력을 빨리 계산하고, 이력의 각 시각은 그 시각의 프레임과 같습니다', () => {
+    const now = DAY + 15 * 3600_000
+    // 탈것마다 오늘 제한 조치 30건(겹치는 구간 포함). 0.14.0까지는 프레임 하나에 수백 ms, 60분 이력에 몇 초가 걸렸습니다.
+    const actions: ActionRecord[] = VEHICLE_SPECS.flatMap((vehicle) =>
+      Array.from({ length: 30 }, (_, i) => ({
+        id: `${vehicle.id}-cap-${i}`,
+        issueId: `${vehicle.id}-cap-issue-${i}`,
+        vehicleId: vehicle.id,
+        action: i % 3 === 0 ? ('power-limit' as const) : ('speed-limit' as const),
+        sentAt: now - 50 * 60_000 + i * 70_000,
+      })),
+    )
+    let started = performance.now()
+    for (let i = 0; i < 20; i += 1) {
+      const at = now + i * 500
+      // 스트림처럼 프레임마다 새 배열
+      computeFrame({ now: at, actions: actions.filter((action) => action.sentAt <= at) })
+    }
+    expect((performance.now() - started) / 20).toBeLessThan(25)
+
+    started = performance.now()
+    const history = computeHistory({ vehicleId: 'kao-0001', metricKey: 'rpm', from: now - 3600_000, to: now, points: 120, actions })!
+    expect(performance.now() - started).toBeLessThan(500)
+    for (const sample of history.samples.filter((_, i) => i % 17 === 0)) {
+      const frame = computeFrame({ now: sample.at, actions: actions.filter((action) => action.sentAt <= sample.at), vehicleIds: ['kao-0001'] })
+      expect(sample.value).toBe(frame.vehicles[0]!.metrics.find((metric) => metric.key === 'rpm')!.value)
+    }
+  })
 })
 
 describe('도로에 맞는 속도와 기울기', () => {
