@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildingArrays, buildMapLayers, decode, layerBuffers, polygonArrays, ribbonArrays, ROAD_STYLE } from './map-geometry'
+import { buildingArrays, buildMapLayers, decode, layerBuffers, polygonArrays, RAIL_STYLE, ribbonArrays, ROAD_STYLE } from './map-geometry'
 import type { MeshArrays, SeoulMapData } from './map-geometry'
 
 /** i번째 삼각형의 꼭짓점 세 개 */
@@ -137,7 +137,16 @@ describe('buildMapLayers', () => {
   it('워커가 넘길 버퍼는 서로 겹치지 않습니다(같은 버퍼를 두 번 넘기면 postMessage가 실패)', () => {
     const buffers = layerBuffers(buildMapLayers(data, 1))
     expect(new Set(buffers).size).toBe(buffers.length)
-    // 공원·물·건물(색 포함)·도로 7등급 × 2
-    expect(buffers.length).toBe(2 + 2 + 3 + 7 * 2)
+    // 공원·물·철도·건물(색 포함)·도로 7등급 × 2
+    expect(buffers.length).toBe(2 + 2 + 2 + 3 + 7 * 2)
+  })
+
+  it('지상 철도는 가는 띠로 만들고, 철도가 없는 이전 데이터도 빈 층으로 받습니다', () => {
+    expect(buildMapLayers(data, 1).rails.index.length).toBe(0)
+    const rails = buildMapLayers({ ...data, rails: [[0, 0, 20, 0, 0, 20]] }, 1).rails
+    // 선분 둘 → 사각형 둘(삼각형 넷)과 꺾이는 점의 이음
+    expect(rails.index.length).toBeGreaterThanOrEqual(12)
+    const xs = Array.from(rails.positions).filter((_, i) => i % 3 === 0)
+    expect(Math.min(...xs)).toBeCloseTo(-RAIL_STYLE.width / 2)
   })
 })

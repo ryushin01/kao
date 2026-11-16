@@ -395,3 +395,22 @@ export const VEHICLE_SPECS: VehicleSpec[] = [
     ],
   },
 ]
+
+/**
+ * 실차 GPS가 경로에서 벗어난 거리(m). 장치가 보내는 지표가 아니라 수신 API가 GPS로 계산해 실측 문제를 여는 데만 씁니다
+ * (화면의 지표 목록·시뮬레이션에는 없음). 300m를 넘으면 경고, 1km를 넘으면 위험이고, 경로로 돌아와 10초 유지되면 해결합니다.
+ * 화면이 "경로에서 벗어남"으로 표시하는 150m보다 높게 잡아, GPS가 잠깐 튀는 것으로는 문제를 열지 않습니다.
+ */
+export const ROUTE_DEVIATION: MetricSpec = {
+  key: 'route-offset', label: '경로 이탈 거리', unit: 'm', min: 0, max: 50_000, nominal: 0, noise: 0,
+  warn: 300, crit: 1000, direction: 'high', precision: 0,
+  fault: {
+    // 시뮬레이션은 이 지표로 문제를 만들지 않으므로 target·rate는 쓰지 않습니다.
+    target: 1000, rate: 0, actions: ['notify-rider', 'dispatch-service'],
+    title: '경로 이탈',
+    detail: '실차 GPS가 정해진 경로에서 벗어나 달리고 있습니다. 도난이나 무단 우회일 수 있어 운전자에게 확인합니다.',
+  },
+}
+
+/** 실측 문제를 판단·표시할 때 쓰는 지표: 탈것의 지표와 경로 이탈 거리 */
+export const liveMetricSpecs = (vehicle: VehicleSpec): MetricSpec[] => [...vehicle.metrics, ROUTE_DEVIATION]

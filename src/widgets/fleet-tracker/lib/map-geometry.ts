@@ -32,8 +32,10 @@ export interface SeoulMapData {
   roads: Record<RoadKind, number[][]>
   water: EncodedPolygon[]
   parks: EncodedPolygon[]
-  /** 높은 건물 [높이(m), x0, z0, dx1, dz1, …] 바닥 둘레(차분 부호화) */
+  /** 높은 건물과 경로 주변 중층 건물 [높이(m), x0, z0, dx1, dz1, …] 바닥 둘레(차분 부호화) */
   buildings: number[][]
+  /** 지상 철도·철교 중심선 [x0, z0, dx1, dz1, …](m, 차분 부호화). 0.19.0 전 데이터에는 없습니다. */
+  rails?: number[][]
 }
 
 export interface MeshArrays {
@@ -49,6 +51,8 @@ export interface SeoulMapLayers {
   water: MeshArrays
   /** ROAD_STYLE 순서(낮은 등급부터) */
   roads: Array<{ kind: RoadKind; mesh: MeshArrays }>
+  /** 지상 철도(가는 띠) */
+  rails: MeshArrays
   buildings: MeshArrays
 }
 
@@ -62,6 +66,9 @@ export const ROAD_STYLE: ReadonlyArray<readonly [RoadKind, number, string]> = [
   ['primary', 30, '#423b3c'],
   ['trunk', 40, '#524849'],
 ]
+
+/** 지상 철도 띠의 폭(m, 멀리서도 보이게 실제보다 넓게)과 색(길보다 차가운 회색이라 길과 구분됨) */
+export const RAIL_STYLE = { width: 8, color: '#2c3138' } as const
 
 /** 차분 부호화를 풉니다. [x0, z0, dx1, dz1, …] → [x0, z0, x1, z1, …]. offset만큼 앞 칸(건물 높이)은 건너뜁니다. */
 export function decode(encoded: ArrayLike<number>, offset = 0) {
@@ -288,12 +295,13 @@ export function buildMapLayers(data: SeoulMapData, unit: number): SeoulMapLayers
     parks: polygonArrays(data.parks, unit),
     water: polygonArrays(data.water, unit),
     roads: ROAD_STYLE.map(([kind, width]) => ({ kind, mesh: ribbonArrays((data.roads[kind] ?? []).map((line) => decode(line)), width, unit) })),
+    rails: ribbonArrays((data.rails ?? []).map((line) => decode(line)), RAIL_STYLE.width, unit),
     buildings: buildingArrays(data.buildings ?? [], unit),
   }
 }
 
 /** 워커에서 메인 스레드로 복사 없이 넘길 배열 버퍼 */
 export function layerBuffers(layers: SeoulMapLayers) {
-  const meshes = [layers.parks, layers.water, layers.buildings, ...layers.roads.map((road) => road.mesh)]
+  const meshes = [layers.parks, layers.water, layers.rails, layers.buildings, ...layers.roads.map((road) => road.mesh)]
   return meshes.flatMap((mesh) => [mesh.positions.buffer, mesh.index.buffer, ...(mesh.colors ? [mesh.colors.buffer] : [])]) as ArrayBuffer[]
 }

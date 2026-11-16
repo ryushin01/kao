@@ -18,6 +18,8 @@
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { parseArgs } from 'node:util'
 import { MAP_CENTER, toLocal } from '../src/shared/lib/route-geo.ts'
+// 이미 만든 경로(이번 실행에서도 ROUTE_PLANS로 다시 만듦). 경로 주변 중층 건물을 받을 때만 씁니다(경로를 바꿨으면 --fetch로 다시 받기).
+import { ROUTES as BUILT_ROUTES } from '../src/shared/config/routes.ts'
 
 const { values: args } = parseArgs({ options: { fetch: { type: 'boolean', default: false } } })
 const ROOT = new URL('../', import.meta.url)
@@ -32,6 +34,12 @@ const OUTER_BBOX = [37.45, 126.82, 37.64, 127.11]
 
 /** 10층 이상이거나 높이 30m 이상인 건물 */
 const TALL = ['["building:levels"~"^[1-9][0-9]+$"]', '["height"~"^([3-9][0-9]|[1-9][0-9][0-9]+)([.][0-9]+)?$"]']
+/** 6~9층이거나 높이 20~30m인 건물(경로 주변만 지도에 넣음) */
+const MIDRISE = ['["building:levels"~"^[6-9]$"]', '["height"~"^2[0-9]([.][0-9]+)?$"]']
+/** 중층 건물은 경로에서 이만큼(m) 안에 있는 것만 받고 그립니다(도심 밀도를 높이되 지도 데이터·삼각형이 너무 늘지 않게). */
+const MIDRISE_ROUTE_DISTANCE = 450
+/** 경로마다 닫힌 선(위도,경도 목록). Overpass의 around 필터로 경로 주변만 묻습니다. */
+const ROUTE_LINES = BUILT_ROUTES.map((route) => [...route.path, route.path[0]].map(([lat, lng]) => `${lat},${lng}`).join(','))
 
 /** 원본별 범위와 선택 조건. split×split 조각으로 나눠 받습니다(공용 서버는 큰 요청을 502·504로 끊습니다). */
 const SOURCES = {
@@ -68,6 +76,24 @@ const SOURCES = {
     split: 2,
     out: 'geom',
     select: (b) => ['way', 'relation'].flatMap((type) => TALL.map((tag) => `${type}["building"]${tag}(${b});`)).join(''),
+  },
+  // 중층 건물은 도심 전체를 받으면 너무 많아(공용 서버가 502·504로 끊음) 경로 주변(around)만 묻습니다.
+  // 경로마다 한 번씩 나눠 받습니다(bbox는 쓰지 않음).
+  midrise: {
+    bbox: DISPLAY_BBOX,
+    split: 1,
+    out: 'geom',
+    parts: ROUTE_LINES,
+    select: (line) =>
+      ['way', 'relation'].flatMap((type) => MIDRISE.map((tag) => `${type}["building"]${tag}(around:${MIDRISE_ROUTE_DISTANCE},${line});`)).join(''),
+  },
+  // 지상 철도·철교(경부선·경의중앙선·공항철도·지하철 지상 구간). 터널·지하와 차량기지·측선은 뺍니다.
+  rail: {
+    bbox: DISPLAY_BBOX,
+    split: 1,
+    out: 'geom',
+    select: (b) =>
+      `way["railway"~"^(rail|subway|light_rail)$"]["tunnel"!~"^(yes|building_passage|covered)$"]["layer"!~"^-"]["service"!~"."](${b});`,
   },
 }
 
@@ -123,8 +149,9 @@ function tiles([south, west, north, east], split) {
 }
 
 async function fetchRaw(name) {
-  const { bbox, split, out, select } = SOURCES[name]
-  const parts = tiles(bbox, split)
+  const { bbox, split, out, select, parts: given } = SOURCES[name]
+  // parts가 있으면 범위 조각 대신 그 값(경로 선 등)마다 나눠 받습니다.
+  const parts = given ?? tiles(bbox, split)
   const seen = new Set()
   const elements = []
   let head = null
@@ -154,8 +181,8 @@ for (const name of Object.keys(SOURCES)) {
   if (args.fetch || !exists) await fetchRaw(name)
 }
 const load = async (name) => JSON.parse(await readFile(new URL(`${name}.json`, RAW), 'utf8'))
-const [roadsRaw, minorRaw, areasRaw, outerRaw, buildingsRaw, signalsRaw] = await Promise.all(
-  ['roads', 'minor', 'areas-outer', 'outer', 'buildings', 'signals'].map(load),
+const [roadsRaw, minorRaw, areasRaw, outerRaw, buildingsRaw, signalsRaw, midriseRaw, railRaw] = await Promise.all(
+  ['roads', 'minor', 'areas-outer', 'outer', 'buildings', 'signals', 'midrise', 'rail'].map(load),
 )
 
 // ── 도로 그래프와 경로 ─────────────────────────────────────────────────────
@@ -702,14 +729,53 @@ function addBuilding(ring, height) {
   const encoded = encode(points)
   if (encoded.length >= 6) buildings.push([Math.round(height), ...encoded])
 }
-for (const el of buildingsRaw.elements) {
+/** 경로(지도 좌표 m)와 점 사이의 가장 가까운 거리 */
+const routeLines = routes.map((route) => route.path.map(([lat, lng]) => toLocal(lat, lng)))
+function distanceToRoutes(p) {
+  let best = Infinity
+  for (const line of routeLines) {
+    for (let i = 0; i < line.length; i += 1) best = Math.min(best, segmentDistance(p, line[i], line[(i + 1) % line.length]))
+  }
+  return best
+}
+
+const seenBuildings = new Set()
+function addBuildingElement(el, near = null) {
+  const id = `${el.type}/${el.id}`
+  if (seenBuildings.has(id)) return
   const height = buildingHeight(el.tags ?? {})
-  if (!height) continue
-  if (el.type === 'way' && el.geometry) addBuilding(toRing(el.geometry.slice(0, -1)), height)
+  if (!height) return
+  const rings = []
+  if (el.type === 'way' && el.geometry) rings.push(toRing(el.geometry.slice(0, -1)))
   if (el.type === 'relation') {
     const outers = el.members.filter((m) => m.type === 'way' && m.role === 'outer' && m.geometry).map((m) => m.geometry)
-    for (const outer of joinRings(outers).map(toRing)) addBuilding(outer, height)
+    rings.push(...joinRings(outers).map(toRing))
   }
+  for (const ring of rings) {
+    if (near && !(distanceToRoutes(ring[0]) <= near)) continue
+    addBuilding(ring, height)
+  }
+  seenBuildings.add(id)
+}
+for (const el of buildingsRaw.elements) addBuildingElement(el)
+const tallCount = buildings.length
+for (const el of midriseRaw.elements) addBuildingElement(el, MIDRISE_ROUTE_DISTANCE)
+
+/** 지상 철도 중심선(안쪽 범위만, 차분 부호화) */
+const rails = []
+for (const way of railRaw.elements) {
+  if (way.type !== 'way' || !way.geometry) continue
+  const inside = within(detail)
+  let piece = []
+  const flush = () => {
+    if (piece.length > 1) rails.push(encode(simplify(piece, 3)))
+    piece = []
+  }
+  for (const point of way.geometry.map((p) => toLocal(p.lat, p.lon))) {
+    if (inside(point)) piece.push(point)
+    else flush()
+  }
+  flush()
 }
 
 const map = {
@@ -722,11 +788,12 @@ const map = {
   water: polygons((tags) => tags.natural === 'water', 15_000, 4),
   parks: polygons((tags) => tags.leisure === 'park', 40_000, 6),
   buildings,
+  rails,
 }
 await mkdir(new URL('public/maps/', ROOT), { recursive: true })
 const json = JSON.stringify(map)
 await writeFile(new URL('public/maps/seoul.json', ROOT), json)
 const segments = Object.values(roads).reduce((sum, list) => sum + list.reduce((s, line) => s + line.length / 2 - 1, 0), 0)
 console.log(
-  `[map] public/maps/seoul.json ${(json.length / 1024).toFixed(0)}KB, 도로 선분 ${segments}개, 물 ${map.water.length}개, 공원 ${map.parks.length}개, 건물 ${buildings.length}동`,
+  `[map] public/maps/seoul.json ${(json.length / 1024).toFixed(0)}KB, 도로 선분 ${segments}개, 물 ${map.water.length}개, 공원 ${map.parks.length}개, 건물 ${buildings.length}동(높은 건물 ${tallCount}, 경로 주변 중층 ${buildings.length - tallCount}), 철도 ${rails.length}줄`,
 )

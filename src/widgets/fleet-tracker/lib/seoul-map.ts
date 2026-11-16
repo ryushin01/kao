@@ -1,5 +1,5 @@
 import { BufferAttribute, BufferGeometry, DataTexture, DoubleSide, Group, LessEqualDepth, LinearFilter, Mesh, MeshBasicMaterial, PlaneGeometry } from 'three'
-import { buildMapLayers, ribbonArrays, ROAD_STYLE } from './map-geometry'
+import { buildMapLayers, RAIL_STYLE, ribbonArrays, ROAD_STYLE } from './map-geometry'
 import type { MapBounds, MeshArrays, SeoulMapData, SeoulMapLayers } from './map-geometry'
 
 /**
@@ -85,13 +85,18 @@ export function flatLayer(geometry: BufferGeometry, color: string, order: number
 /** 건물 불투명도. 앞면만 이만큼 덮어, 건물 뒤의 길과 주행 경로가 희미하게 비쳐 보입니다. */
 export const BUILDING_OPACITY = 0.82
 
-/** 공원 → 한강 → 도로(낮은 등급부터) 순서로 깐 바탕 위에 높은 건물을 세웁니다. */
+/**
+ * 공원 → 한강 → 도로(낮은 등급부터) 순서로 깐 바탕 위에 높은 건물을 세웁니다. 지상 철도는 골목·자전거길·진출입로 위,
+ * 보조간선 이상의 큰길 아래에 그립니다(대부분 큰길과는 입체로 교차).
+ */
 export function buildSeoulMap(layers: SeoulMapLayers) {
   const group = new Group()
   group.add(flatLayer(toGeometry(layers.parks), '#0b130d', -40))
   group.add(flatLayer(toGeometry(layers.water), '#0a1420', -39))
   const colors = new Map(ROAD_STYLE.map(([kind, , color]) => [kind, color]))
   layers.roads.forEach(({ kind, mesh }, i) => group.add(flatLayer(toGeometry(mesh), colors.get(kind) ?? '#353031', -38 + i)))
+  const secondary = ROAD_STYLE.findIndex(([kind]) => kind === 'secondary')
+  if (layers.rails.index.length) group.add(flatLayer(toGeometry(layers.rails), RAIL_STYLE.color, -38 + secondary - 0.5))
   // 건물은 두 번 그립니다. 먼저 깊이만 써서(불투명 단계) 가장 앞의 면을 정하고, 반투명 단계에서 그 면에만 색을 칠합니다.
   // 그래서 건물끼리 겹친 안쪽 면은 보이지 않고, 평면 레이어(길·경로)만 건물 너머로 비칩니다.
   const buildings = toGeometry(layers.buildings)
