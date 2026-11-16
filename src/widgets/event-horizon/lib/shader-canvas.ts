@@ -93,7 +93,10 @@ export function createShaderCanvas({ canvas, fragmentShader, maxPixelRatio = 1, 
   }
 
   let playing = true
-  let visible = true
+  /** 캔버스가 화면 안에 있는지와 탭이 보이는지를 따로 둡니다(다른 탭에서 돌아와도 화면 밖이면 그리지 않음). */
+  let inView = true
+  let pageVisible = document.visibilityState !== 'hidden'
+  const active = () => playing && inView && pageVisible
   let lost = false
   let frameId = 0
   let pendingRender = false
@@ -117,11 +120,11 @@ export function createShaderCanvas({ canvas, fragmentShader, maxPixelRatio = 1, 
   const loop = () => {
     frameId = 0
     render()
-    if (playing && visible) frameId = requestAnimationFrame(loop)
+    if (active()) frameId = requestAnimationFrame(loop)
   }
 
   const start = () => {
-    if (frameId === 0 && playing && visible) {
+    if (frameId === 0 && active()) {
       last = performance.now()
       frameId = requestAnimationFrame(loop)
     }
@@ -169,14 +172,14 @@ export function createShaderCanvas({ canvas, fragmentShader, maxPixelRatio = 1, 
   resize()
 
   const intersection = new IntersectionObserver(([entry]) => {
-    visible = entry?.isIntersecting ?? true
-    if (visible) start()
+    inView = entry?.isIntersecting ?? true
+    start()
   })
   intersection.observe(canvas)
 
   const onVisibility = () => {
-    visible = document.visibilityState === 'visible'
-    if (visible) start()
+    pageVisible = document.visibilityState !== 'hidden'
+    start()
   }
   document.addEventListener('visibilitychange', onVisibility)
 

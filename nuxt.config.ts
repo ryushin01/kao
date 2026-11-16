@@ -2,6 +2,12 @@ import { fileURLToPath } from 'node:url'
 
 const src = (path: string) => fileURLToPath(new URL(`./src/${path}`, import.meta.url))
 
+/**
+ * 파일 이름에 해시가 없는 정적 자산(3D 모델·지도·글꼴 조각·아이콘)의 캐시. 하루 동안은 다시 묻지 않고, 그 뒤 일주일은
+ * 옛 파일을 바로 쓰면서 뒤에서 새로 받습니다. 바꾼 파일은 하루 안에 퍼지고, 급하면 파일 이름을 바꿉니다(개발 가이드).
+ */
+const STATIC_ASSET_CACHE = { headers: { 'cache-control': 'public, max-age=86400, stale-while-revalidate=604800' } }
+
 export default defineNuxtConfig({
   compatibilityDate: '2026-11-01',
   modules: ['@nuxt/eslint'],
@@ -49,6 +55,11 @@ export default defineNuxtConfig({
         'cross-origin-opener-policy': 'same-origin',
       },
     },
+    '/models/**': STATIC_ASSET_CACHE,
+    '/maps/**': STATIC_ASSET_CACHE,
+    '/fonts/**': STATIC_ASSET_CACHE,
+    '/favicon.svg': STATIC_ASSET_CACHE,
+    '/apple-touch-icon.png': STATIC_ASSET_CACHE,
   },
   eslint: { config: { stylistic: false } },
   typescript: {

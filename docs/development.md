@@ -17,6 +17,7 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
 | `server/` | Nitro API와 주행 시뮬레이션 |
 
 - 슬라이스는 공개 API(`index.ts`)로만 가져옵니다. 별칭은 `@app`, `@pages`, `@widgets`, `@features`, `@entities`, `@shared`입니다.
+- three.js를 쓰는 코드는 공개 API를 따로 둡니다: 미니어처는 `@entities/vehicle/index.three`(슬라이스의 두 번째 공개 API, Next.js의 `index.server.ts`와 같은 방식), 무대·조명 환경은 `@shared/lib/three`. 지연 로딩하는 3D 장면(`tracker-scene.ts`, `showcase-scene.ts`)만 가져옵니다. 한 공개 API에 섞으면 `MODEL_PROFILES`·`formatNumber`만 쓰는 화면 조각에도 three.js가 붙습니다(0.16.0까지 소개 화면이 three.js 일부 295KB를 받았음).
 - Nuxt의 자동 가져오기는 끄고(`imports.autoImport: false`) `vue`, `#imports`, `#components`에서 직접 가져옵니다. 그래서 컴포넌트를 Storybook과 Vitest에서 Nuxt 없이 그릴 수 있습니다.
 - `pnpm lint:fsd`(Steiger)로 계층 규칙을 검사합니다.
 
@@ -132,8 +133,10 @@ Nuxt 4의 `app/` 폴더는 라우트와 진입점만 둡니다. 화면 코드는
 
 3D는 무거우므로 화면에 보일 때가 되어서야 준비합니다.
 
-- **소개 화면의 블랙홀 배경**은 셰이더 하나만 그리므로 three.js 없이 WebGL을 직접 씁니다(`widgets/event-horizon/lib/shader-canvas.ts`). 소개 화면 첫 로딩에서 three.js를 받지 않습니다.
-- **턴테이블과 관제 지도**는 화면 가까이(300px) 왔을 때(`whenNearViewport`) three.js와 3D 모델(관제 지도는 서울 지도 데이터도)을 받아 장면을 만듭니다.
+- **소개 화면의 블랙홀 배경**은 셰이더 하나만 그리므로 three.js 없이 WebGL을 직접 씁니다(`widgets/event-horizon/lib/shader-canvas.ts`). 소개·로그인 화면 첫 로딩에서 three.js를 받지 않습니다(JS 264KB, gzip 약 104KB. 0.16.0까지 535KB·179KB).
+- **턴테이블과 관제 지도**는 화면 가까이(300px) 왔을 때(`whenNearViewport`) three.js와 3D 모델(관제 지도는 서울 지도 데이터도)을 받아 장면을 만듭니다. 화면 밖으로 스크롤하거나 탭을 숨기면 그리기를 멈추고, 둘 다 풀려야 다시 그립니다(다른 탭에서 돌아와도 화면 밖 장면은 그리지 않음). 지도 데이터를 받지 못하면 다음에 지도를 열 때 다시 받습니다.
+- **모델 바꾸기**: 캐시한 3D 모델 원본과 복제본은 형상·재질을 함께 씁니다(`markShared`). 턴테이블에서 분류를 바꿀 때는 그 장면이 만든 자원(도장 재질·직접 만든 모형)만 지우고, 공유 자원은 장면을 닫을 때 지웁니다(다시 고를 때 다시 올리거나 셰이더를 다시 만들지 않고, 닫을 때는 렌더러가 건 리스너를 풀어 메모리에서 빠지게).
+- **정적 자산 캐시**: 파일 이름에 해시가 없는 `/models`·`/maps`·`/fonts`·아이콘은 하루 캐시 + 일주일 `stale-while-revalidate`(`nuxt.config.ts`의 `routeRules`). 모델·지도를 다시 만들면 하루 안에 바뀌고, 바로 바꿔야 하면 파일 이름을 바꿉니다. `_nuxt` 조각은 해시가 있어 1년 immutable.
 - 장면을 만들 때 3D 모델 다운로드(`preloadModel`)를 조명 환경(PMREM) 계산보다 먼저 걸고, meshopt 압축은 웹 워커 2개에서 풉니다. 반사 지도는 턴테이블·관제 지도 모두 한 면 256입니다(three.js 0.187의 `PMREMGenerator`는 256보다 작게 만들지 않습니다).
 - **셰이더 미리 컴파일**(`shared/lib/three/stage.ts`의 `precompile`): three.js는 처음 그릴 때 셰이더를 컴파일하고 끝날 때까지 기다려 메인 스레드가 수백 ms~수 초 멈춥니다. 장면은 `compileAsync`(브라우저의 `KHR_parallel_shader_compile`로 기다리지 않고 완료 확인)로 물체마다 나눠 미리 컴파일하고, 그동안 `stage.hold()`로 첫 화면을 미룹니다. 나중에 붙는 지도 바탕과 3D 모델도 컴파일을 마친 뒤 장면에 넣습니다. 유리 같은 투과 재질이 있으면 불투명 물체를 톤 매핑 없이 렌더 타깃에 한 번 더 그리므로(투과 패스), 그 셰이더도 렌더 타깃을 건 상태로 따로 컴파일합니다.
 - **장면 준비 나누기**: 반사 환경 계산과 직접 만든 미니어처는 작업 여러 개로 나눠 만들어, 한 작업이 길어지지 않게 합니다(준비가 끝나기 전에 온 프레임·시점 선택은 끝난 뒤 적용).

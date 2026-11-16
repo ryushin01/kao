@@ -55,14 +55,23 @@ function setup(gl: ReturnType<typeof fakeGl>, onFailure = vi.fn()) {
 
 const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)))
 
+/** 가장 최근에 만든 IntersectionObserver의 콜백(화면 안팎을 흉내 냄) */
+let reportIntersection: (isIntersecting: boolean) => void = () => {}
+let visibility: DocumentVisibilityState = 'visible'
+
 beforeEach(() => {
   vi.stubGlobal(
     'IntersectionObserver',
     class {
+      constructor(callback: (entries: Array<{ isIntersecting: boolean }>) => void) {
+        reportIntersection = (isIntersecting) => callback([{ isIntersecting }])
+      }
       observe() {}
       disconnect() {}
     },
   )
+  visibility = 'visible'
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility })
 })
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -91,6 +100,28 @@ describe('createShaderCanvas', () => {
     await nextFrame()
     expect(gl.drawArrays.mock.calls.length).toBeGreaterThan(draws)
     expect(gl.uniform1f).toHaveBeenLastCalledWith({ program: 2, name: 'uTime' }, 2)
+    stage.dispose()
+  })
+
+  it('다른 탭에서 돌아와도 화면 밖에 있으면 그리지 않고, 화면 안으로 오면 다시 그립니다', async () => {
+    const gl = fakeGl()
+    const { stage } = setup(gl)
+    await nextFrame()
+    reportIntersection(false)
+    visibility = 'hidden'
+    document.dispatchEvent(new Event('visibilitychange'))
+    await nextFrame()
+    await nextFrame()
+    visibility = 'visible'
+    document.dispatchEvent(new Event('visibilitychange'))
+    const draws = gl.drawArrays.mock.calls.length
+    await nextFrame()
+    await nextFrame()
+    expect(gl.drawArrays.mock.calls.length).toBe(draws)
+    reportIntersection(true)
+    await nextFrame()
+    await nextFrame()
+    expect(gl.drawArrays.mock.calls.length).toBeGreaterThan(draws)
     stage.dispose()
   })
 
