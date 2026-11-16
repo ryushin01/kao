@@ -97,12 +97,15 @@ export async function sendTestPush(userId: string) {
  * Cloudflare Workers 크론이 5분마다 /api/cron/notify를 부르고, 관제 화면이 열려 있으면 스트림도 30초마다 부릅니다.
  */
 export async function notifyCriticalIssues(now = Date.now()) {
-  if (!ensureConfigured()) return { sent: 0, issues: 0 }
+  if (!ensureConfigured()) return { sent: 0, issues: 0, subscriptions: 0 }
   const store = useStore()
+  // 구독이 없으면 알릴 사람이 없으므로 문제를 계산하지 않습니다(DB 질의 하나로 끝냄). 응답의 구독 수는 크론 워커가
+  // 구독이 없는 동안 Vercel·DB를 깨우지 않는 데 씁니다(workers/notify-cron).
+  const subscriptions = await store.listPushSubscriptions()
+  if (subscriptions.length === 0) return { sent: 0, issues: 0, subscriptions: 0 }
   // 알림 검사는 기억해 둔 값이 아니라 DB를 새로 읽습니다(방금 열린 위험 문제를 놓치지 않게).
   const issues = criticalIssues(await frameInput(now, true))
-  if (issues.length === 0) return { sent: 0, issues: 0 }
-  const subscriptions = await store.listPushSubscriptions()
+  if (issues.length === 0) return { sent: 0, issues: 0, subscriptions: subscriptions.length }
   let sent = 0
   // 문제·구독마다 동시에 보내, 전체 시간도 요청 한 건의 마감(PUSH_DEADLINE_MS) 안팎으로 묶습니다.
   await Promise.all(
@@ -123,10 +126,19 @@ export async function notifyCriticalIssues(now = Date.now()) {
         })
     }),
   )
-  return { sent, issues: issues.length }
+  return { sent, issues: issues.length, subscriptions: subscriptions.length }
 }
 
 let lastOpportunistic = 0
+let lastFailureLog = 0
+
+/** 알림 검사가 실패하면 원인을 볼 수 있게 남기되, 인스턴스마다 1분에 한 번만 남깁니다. */
+function logNotifyFailure(error: unknown) {
+  const now = Date.now()
+  if (now - lastFailureLog < 60_000) return
+  lastFailureLog = now
+  console.error('[push] 위험 알림을 검사하지 못했습니다:', error)
+}
 
 const isDue = (now: number) => {
   if (!ensureConfigured() || now - lastOpportunistic < 30_000) return false
@@ -136,7 +148,7 @@ const isDue = (now: number) => {
 
 /** 관제 스트림이 열려 있을 때 30초에 한 번씩 알림을 검사합니다(인스턴스마다). 스트림이 열려 있는 동안이라 기다리지 않습니다. */
 export function maybeNotify(now = Date.now()) {
-  if (isDue(now)) void notifyCriticalIssues(now).catch(() => {})
+  if (isDue(now)) void notifyCriticalIssues(now).catch(logNotifyFailure)
 }
 
 /**
@@ -144,5 +156,5 @@ export function maybeNotify(now = Date.now()) {
  * 실측 위험 문제는 바로 알리기 위해서입니다. 서버리스 함수가 응답 뒤 멈추지 않도록 끝날 때까지 기다립니다.
  */
 export async function notifyIfDue(now = Date.now()) {
-  if (isDue(now)) await notifyCriticalIssues(now).catch(() => {})
+  if (isDue(now)) await notifyCriticalIssues(now).catch(logNotifyFailure)
 }

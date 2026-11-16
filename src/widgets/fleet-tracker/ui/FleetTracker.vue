@@ -4,7 +4,7 @@ import type { FleetFrame } from '@shared/api'
 import { HEALTH_LABELS } from '@shared/api'
 import { findRoute } from '@shared/config'
 import { formatNumber, formatPercent, isWebGLAvailable, useMotion, whenNearViewport } from '@shared/lib'
-import { HudPanel, StatusBadge } from '@shared/ui'
+import { HudButton, HudPanel, StatusBadge } from '@shared/ui'
 import { MODEL_PROFILES } from '@entities/vehicle'
 import { MAP_PLACES } from '../config/places'
 import { describeLocation } from '../lib/describe-location'
@@ -20,6 +20,10 @@ const id = useId()
 const canvas = ref<HTMLCanvasElement | null>(null)
 const labels = ref<Record<string, HTMLElement | null>>({})
 const supported = ref(true)
+/** 3D 지도 조각을 받지 못함(배포 뒤 열려 있던 화면은 이전 배포의 조각이 없어 못 받음) */
+const stale = ref(false)
+/** 지도를 그리는지: WebGL을 쓸 수 있고 조각을 받았을 때 */
+const drawable = computed(() => supported.value && !stale.value)
 const follow = ref<string>(props.initialFollow)
 const scene = shallowRef<TrackerScene | null>(null)
 const { paused } = useMotion()
@@ -78,7 +82,14 @@ let stopWatching = () => {}
 
 // three.js 장면은 브라우저에서, 지도가 화면 가까이 왔을 때 만듭니다(탈것 상세처럼 아래쪽에 있을 때 첫 로딩을 가볍게).
 async function start() {
-  const { createTrackerScene } = await import('../lib/tracker-scene')
+  let createTrackerScene: typeof import('../lib/tracker-scene').createTrackerScene
+  try {
+    ;({ createTrackerScene } = await import('../lib/tracker-scene'))
+  } catch {
+    // Vercel 무료 요금제는 이전 배포의 조각을 남기지 않아, 배포 전에 연 화면은 새로 고쳐야 지도를 받습니다.
+    stale.value = true
+    return
+  }
   if (unmounted || !canvas.value) return
   scene.value = createTrackerScene({
     canvas: canvas.value,
@@ -103,6 +114,8 @@ async function start() {
   })
   if (follow.value !== 'all') scene.value.setFollow(follow.value)
 }
+
+const reload = () => window.location.reload()
 
 onMounted(() => {
   if (!canvas.value || !isWebGLAvailable()) {
@@ -149,11 +162,15 @@ onBeforeUnmount(() => {
     </div>
 
     <div class="tracker__stage">
-      <canvas v-if="supported" ref="canvas" class="tracker__canvas" role="img" :aria-label="description" />
+      <canvas v-if="drawable" ref="canvas" class="tracker__canvas" role="img" :aria-label="description" />
+      <p v-else-if="stale" class="tracker__fallback">
+        새 버전이 배포되어 3D 지도를 불러오지 못했습니다. 새로 고치면 다시 보입니다. 위치는 아래 표에서 확인할 수 있습니다.
+        <HudButton size="sm" class="tracker__reload" @click="reload">새로 고침</HudButton>
+      </p>
       <p v-else class="tracker__fallback">
         이 브라우저에서는 3D 지도를 그릴 수 없습니다(WebGL 미지원). 아래 표에서 위치를 확인해 주세요.
       </p>
-      <div v-if="supported" class="tracker__labels" aria-hidden="true">
+      <div v-if="drawable" class="tracker__labels" aria-hidden="true">
         <span v-for="place in MAP_PLACES" :key="place.id" :ref="setLabel(`place:${place.id}`)" class="tracker__place">{{ place.name }}</span>
         <div
           v-for="vehicle in vehicles"
@@ -170,7 +187,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="tracker__footer">
         <!-- 지도 데이터 출처는 OpenStreetMap 재단 지침대로 지도 위에 둡니다(다른 자료의 출처는 README). -->
-        <p v-if="supported" class="tracker__attribution">
+        <p v-if="drawable" class="tracker__attribution">
           지도 데이터 <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap 기여자</a>
         </p>
         <p class="tracker__hint hud-label" aria-hidden="true">끌어서 회전 · 휠로 확대 · 탈것을 누르면 따라가기</p>
@@ -299,6 +316,11 @@ onBeforeUnmount(() => {
 .tracker__fallback {
   padding: var(--space-8);
   color: var(--color-text-muted);
+}
+
+.tracker__reload {
+  display: flex;
+  margin-top: var(--space-4);
 }
 
 .tracker__labels {

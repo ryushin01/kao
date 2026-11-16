@@ -1,3 +1,4 @@
+import { RETENTION } from '../retention'
 import { ACK_TIMEOUT, isLiveIssueId, isPendingCommand } from '../sim/live'
 import type { ActionRecord, LiveIssueRecord, LiveReading } from '../sim/types'
 import { demoUsers } from './demo-users'
@@ -15,7 +16,8 @@ export function createMemoryStore(seed: DeviceRecord[] = []): Store {
   const users: UserRecord[] = demoUsers()
   const actions: Array<ActionRecord & { userId: string }> = []
   const subscriptions = new Map<string, PushSubscriptionRecord>()
-  const notified = new Set<string>()
+  /** 보낸 알림(문제·구독) → 보낸 시각 */
+  const notified = new Map<string, number>()
   const readings: LiveReading[] = []
   const liveIssues: LiveIssueRecord[] = []
   const sessions = new Map<string, SessionRecord>()
@@ -30,6 +32,8 @@ export function createMemoryStore(seed: DeviceRecord[] = []): Store {
     },
     async insertAction(record) {
       if (actions.some((action) => action.issueId === record.issueId && !action.ack)) return false
+      // 서버를 오래 켜 둬도 쌓이지 않게 보관 기간이 지난 조치는 새로 넣을 때 지웁니다.
+      for (let i = actions.length - 1; i >= 0; i -= 1) if (actions[i]!.sentAt < record.sentAt - RETENTION.actions) actions.splice(i, 1)
       actions.push({ ...record })
       return true
     },
@@ -114,6 +118,17 @@ export function createMemoryStore(seed: DeviceRecord[] = []): Store {
     async resetLoginAttempts(key) {
       loginAttempts.delete(key)
     },
+    async pruneRecords(now) {
+      const keep = <T>(list: T[], fresh: (item: T) => boolean) => {
+        for (let i = list.length - 1; i >= 0; i -= 1) if (!fresh(list[i]!)) list.splice(i, 1)
+      }
+      keep(readings, (reading) => reading.at >= now - RETENTION.readings)
+      for (const [key, entry] of loginAttempts) if (entry.windowStart < now - RETENTION.loginAttempts) loginAttempts.delete(key)
+      keep(actions, (action) => action.sentAt >= now - RETENTION.actions)
+      keep(liveIssues, (issue) => issue.resolvedAt === null || issue.resolvedAt >= now - RETENTION.liveIssues)
+      for (const [key, at] of notified) if (at < now - RETENTION.deliveries) notified.delete(key)
+      for (const [id, session] of sessions) if (session.expiresAt <= now) sessions.delete(id)
+    },
     async savePushSubscription(record) {
       subscriptions.set(record.endpoint, record)
     },
@@ -129,7 +144,9 @@ export function createMemoryStore(seed: DeviceRecord[] = []): Store {
     async claimDelivery(issueId, endpoint) {
       const key = `${issueId} ${endpoint}`
       if (notified.has(key)) return false
-      notified.add(key)
+      const now = Date.now()
+      for (const [item, at] of notified) if (at < now - RETENTION.deliveries) notified.delete(item)
+      notified.set(key, now)
       return true
     },
     async releaseDelivery(issueId, endpoint) {

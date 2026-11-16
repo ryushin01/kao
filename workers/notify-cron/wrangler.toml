@@ -16,3 +16,8 @@ SITE_URL = "https://kao-ryushin01.vercel.app"
 
 [observability]
 enabled = true
+
+# 서버가 "구독 없음"으로 답하면 1시간 기억하는 곳(index.js의 GATE). 그동안 Vercel·Neon을 깨우지 않습니다.
+[[kv_namespaces]]
+binding = "GATE"
+id = "a919994575cd4abf89fcd48cf739bac6"

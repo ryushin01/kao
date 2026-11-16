@@ -21,3 +21,27 @@ test('다른 사이트나 Origin: null에서 온 로그인은 403입니다', asy
     expect(response.status(), origin).toBe(403)
   }
 })
+
+test('웹 앱 매니페스트·아이콘·robots·공유 미리보기를 제공합니다', async ({ page, request }) => {
+  const manifest = await request.get('/manifest.webmanifest')
+  expect(manifest.ok()).toBe(true)
+  expect(manifest.headers()['content-type']).toContain('manifest+json')
+  const body = (await manifest.json()) as { display: string; start_url: string; icons: Array<{ src: string; sizes: string; purpose?: string }> }
+  expect(body.display).toBe('standalone')
+  expect(body.start_url).toBe('/fleet')
+  for (const icon of [...body.icons.map((item) => item.src), '/badge-96.png', '/og-image.jpg']) {
+    const response = await request.get(icon)
+    expect(response.ok(), icon).toBe(true)
+    expect(response.headers()['cache-control'], icon).toContain('max-age=86400')
+  }
+  expect(body.icons.some((icon) => icon.purpose === 'maskable')).toBe(true)
+
+  const robots = await (await request.get('/robots.txt')).text()
+  expect(robots).toContain('Disallow: /fleet')
+  expect(robots).toContain('Disallow: /api/')
+
+  await page.goto('/')
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/manifest.webmanifest')
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute('content', /^https:\/\/.+\/og-image\.jpg$/)
+  await expect(page.locator('meta[name="twitter:card"]')).toHaveAttribute('content', 'summary_large_image')
+})

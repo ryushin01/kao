@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { DUMMY_PASSWORD_HASH, hashPassword, verifyPassword, verifyPasswordSync } from './password'
 import { decodeSessionCookie, encodeSessionCookie, sessionId } from './session'
 import { createMemoryStore } from './store/memory'
@@ -86,5 +86,34 @@ describe('메모리 저장소', () => {
     // 같은 창의 시도는 되돌립니다.
     await store.releaseLoginAttempt('ip:9', 1500)
     expect((await store.reserveLoginAttempt(['ip:9'], 1700, 1000))['ip:9']!.count).toBe(2)
+  })
+})
+
+describe('오래된 기록 정리', () => {
+  it('보관 기간이 지난 측정값·로그인 시도 카운터·조치·해결한 실측 문제·끝난 세션을 지웁니다', async () => {
+    const store = createMemoryStore()
+    const now = Date.UTC(2026, 10, 16)
+    const day = 86_400_000
+    // 메모리 저장소는 넣을 때 지금 시각보다 61분 넘게 지난 측정값을 지우므로, 넣는 때를 그 측정값 시각으로 맞춥니다.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(now - 2 * day)
+    await store.insertReading({ vehicleId: 'kao-0001', at: now - 2 * day, metrics: {} })
+    expect(await store.listVehicleReadings('kao-0001', 0, now)).toHaveLength(1)
+    vi.setSystemTime(now)
+    await store.reserveLoginAttempt(['ip:old'], now - 2 * day, 15 * 60_000)
+    await store.reserveLoginAttempt(['ip:new'], now - 1000, 15 * 60_000)
+    await store.insertAction({ id: 'old', issueId: 'old', vehicleId: 'kao-0001', action: 'notify-rider', sentAt: now - 8 * day, userId: 'u' })
+    await store.insertAction({ id: 'new', issueId: 'new', vehicleId: 'kao-0001', action: 'notify-rider', sentAt: now - day, userId: 'u' })
+    await store.insertLiveIssue({ id: 'r', vehicleId: 'kao-0001', metricKey: 'coolant', severity: 'warning', detectedAt: 0, clearedAt: 0, resolvedAt: now - 8 * day, checkedAt: 0 })
+    await store.createSession({ id: 's', userId: 'user-operator', createdAt: now - 8 * day, expiresAt: now - day })
+    await store.pruneRecords(now)
+    expect(await store.listVehicleReadings('kao-0001', 0, now)).toEqual([])
+    // 지운 카운터는 1부터, 남은 카운터는 이어서 셉니다.
+    const attempts = await store.reserveLoginAttempt(['ip:old', 'ip:new'], now, 15 * 60_000)
+    expect([attempts['ip:old']?.count, attempts['ip:new']?.count]).toEqual([1, 2])
+    expect((await store.listActionsSince(0)).map((action) => action.id)).toEqual(['new'])
+    expect(await store.listLiveIssues(0)).toEqual([])
+    expect(await store.findSessionUser('s', now - 2 * day)).toBeNull()
+    vi.useRealTimers()
   })
 })

@@ -7,6 +7,7 @@ import { readFile } from 'node:fs/promises'
 import { neon } from '@neondatabase/serverless'
 import { DEMO_ACCOUNTS, DEMO_PASSWORD } from '../src/shared/api/contract.ts'
 import { hashPassword, verifyPasswordSync } from '../server/utils/password.ts'
+import { RETENTION } from '../server/utils/retention.ts'
 
 const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL
 if (!url) {
@@ -36,12 +37,13 @@ for (const account of DEMO_ACCOUNTS) {
   `
 }
 
-// 오래된 기록 정리: 측정값·로그인 시도 카운터는 하루, 원격 조치·해결한 실측 문제·알림 기록은 7일, 끝난 세션
+// 오래된 기록 정리(server/utils/retention.ts): 측정값·로그인 시도 카운터는 하루, 원격 조치·해결한 실측 문제·알림 기록은 7일, 끝난 세션.
+// 알림 크론도 하루 한 번 같은 기준으로 지웁니다(store.pruneRecords).
 const now = Date.now()
-await sql`delete from telemetry_readings where at < ${now - 86_400_000}`
-await sql`delete from remote_actions where sent_at < ${now - 7 * 86_400_000}`
-await sql`delete from live_issues where resolved_at < ${now - 7 * 86_400_000}`
-await sql`delete from push_deliveries where sent_at < now() - interval '7 days'`
+await sql`delete from telemetry_readings where at < ${now - RETENTION.readings}`
+await sql`delete from remote_actions where sent_at < ${now - RETENTION.actions}`
+await sql`delete from live_issues where resolved_at < ${now - RETENTION.liveIssues}`
+await sql`delete from push_deliveries where sent_at < to_timestamp(${(now - RETENTION.deliveries) / 1000})`
 await sql`delete from sessions where expires_at < ${now}`
-await sql`delete from login_throttle where window_start < ${now - 86_400_000}`
+await sql`delete from login_throttle where window_start < ${now - RETENTION.loginAttempts}`
 console.log(`[migrate] 스키마 ${statements.length}문, 데모 계정 ${DEMO_ACCOUNTS.length}개 적용`)

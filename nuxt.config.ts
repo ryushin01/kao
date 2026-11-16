@@ -8,6 +8,10 @@ const src = (path: string) => fileURLToPath(new URL(`./src/${path}`, import.meta
  */
 const STATIC_ASSET_CACHE = { headers: { 'cache-control': 'public, max-age=86400, stale-while-revalidate=604800' } }
 
+/** 운영 주소. 공유 미리보기(og:image, og:url)는 절대 주소여야 합니다. */
+const SITE_URL = 'https://kao-ryushin01.vercel.app'
+const DESCRIPTION = '회원 탈것의 주행을 실시간으로 지켜보고, 문제가 생기면 원격으로 조치하는 관제 서비스'
+
 export default defineNuxtConfig({
   compatibilityDate: '2026-11-01',
   modules: ['@nuxt/eslint'],
@@ -30,13 +34,28 @@ export default defineNuxtConfig({
       htmlAttrs: { lang: 'ko' },
       title: 'KAO — Kinetic Aero One',
       meta: [
-        { name: 'description', content: '회원 탈것의 주행을 실시간으로 지켜보고, 문제가 생기면 원격으로 조치하는 관제 서비스' },
+        { name: 'description', content: DESCRIPTION },
         { name: 'theme-color', content: '#000000' },
         { name: 'color-scheme', content: 'dark' },
+        { name: 'apple-mobile-web-app-title', content: 'KAO' },
+        // 카카오톡·슬랙·X 등의 링크 미리보기
+        { property: 'og:type', content: 'website' },
+        { property: 'og:site_name', content: 'KAO' },
+        { property: 'og:locale', content: 'ko_KR' },
+        { property: 'og:title', content: 'KAO — 돌이킬 수 없는 지점에 닿기 전에' },
+        { property: 'og:description', content: DESCRIPTION },
+        { property: 'og:url', content: SITE_URL },
+        { property: 'og:image', content: `${SITE_URL}/og-image.jpg` },
+        { property: 'og:image:width', content: '1200' },
+        { property: 'og:image:height', content: '630' },
+        { property: 'og:image:alt', content: '붉은 강착 원반이 도는 블랙홀 앞에 "돌이킬 수 없는 지점에 닿기 전에" 제목이 있는 KAO 첫 화면' },
+        { name: 'twitter:card', content: 'summary_large_image' },
       ],
       link: [
         { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
         { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
+        // 홈 화면에 추가한 웹 앱(iPhone은 이때만 웹 푸시를 받음)
+        { rel: 'manifest', href: '/manifest.webmanifest' },
       ],
     },
   },
@@ -60,6 +79,11 @@ export default defineNuxtConfig({
     '/fonts/**': STATIC_ASSET_CACHE,
     '/favicon.svg': STATIC_ASSET_CACHE,
     '/apple-touch-icon.png': STATIC_ASSET_CACHE,
+    '/icon-192.png': STATIC_ASSET_CACHE,
+    '/icon-512.png': STATIC_ASSET_CACHE,
+    '/icon-maskable-512.png': STATIC_ASSET_CACHE,
+    '/badge-96.png': STATIC_ASSET_CACHE,
+    '/og-image.jpg': STATIC_ASSET_CACHE,
   },
   eslint: { config: { stylistic: false } },
   typescript: {

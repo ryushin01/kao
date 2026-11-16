@@ -25,6 +25,11 @@ test('관제 센터는 분류마다 한 대씩 7대를 실시간으로 받아 �
 })
 
 test('조치 대기열에서 원격 조치를 확인하고 보내면 조치 중을 거쳐 해결됩니다', async ({ page }) => {
+  // 이 화면이 보낸 조치 요청 수(다른 시험이 같은 제목의 다른 탈것 문제에 보낸 기록과 섞이지 않게 요청으로 셈)
+  const sent: string[] = []
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && /\/api\/vehicles\/[^/]+\/actions$/.test(new URL(request.url()).pathname)) sent.push(request.url())
+  })
   await page.goto('/fleet')
   const queue = page.getByRole('region', { name: '조치 대기열' })
   const issue = queue.getByRole('article').first()
@@ -43,8 +48,8 @@ test('조치 대기열에서 원격 조치를 확인하고 보내면 조치 중�
   const log = page.getByRole('region', { name: '원격 조치 기록' })
   await expect(log.getByText(`${title}`).first()).toBeVisible({ timeout: 10_000 })
   await expect(log.getByText('완료').first()).toBeVisible({ timeout: 10_000 })
-  // 두 번 눌러도 명령은 한 번만 기록됩니다.
-  await expect(log.getByRole('listitem').filter({ hasText: `${title}` }).filter({ hasText: '명령 전송' })).toHaveCount(1)
+  // 두 번 눌러도 명령은 한 번만 보냅니다(같은 제목은 G80·알파드 앞왼쪽 타이어처럼 탈것마다 있을 수 있어 기록 문구로 세지 않음).
+  expect(sent).toHaveLength(1)
 })
 
 test('분류 필터를 고르면 그 분류의 탈것만 보여 줍니다', async ({ page }) => {

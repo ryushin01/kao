@@ -51,6 +51,21 @@ describe('MetricHistory', () => {
     wrapper.unmount()
   })
 
+  it('오류 알림 영역은 처음부터 두고, 받지 못하면 그 안에 문구만 넣습니다', async () => {
+    fetchHistory.mockResolvedValue(history(0))
+    const wrapper = mount(MetricHistory, { props: { vehicleId: 'kao-0001', metrics: [metricFixture] } })
+    await flushPromises()
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.text()).toBe('')
+    fetchHistory.mockRejectedValue(new Error('기록을 불러오지 못했습니다. 잠시 뒤 다시 시도해 주세요.'))
+    await wrapper.get('input[type="radio"][value="30"]').setValue(true)
+    await flushPromises()
+    // 같은 요소(처음부터 있던 영역)에 문구가 들어갑니다.
+    expect(wrapper.get('[role="alert"]').element).toBe(alert.element)
+    expect(alert.text()).toContain('기록을 불러오지 못했습니다')
+    wrapper.unmount()
+  })
+
   it('지표 셀렉트는 레이블과 연결하고, 직접 그린 화살표는 보조기기에서 숨깁니다', async () => {
     fetchHistory.mockResolvedValue(history(0))
     const wrapper = mount(MetricHistory, { props: { vehicleId: 'kao-0001', metrics: [metricFixture] } })
