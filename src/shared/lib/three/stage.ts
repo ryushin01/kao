@@ -1,5 +1,6 @@
 import { ACESFilmicToneMapping, Mesh, PerspectiveCamera, Scene, SRGBColorSpace, Timer, WebGLRenderer, WebGLRenderTarget } from 'three'
 import type { Camera, Material, MeshPhysicalMaterial, Object3D } from 'three'
+import { createFrameLoop } from '../frame-loop'
 
 export interface StageOptions {
   canvas: HTMLCanvasElement
@@ -131,6 +132,17 @@ export function markShared(root: Object3D) {
   })
 }
 
+/** root 안에서 markShared로 표시한 공유 형상·재질(같은 것은 한 번만). 모델을 바꿔 내릴 때 장면을 닫을 때까지 이것만 들고 있습니다. */
+export function sharedResourcesOf(root: Object3D): Array<{ dispose: () => void }> {
+  const found = new Set<{ dispose: () => void; userData: Record<string, unknown> }>()
+  root.traverse((object) => {
+    if (!(object instanceof Mesh)) return
+    if (object.geometry.userData[SHARED]) found.add(object.geometry)
+    for (const material of materialsOf(object)) if (material.userData[SHARED]) found.add(material)
+  })
+  return [...found]
+}
+
 /**
  * root 안 메시의 형상·재질을 정리합니다. keepShared면 markShared로 표시한 공유 자원은 남깁니다(모델을 바꿔 내릴 때).
  * 장면을 닫을 때는 모두 정리해야 렌더러가 공유 자원에 걸어 둔 dispose 리스너가 풀려 렌더러가 메모리에서 빠집니다.
@@ -154,18 +166,10 @@ export function createStage({ canvas, fov = 35, near = 0.1, far = 400, maxPixelR
   const camera = new PerspectiveCamera(fov, 1, near, far)
   const timer = new Timer()
 
-  let playing = true
-  /** 캔버스가 화면 안에 있는지(IntersectionObserver) */
-  let inView = true
-  /** 탭이 보이는지(visibilitychange). 둘을 나눠 두어, 다른 탭에서 돌아와도 화면 밖 장면은 그리지 않습니다. */
-  let pageVisible = typeof document === 'undefined' || document.visibilityState !== 'hidden'
-  const active = () => playing && inView && pageVisible
-  let frameId = 0
-  let pendingRender = false
   let holds = 0
   let disposed = false
 
-  const render = () => {
+  const draw = () => {
     if (holds > 0 || disposed) return
     timer.update()
     const delta = Math.min(timer.getDelta(), 0.1)
@@ -179,27 +183,14 @@ export function createStage({ canvas, fov = 35, near = 0.1, far = 400, maxPixelR
     }
   }
 
-  const loop = () => {
-    frameId = 0
-    render()
-    if (active()) frameId = requestAnimationFrame(loop)
-  }
-
-  const start = () => {
-    if (frameId === 0 && active()) {
-      timer.update()
-      frameId = requestAnimationFrame(loop)
-    }
-  }
-
-  const invalidate = () => {
-    if (frameId !== 0 || pendingRender) return
-    pendingRender = true
-    requestAnimationFrame(() => {
-      pendingRender = false
-      render()
-    })
-  }
+  // 재생 중이고 화면 안에 있고 탭이 보일 때만 매 프레임 그리고, 그 밖에는 요청할 때만 그립니다(frame-loop.ts).
+  // 화면 밖이거나 탭이 숨겨진 동안의 요청(카메라 컨트롤의 change 등)은 다시 보일 때 한 번 그립니다.
+  const frames = createFrameLoop({
+    draw,
+    onStart: () => timer.update(),
+    pageVisible: typeof document === 'undefined' || document.visibilityState !== 'hidden',
+  })
+  const invalidate = () => frames.invalidate()
 
   const resize = () => {
     const parent = canvas.parentElement
@@ -231,30 +222,20 @@ export function createStage({ canvas, fov = 35, near = 0.1, far = 400, maxPixelR
   if (canvas.parentElement) resizeObserver.observe(canvas.parentElement)
   resize()
 
-  const intersection = new IntersectionObserver(([entry]) => {
-    inView = entry?.isIntersecting ?? true
-    start()
-  })
+  const intersection = new IntersectionObserver(([entry]) => frames.setInView(entry?.isIntersecting ?? true))
   intersection.observe(canvas)
 
-  const onVisibility = () => {
-    pageVisible = document.visibilityState !== 'hidden'
-    start()
-  }
+  const onVisibility = () => frames.setPageVisible(document.visibilityState !== 'hidden')
   document.addEventListener('visibilitychange', onVisibility)
 
-  start()
+  frames.resume()
 
   return {
     scene,
     overlay,
     camera,
     renderer,
-    setPlaying(next) {
-      playing = next
-      if (playing) start()
-      else invalidate()
-    },
+    setPlaying: (next) => frames.setPlaying(next),
     invalidate,
     hold(promise) {
       holds += 1
@@ -263,13 +244,12 @@ export function createStage({ canvas, fov = 35, near = 0.1, far = 400, maxPixelR
         .finally(() => {
           holds -= 1
           if (holds > 0 || disposed) return
-          start()
-          invalidate()
+          frames.resume()
         })
     },
     dispose() {
       disposed = true
-      if (frameId) cancelAnimationFrame(frameId)
+      frames.dispose()
       resizeObserver.disconnect()
       ratioQuery?.removeEventListener('change', onRatioChange)
       intersection.disconnect()

@@ -1,7 +1,7 @@
 import { BoxGeometry, Group, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, Scene } from 'three'
 import type { Camera, WebGLRenderer } from 'three'
 import { describe, expect, it, vi } from 'vitest'
-import { disposeObject, markShared, precompile } from './stage'
+import { disposeObject, markShared, precompile, sharedResourcesOf } from './stage'
 
 /** compileAsync를 부른 순서와 그때 걸려 있던 렌더 타깃을 적어 두는 가짜 렌더러(WebGL 없이) */
 function fakeRenderer() {
@@ -81,6 +81,8 @@ describe('disposeObject', () => {
     material.addEventListener('dispose', () => disposed.push('shared material'))
     owned.addEventListener('dispose', () => disposed.push('owned material'))
 
+    // 바꿔 내린 뒤 들고 있을 것은 공유 형상·재질 하나씩뿐입니다(모델 트리 전체가 아님).
+    expect(sharedResourcesOf(root)).toEqual([geometry, material])
     disposeObject(root, { keepShared: true })
     expect(disposed).toEqual(['owned material'])
     disposed.length = 0

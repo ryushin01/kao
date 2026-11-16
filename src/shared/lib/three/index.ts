@@ -3,5 +3,5 @@
  * 화면 가까이 왔을 때 지연 로딩하는 3D 장면 코드만 가져옵니다.
  */
 export { applyStudioEnvironment } from './environment'
-export { createStage, disposeObject, markShared, nextTask, precompile } from './stage'
+export { createStage, disposeObject, markShared, nextTask, precompile, sharedResourcesOf } from './stage'
 export type { Stage } from './stage'
