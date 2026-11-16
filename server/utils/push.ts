@@ -94,7 +94,7 @@ export async function sendTestPush(userId: string) {
 /**
  * 위험 등급이 된 열린 문제를 볼 수 있는 사람에게 알립니다. 문제·구독마다 한 번만 보내고,
  * 일시적으로 실패하면 기록을 지워 다음 검사 때 다시 보냅니다.
- * GitHub Actions가 5분마다 /api/cron/notify를 부르고, 관제 화면이 열려 있으면 스트림도 30초마다 부릅니다.
+ * Cloudflare Workers 크론이 5분마다 /api/cron/notify를 부르고, 관제 화면이 열려 있으면 스트림도 30초마다 부릅니다.
  */
 export async function notifyCriticalIssues(now = Date.now()) {
   if (!ensureConfigured()) return { sent: 0, issues: 0 }

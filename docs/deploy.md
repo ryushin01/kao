@@ -7,7 +7,7 @@ Vercel 프로젝트 `kao` 하나에 화면(Nuxt SSR)과 `/api` 함수를 함께 
 | 운영 주소 | https://kao-ryushin01.vercel.app |
 | 운영 브랜치 | `main` (PR마다 미리보기 배포) |
 | 함수 지역 | 싱가포르 `sin1` (Neon DB와 같은 지역) — `nuxt.config.ts`의 `nitro.vercel.functions` |
-| 함수 최대 실행 | 60초. 관제 스트림(SSE)은 50초마다 닫고 브라우저(EventSource)가 다시 연결합니다 |
+| 함수 최대 실행 | 60초. 관제 스트림(SSE)은 50초마다 닫고 브라우저(EventSource)가 1초 뒤 다시 연결합니다. 스트림은 gzip(약 0.6 KB/초)이고, 1분 넘게 숨긴 탭은 스트림을 닫습니다([개발 가이드](development.md#실시간-스트림)) |
 | 빌드 명령 | `vercel-build` = `node scripts/migrate.mjs && nuxt build` |
 
 > Vercel Hobby와 Neon 무료 요금제의 한도(함수 실행 시간, DB 용량·컴퓨트, 크론 횟수)는 바뀔 수 있으니 공식 문서에서 확인하세요.
