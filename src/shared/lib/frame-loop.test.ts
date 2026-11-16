@@ -109,6 +109,23 @@ describe('createFrameLoop', () => {
     expect(draw).toHaveBeenCalledTimes(3)
   })
 
+  it('그리는 중에 반복을 다시 시작해도 반복이 둘이 되지 않습니다', () => {
+    let reenter = () => {}
+    const { frames, draw, loop } = setup({ draw: () => reenter() })
+    reenter = () => {
+      loop.setPlaying(true)
+      loop.resume()
+    }
+    loop.resume()
+    for (let i = 0; i < 3; i += 1) {
+      frames.tick()
+      expect(frames.size).toBe(1)
+    }
+    expect(draw).toHaveBeenCalledTimes(3)
+    loop.dispose()
+    expect(frames.size).toBe(0)
+  })
+
   it('반복을 다시 시작할 때 시계를 맞추고, 정리하면 예약을 모두 지웁니다', () => {
     const onStart = vi.fn()
     const { frames, loop } = setup({ onStart })

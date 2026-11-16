@@ -67,7 +67,8 @@ export function createFrameLoop({
   const frame = () => {
     loopId = 0
     drawOnce()
-    if (!disposed && active()) loopId = schedule(frame)
+    // 그리는 중에 반복을 다시 시작했으면(start) 이미 다음 프레임이 예약돼 있어 하나 더 예약하지 않습니다(반복이 둘이 되지 않게).
+    if (!disposed && loopId === 0 && active()) loopId = schedule(frame)
   }
 
   const start = () => {
