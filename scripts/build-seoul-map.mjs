@@ -580,14 +580,16 @@ await writeFile(new URL('src/shared/config/routes.ts', ROOT), routesTs)
 
 // 이번 실행에서 만든 경로마다 닫힌 선(위도,경도 목록)으로 Overpass의 around 필터를 씁니다. 받아 둔 원본이 다른 경로나
 // 조건으로 받은 것이면(경로를 바꾸거나 더했을 때, key가 없는 예전 원본) --fetch가 없어도 다시 받습니다.
+// --fetch면 받아 둔 원본을 읽지 않고 바로 다시 받고, 읽지 못하는 원본(쓰다가 끊겨 잘린 파일 등)도 다시 받습니다.
 const routeCorridors = routes.map((route) => [...route.path, route.path[0]].map(([lat, lng]) => `${lat},${lng}`).join(','))
 const midriseKey = createHash('sha256')
   .update(JSON.stringify([MIDRISE, MIDRISE_ROUTE_DISTANCE, routeCorridors]))
   .digest('hex')
   .slice(0, 16)
-let midriseRaw = (await exists('midrise')) ? await load('midrise') : null
-if (args.fetch || midriseRaw?.key !== midriseKey) {
-  if (midriseRaw && !args.fetch) console.log('[map] 경로나 조건이 바뀌어 경로 주변 중층 건물을 다시 받습니다.')
+const midriseCached = !args.fetch && (await exists('midrise'))
+let midriseRaw = midriseCached ? await load('midrise').catch(() => null) : null
+if (midriseRaw?.key !== midriseKey) {
+  if (midriseCached) console.log('[map] 경로나 조건이 바뀌었거나 원본을 읽지 못해 경로 주변 중층 건물을 다시 받습니다.')
   await fetchRaw('midrise', { parts: routeCorridors, key: midriseKey })
   midriseRaw = await load('midrise')
 }
