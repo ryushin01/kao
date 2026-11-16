@@ -99,10 +99,11 @@ describe('로그인 시도 제한', () => {
     expect(statuses.filter((status) => status === 429)).toHaveLength(LOGIN_LIMIT_PER_ACCOUNT * 2)
   })
 
-  it('한 주소에서 여러 아이디로 틀리면 주소 제한으로 막고, 성공한 로그인은 주소의 시도 수에 쌓이지 않습니다', async () => {
+  // 요청마다 scrypt를 거쳐(50번 넘게) 시간 한도를 넉넉히 둡니다.
+  it('한 주소에서 여러 아이디로 틀리면 주소 제한으로 막고, 성공한 로그인은 주소의 시도 수에 쌓이지 않습니다', { timeout: 60_000 }, async () => {
     const address = '10.0.3.1'
-    // 성공은 몇 번이든 주소 제한에 닿지 않습니다.
-    for (let i = 0; i < LOGIN_LIMIT_PER_ADDRESS + 5; i += 1) {
+    // 먼저 성공한 로그인이 주소의 수에 쌓였다면 아래 실패 중간에 막혔을 것입니다.
+    for (let i = 0; i < 5; i += 1) {
       expect((await post('/api/auth/login', { login: 'member06', password: 'kao-demo-2026' }, {}, address)).status).toBe(200)
     }
     for (let i = 0; i < LOGIN_LIMIT_PER_ADDRESS; i += 1) {

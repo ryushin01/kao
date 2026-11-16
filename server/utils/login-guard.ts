@@ -17,5 +17,5 @@ export const loginAttemptKeys = (login: string, address: string) => ({
 })
 
 /** 이번 시도까지 센 수(reserveLoginAttempt의 결과)로 막아야 하면 true */
-export const isLoginBlocked = (attempts: Record<string, number>, keys: ReturnType<typeof loginAttemptKeys>) =>
-  (attempts[keys.account] ?? 0) > LOGIN_LIMIT_PER_ACCOUNT || (attempts[keys.address] ?? 0) > LOGIN_LIMIT_PER_ADDRESS
+export const isLoginBlocked = (attempts: Record<string, { count: number }>, keys: ReturnType<typeof loginAttemptKeys>) =>
+  (attempts[keys.account]?.count ?? 0) > LOGIN_LIMIT_PER_ACCOUNT || (attempts[keys.address]?.count ?? 0) > LOGIN_LIMIT_PER_ADDRESS

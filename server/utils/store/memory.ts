@@ -1,7 +1,7 @@
 import { ACK_TIMEOUT, isLiveIssueId, isPendingCommand } from '../sim/live'
 import type { ActionRecord, LiveIssueRecord, LiveReading } from '../sim/types'
 import { demoUsers } from './demo-users'
-import type { DeviceRecord, PushSubscriptionRecord, SessionRecord, Store, UserRecord } from './types'
+import type { DeviceRecord, LoginAttempt, PushSubscriptionRecord, SessionRecord, Store, UserRecord } from './types'
 
 /** 지표 이력(최근 60분)과 그 앞 30초를 볼 수 있을 만큼 측정값을 둡니다. */
 const READING_KEEP_MS = 61 * 60_000
@@ -98,18 +98,18 @@ export function createMemoryStore(seed: DeviceRecord[] = []): Store {
     async reserveLoginAttempt(keys, now, windowMs) {
       // 창이 하루 넘게 지난 카운터는 지웁니다(서버를 오래 켜 둬도 쌓이지 않게).
       for (const [key, entry] of loginAttempts) if (entry.windowStart <= now - 86_400_000) loginAttempts.delete(key)
-      const counts: Record<string, number> = {}
+      const attempts: Record<string, LoginAttempt> = {}
       for (const key of keys) {
         const entry = loginAttempts.get(key)
         const next = !entry || entry.windowStart <= now - windowMs ? { windowStart: now, count: 1 } : { ...entry, count: entry.count + 1 }
         loginAttempts.set(key, next)
-        counts[key] = next.count
+        attempts[key] = { ...next }
       }
-      return counts
+      return attempts
     },
-    async releaseLoginAttempt(key) {
+    async releaseLoginAttempt(key, windowStart) {
       const entry = loginAttempts.get(key)
-      if (entry) entry.count = Math.max(0, entry.count - 1)
+      if (entry && entry.windowStart === windowStart) entry.count = Math.max(0, entry.count - 1)
     },
     async resetLoginAttempts(key) {
       loginAttempts.delete(key)

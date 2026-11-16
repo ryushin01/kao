@@ -18,7 +18,8 @@ export default defineEventHandler(async (event) => {
   const store = useStore()
   const now = Date.now()
   const keys = loginAttemptKeys(login, clientAddress(event))
-  if (isLoginBlocked(await store.reserveLoginAttempt([keys.account, keys.address], now, LOGIN_WINDOW_MS), keys)) {
+  const attempts = await store.reserveLoginAttempt([keys.account, keys.address], now, LOGIN_WINDOW_MS)
+  if (isLoginBlocked(attempts, keys)) {
     setResponseHeader(event, 'retry-after', LOGIN_WINDOW_MS / 1000)
     throw createError({
       statusCode: 429,
@@ -32,7 +33,7 @@ export default defineEventHandler(async (event) => {
     // 먼저 센 시도가 그대로 실패로 남습니다.
     throw createError({ statusCode: 401, message: '아이디 또는 비밀번호가 맞지 않습니다. 아래 데모 계정을 확인해 주세요.' })
   }
-  await Promise.all([store.resetLoginAttempts(keys.account), store.releaseLoginAttempt(keys.address)])
+  await Promise.all([store.resetLoginAttempts(keys.account), store.releaseLoginAttempt(keys.address, attempts[keys.address]!.windowStart)])
   await startSession(event, user.id, now)
   return { user: toSessionUser(user) }
 })

@@ -63,13 +63,28 @@ describe('메모리 저장소', () => {
 
   it('로그인 시도를 키마다 하나씩 올려 세고, 창이 지나면 1부터, 되돌리면 하나 내리고, 지우면 그 키만 비웁니다', async () => {
     const store = createMemoryStore()
-    expect(await store.reserveLoginAttempt(['login:a|1', 'ip:1'], 100, 1000)).toEqual({ 'login:a|1': 1, 'ip:1': 1 })
-    expect(await store.reserveLoginAttempt(['login:b|1', 'ip:1'], 200, 1000)).toEqual({ 'login:b|1': 1, 'ip:1': 2 })
-    await store.releaseLoginAttempt('ip:1')
+    const counts = async (keys: string[], now: number) =>
+      Object.fromEntries(Object.entries(await store.reserveLoginAttempt(keys, now, 1000)).map(([key, value]) => [key, value.count]))
+    expect(await counts(['login:a|1', 'ip:1'], 100)).toEqual({ 'login:a|1': 1, 'ip:1': 1 })
+    expect(await counts(['login:b|1', 'ip:1'], 200)).toEqual({ 'login:b|1': 1, 'ip:1': 2 })
+    await store.releaseLoginAttempt('ip:1', 100)
     await store.resetLoginAttempts('login:a|1')
-    expect(await store.reserveLoginAttempt(['login:a|1', 'ip:1'], 300, 1000)).toEqual({ 'login:a|1': 1, 'ip:1': 2 })
+    expect(await counts(['login:a|1', 'ip:1'], 300)).toEqual({ 'login:a|1': 1, 'ip:1': 2 })
     // 창(1000ms)이 지나면 다시 1부터('ip:1'은 100에, 'login:a|1'은 지운 뒤 300에 창이 시작됨)
-    expect(await store.reserveLoginAttempt(['login:a|1', 'ip:1'], 1200, 1000)).toEqual({ 'login:a|1': 2, 'ip:1': 1 })
-    expect(await store.reserveLoginAttempt(['login:a|1'], 1400, 1000)).toEqual({ 'login:a|1': 1 })
+    expect(await counts(['login:a|1', 'ip:1'], 1200)).toEqual({ 'login:a|1': 2, 'ip:1': 1 })
+    expect(await counts(['login:a|1'], 1400)).toEqual({ 'login:a|1': 1 })
+  })
+
+  it('확인하는 사이 창이 바뀌면, 이전 창의 성공한 시도로 새 창의 수를 줄이지 않습니다', async () => {
+    const store = createMemoryStore()
+    const old = await store.reserveLoginAttempt(['ip:9'], 0, 1000)
+    // 이전 창의 요청이 비밀번호를 확인하는 사이 창이 지나, 다른 요청이 새 창을 열고 실패했습니다.
+    const fresh = await store.reserveLoginAttempt(['ip:9'], 1500, 1000)
+    expect(fresh['ip:9']).toEqual({ count: 1, windowStart: 1500 })
+    await store.releaseLoginAttempt('ip:9', old['ip:9']!.windowStart)
+    expect((await store.reserveLoginAttempt(['ip:9'], 1600, 1000))['ip:9']).toEqual({ count: 2, windowStart: 1500 })
+    // 같은 창의 시도는 되돌립니다.
+    await store.releaseLoginAttempt('ip:9', 1500)
+    expect((await store.reserveLoginAttempt(['ip:9'], 1700, 1000))['ip:9']!.count).toBe(2)
   })
 })

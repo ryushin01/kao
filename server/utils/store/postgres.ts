@@ -220,12 +220,13 @@ export function createPostgresStore(url: string): Store {
         on conflict (key) do update set
           count = case when login_throttle.window_start <= ${now - windowMs} then 1 else login_throttle.count + 1 end,
           window_start = case when login_throttle.window_start <= ${now - windowMs} then ${now} else login_throttle.window_start end
-        returning key, count
-      `) as Array<{ key: string; count: number }>
-      return Object.fromEntries(rows.map((row) => [row.key, row.count]))
+        returning key, count, window_start
+      `) as Array<{ key: string; count: number; window_start: string }>
+      return Object.fromEntries(rows.map((row) => [row.key, { count: row.count, windowStart: Number(row.window_start) }]))
     },
-    async releaseLoginAttempt(key) {
-      await sql`update login_throttle set count = greatest(count - 1, 0) where key = ${key}`
+    async releaseLoginAttempt(key, windowStart) {
+      // 예약한 창이 그대로일 때만 내립니다(그사이 새 창이 열렸으면 그 수는 건드리지 않음).
+      await sql`update login_throttle set count = greatest(count - 1, 0) where key = ${key} and window_start = ${windowStart}`
     },
     async resetLoginAttempts(key) {
       await sql`delete from login_throttle where key = ${key}`
