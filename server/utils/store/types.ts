@@ -76,10 +76,15 @@ export interface Store {
   findSessionUser(id: string, now: number): Promise<UserRecord | null>
   /** 로그아웃: 그 세션만 지웁니다(같은 계정의 다른 세션은 그대로). */
   deleteSession(id: string): Promise<void>
-  /** 로그인 실패 기록: since 뒤로 키마다 몇 번 실패했는지 */
-  countLoginFailures(keys: string[], since: number): Promise<Record<string, number>>
-  recordLoginFailure(keys: string[], at: number): Promise<void>
-  clearLoginFailures(key: string): Promise<void>
+  /**
+   * 로그인 시도를 키마다 하나 올리고 올린 뒤의 수를 돌려줍니다(키마다 원자적으로, 동시에 들어와도 수가 겹치지 않음).
+   * 창(windowMs)이 지난 키는 1부터 다시 셉니다.
+   */
+  reserveLoginAttempt(keys: string[], now: number, windowMs: number): Promise<Record<string, number>>
+  /** 성공한 시도를 되돌립니다(하나 내림). */
+  releaseLoginAttempt(key: string): Promise<void>
+  /** 그 키의 시도를 모두 지웁니다. */
+  resetLoginAttempts(key: string): Promise<void>
   savePushSubscription(record: PushSubscriptionRecord): Promise<void>
   deletePushSubscription(endpoint: string, userId: string): Promise<void>
   listPushSubscriptions(): Promise<Array<PushSubscriptionRecord & { role: UserRole; vehicleIds: string[] }>>

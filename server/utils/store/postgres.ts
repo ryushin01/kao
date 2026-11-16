@@ -212,17 +212,23 @@ export function createPostgresStore(url: string): Store {
     async deleteSession(id) {
       await sql`delete from sessions where id = ${id}`
     },
-    async countLoginFailures(keys, since) {
+    async reserveLoginAttempt(keys, now, windowMs) {
+      // 키마다 한 행을 올립니다. 같은 키는 행 잠금으로 차례로 처리되어, 동시에 몰려도 수가 하나씩 커집니다.
       const rows = (await sql`
-        select key, count(*)::int as count from login_failures where key = any(${keys}) and at >= ${since} group by key
+        insert into login_throttle (key, window_start, count)
+        select key, ${now}, 1 from unnest(${keys}::text[]) as key
+        on conflict (key) do update set
+          count = case when login_throttle.window_start <= ${now - windowMs} then 1 else login_throttle.count + 1 end,
+          window_start = case when login_throttle.window_start <= ${now - windowMs} then ${now} else login_throttle.window_start end
+        returning key, count
       `) as Array<{ key: string; count: number }>
       return Object.fromEntries(rows.map((row) => [row.key, row.count]))
     },
-    async recordLoginFailure(keys, at) {
-      await sql`insert into login_failures (key, at) select unnest(${keys}::text[]), ${at}`
+    async releaseLoginAttempt(key) {
+      await sql`update login_throttle set count = greatest(count - 1, 0) where key = ${key}`
     },
-    async clearLoginFailures(key) {
-      await sql`delete from login_failures where key = ${key}`
+    async resetLoginAttempts(key) {
+      await sql`delete from login_throttle where key = ${key}`
     },
     async savePushSubscription(record) {
       await sql`

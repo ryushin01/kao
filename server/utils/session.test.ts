@@ -61,13 +61,15 @@ describe('메모리 저장소', () => {
     expect((await store.findSessionUser('s2', 10))?.login).toBe('operator')
   })
 
-  it('로그인 실패를 키마다 기간 안에서 세고, 지우면 그 키만 비웁니다', async () => {
+  it('로그인 시도를 키마다 하나씩 올려 세고, 창이 지나면 1부터, 되돌리면 하나 내리고, 지우면 그 키만 비웁니다', async () => {
     const store = createMemoryStore()
-    await store.recordLoginFailure(['login:a|1', 'ip:1'], 100)
-    await store.recordLoginFailure(['login:b|1', 'ip:1'], 200)
-    expect(await store.countLoginFailures(['login:a|1', 'ip:1'], 0)).toEqual({ 'login:a|1': 1, 'ip:1': 2 })
-    expect(await store.countLoginFailures(['login:a|1', 'ip:1'], 150)).toEqual({ 'ip:1': 1 })
-    await store.clearLoginFailures('login:a|1')
-    expect(await store.countLoginFailures(['login:a|1', 'ip:1'], 0)).toEqual({ 'ip:1': 2 })
+    expect(await store.reserveLoginAttempt(['login:a|1', 'ip:1'], 100, 1000)).toEqual({ 'login:a|1': 1, 'ip:1': 1 })
+    expect(await store.reserveLoginAttempt(['login:b|1', 'ip:1'], 200, 1000)).toEqual({ 'login:b|1': 1, 'ip:1': 2 })
+    await store.releaseLoginAttempt('ip:1')
+    await store.resetLoginAttempts('login:a|1')
+    expect(await store.reserveLoginAttempt(['login:a|1', 'ip:1'], 300, 1000)).toEqual({ 'login:a|1': 1, 'ip:1': 2 })
+    // 창(1000ms)이 지나면 다시 1부터('ip:1'은 100에, 'login:a|1'은 지운 뒤 300에 창이 시작됨)
+    expect(await store.reserveLoginAttempt(['login:a|1', 'ip:1'], 1200, 1000)).toEqual({ 'login:a|1': 2, 'ip:1': 1 })
+    expect(await store.reserveLoginAttempt(['login:a|1'], 1400, 1000)).toEqual({ 'login:a|1': 1 })
   })
 })

@@ -1,12 +1,12 @@
 import { createError, defineEventHandler, readBody, setResponseHeader } from 'h3'
-import { isLoginBlocked, LOGIN_WINDOW_MS, loginFailureKeys } from '../../utils/login-guard'
+import { isLoginBlocked, LOGIN_WINDOW_MS, loginAttemptKeys } from '../../utils/login-guard'
 import { DUMMY_PASSWORD_HASH, verifyPassword } from '../../utils/password'
 import { assertSameOrigin, clientAddress, startSession, toSessionUser } from '../../utils/session'
 import { useStore } from '../../utils/store'
 
 /**
- * 로그인. 실패가 쌓이면 잠시 막고(login-guard.ts), 없는 아이디도 같은 비용으로 해시를 확인해
- * 응답 시간으로 계정이 있는지 알 수 없게 합니다.
+ * 로그인. 비밀번호를 확인하기 전에 시도를 먼저 세고(동시에 몰려도 제한을 넘지 않게), 넘으면 확인하지 않고 막습니다
+ * (login-guard.ts). 없는 아이디도 같은 비용으로 해시를 확인해 응답 시간으로 계정이 있는지 알 수 없게 합니다.
  */
 export default defineEventHandler(async (event) => {
   assertSameOrigin(event)
@@ -17,8 +17,8 @@ export default defineEventHandler(async (event) => {
 
   const store = useStore()
   const now = Date.now()
-  const keys = loginFailureKeys(login, clientAddress(event))
-  if (isLoginBlocked(await store.countLoginFailures([keys.account, keys.address], now - LOGIN_WINDOW_MS), keys)) {
+  const keys = loginAttemptKeys(login, clientAddress(event))
+  if (isLoginBlocked(await store.reserveLoginAttempt([keys.account, keys.address], now, LOGIN_WINDOW_MS), keys)) {
     setResponseHeader(event, 'retry-after', LOGIN_WINDOW_MS / 1000)
     throw createError({
       statusCode: 429,
@@ -29,10 +29,10 @@ export default defineEventHandler(async (event) => {
   const user = await store.findUserByLogin(login)
   const valid = await verifyPassword(password, user?.passwordHash ?? DUMMY_PASSWORD_HASH)
   if (!user || !valid) {
-    await store.recordLoginFailure([keys.account, keys.address], now)
+    // 먼저 센 시도가 그대로 실패로 남습니다.
     throw createError({ statusCode: 401, message: '아이디 또는 비밀번호가 맞지 않습니다. 아래 데모 계정을 확인해 주세요.' })
   }
-  await store.clearLoginFailures(keys.account)
+  await Promise.all([store.resetLoginAttempts(keys.account), store.releaseLoginAttempt(keys.address)])
   await startSession(event, user.id, now)
   return { user: toSessionUser(user) }
 })

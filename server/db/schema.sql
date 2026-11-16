@@ -111,9 +111,10 @@ create table if not exists sessions (
 );
 create index if not exists sessions_expires_at on sessions (expires_at);
 
--- 로그인 실패(0.16.0). key는 'login:<아이디>|<IP>'와 'ip:<IP>'이고, 15분 안의 실패 수로 시도를 막습니다.
-create table if not exists login_failures (
-  key text not null,
-  at bigint not null
+-- 로그인 시도 카운터(0.16.0). key는 'login:<아이디>|<IP>'와 'ip:<IP>'이고, 비밀번호를 확인하기 전에 행 잠금으로 하나씩
+-- 올려 15분 창 안의 시도 수로 막습니다(동시에 몰려도 수가 겹치지 않게). 창이 지나면 1부터 다시 셉니다.
+create table if not exists login_throttle (
+  key text primary key,
+  window_start bigint not null,
+  count integer not null
 );
-create index if not exists login_failures_key_at on login_failures (key, at);

@@ -19,7 +19,8 @@ export function createMemoryStore(seed: DeviceRecord[] = []): Store {
   const readings: LiveReading[] = []
   const liveIssues: LiveIssueRecord[] = []
   const sessions = new Map<string, SessionRecord>()
-  const loginFailures: Array<{ key: string; at: number }> = []
+  /** 로그인 시도 카운터: 키 → 창 시작 시각과 수 */
+  const loginAttempts = new Map<string, { windowStart: number; count: number }>()
   const copy = ({ userId: _userId, ...action }: ActionRecord & { userId: string }): ActionRecord => ({ ...action })
 
   return {
@@ -94,20 +95,24 @@ export function createMemoryStore(seed: DeviceRecord[] = []): Store {
     async deleteSession(id) {
       sessions.delete(id)
     },
-    async countLoginFailures(keys, since) {
+    async reserveLoginAttempt(keys, now, windowMs) {
+      // 창이 하루 넘게 지난 카운터는 지웁니다(서버를 오래 켜 둬도 쌓이지 않게).
+      for (const [key, entry] of loginAttempts) if (entry.windowStart <= now - 86_400_000) loginAttempts.delete(key)
       const counts: Record<string, number> = {}
-      for (const failure of loginFailures) {
-        if (failure.at >= since && keys.includes(failure.key)) counts[failure.key] = (counts[failure.key] ?? 0) + 1
+      for (const key of keys) {
+        const entry = loginAttempts.get(key)
+        const next = !entry || entry.windowStart <= now - windowMs ? { windowStart: now, count: 1 } : { ...entry, count: entry.count + 1 }
+        loginAttempts.set(key, next)
+        counts[key] = next.count
       }
       return counts
     },
-    async recordLoginFailure(keys, at) {
-      // 하루 지난 실패는 지웁니다(시도 제한은 15분만 봄).
-      for (let i = loginFailures.length - 1; i >= 0; i -= 1) if (loginFailures[i]!.at < at - 86_400_000) loginFailures.splice(i, 1)
-      for (const key of keys) loginFailures.push({ key, at })
+    async releaseLoginAttempt(key) {
+      const entry = loginAttempts.get(key)
+      if (entry) entry.count = Math.max(0, entry.count - 1)
     },
-    async clearLoginFailures(key) {
-      for (let i = loginFailures.length - 1; i >= 0; i -= 1) if (loginFailures[i]!.key === key) loginFailures.splice(i, 1)
+    async resetLoginAttempts(key) {
+      loginAttempts.delete(key)
     },
     async savePushSubscription(record) {
       subscriptions.set(record.endpoint, record)
