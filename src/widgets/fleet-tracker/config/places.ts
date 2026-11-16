@@ -12,4 +12,10 @@ export const MAP_PLACES: ReadonlyArray<{ id: string; name: string; lat: number; 
   { id: 'banpo', name: '반포대교', lat: 37.5143, lng: 126.9966 },
   { id: 'hannam', name: '한남대교', lat: 37.5262, lng: 127.0128 },
   { id: 'dongjak', name: '동작대교', lat: 37.5115, lng: 126.9822 },
+  // 0.11.0에 더한 세 경로(마포·원효대교, 용산공원, 서울역·삼각지) 주변
+  { id: 'mapo-bridge', name: '마포대교', lat: 37.5364, lng: 126.9413 },
+  { id: 'wonhyo-bridge', name: '원효대교', lat: 37.5263, lng: 126.9443 },
+  { id: 'yongsan-park', name: '용산공원', lat: 37.5274, lng: 126.9786 },
+  { id: 'samgakji', name: '삼각지', lat: 37.5347, lng: 126.9731 },
+  { id: 'hyochang', name: '효창공원', lat: 37.5447, lng: 126.9607 },
 ]

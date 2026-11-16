@@ -2,7 +2,7 @@ import { createError } from 'h3'
 import { findRoute } from '../../src/shared/config/routes'
 import { createRouteGeo } from '../../src/shared/lib/route-geo'
 import type { RouteGeo } from '../../src/shared/lib/route-geo'
-import { VEHICLE_SPECS } from './fleet-specs'
+import { liveMetricSpecs, ROUTE_DEVIATION, VEHICLE_SPECS } from './fleet-specs'
 import type { VehicleSpec } from './fleet-specs'
 import { invalidateLiveCaches, todaysActions } from './fleet'
 import { toCommand } from './command'
@@ -30,15 +30,24 @@ export function findIngestVehicle(vehicleId: unknown): VehicleSpec {
 
 const geos = new Map<string, RouteGeo>()
 
-/** 경로 위 위치(0 이상 1 미만). 경로에서 ROUTE_MATCH_LIMIT보다 멀면 null */
-export function locateOnRoute(vehicle: VehicleSpec, lat: number, lng: number) {
+function routeGeoOf(vehicle: VehicleSpec) {
   let geo = geos.get(vehicle.routeId)
   if (!geo) {
     geo = createRouteGeo(findRoute(vehicle.routeId))
     geos.set(vehicle.routeId, geo)
   }
-  const match = geo.match(lat, lng)
-  return match.distance <= ROUTE_MATCH_LIMIT ? match.progress : null
+  return geo
+}
+
+/** 경로 위 위치(0 이상 1 미만)와 경로까지의 거리(m). 경로에서 ROUTE_MATCH_LIMIT보다 멀면 위치는 null */
+export function matchRoute(vehicle: VehicleSpec, lat: number, lng: number) {
+  const match = routeGeoOf(vehicle).match(lat, lng)
+  return { progress: match.distance <= ROUTE_MATCH_LIMIT ? match.progress : null, distance: match.distance }
+}
+
+/** 경로 위 위치(0 이상 1 미만). 경로에서 ROUTE_MATCH_LIMIT보다 멀면 null */
+export function locateOnRoute(vehicle: VehicleSpec, lat: number, lng: number) {
+  return matchRoute(vehicle, lat, lng).progress
 }
 
 export interface TelemetryInput {
@@ -64,8 +73,10 @@ export async function recordTelemetry(vehicle: VehicleSpec, input: TelemetryInpu
   ])
   const stale = latestAt !== null && input.at < latestAt
   let position: LivePosition | undefined
+  let routeOffset: number | undefined
   if (input.gps) {
-    const progress = locateOnRoute(vehicle, input.gps.lat, input.gps.lng)
+    const { progress, distance } = matchRoute(vehicle, input.gps.lat, input.gps.lng)
+    routeOffset = distance
     const before = previous?.position ? { at: previous.at, position: previous.position } : null
     // 바퀴 수는 GPS 측정값끼리만 이어 붙입니다. 측정값으로는 늦었어도 가장 최근 GPS보다 새 위치면 그대로 이어 갑니다.
     // 가장 최근 GPS보다 오래된 위치는 다음 기준점이 될 일이 없어(시각 순으로 고름) 거리를 그대로 둡니다.
@@ -77,11 +88,14 @@ export async function recordTelemetry(vehicle: VehicleSpec, input: TelemetryInpu
 
   if (!stale) {
     const actions = await todaysActions(now, true)
+    // 경로 이탈 거리는 저장하는 측정값이 아니라 판단에만 넣는 지표입니다(GPS가 있을 때만).
+    const judged: LiveReading = routeOffset === undefined ? reading : { ...reading, metrics: { ...reading.metrics, [ROUTE_DEVIATION.key]: routeOffset } }
+    const judging = { ...vehicle, metrics: liveMetricSpecs(vehicle) }
     // 같은 탈것의 요청이 겹쳐 그사이 문제가 바뀌었으면(저장 실패) 다시 읽어 판단합니다. 이미 반영한 측정값은 건너뛰므로 다시 해도 안전합니다.
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const [open, checkedAt] = await Promise.all([store.listOpenLiveIssues(vehicle.id), store.liveIssueWatermarks(vehicle.id)])
       let conflicted = false
-      for (const change of evaluateLiveIssues({ vehicle, reading, open, checkedAt, actions, now })) {
+      for (const change of evaluateLiveIssues({ vehicle: judging, reading: judged, open, checkedAt, actions, now })) {
         const saved = change.previous
           ? await store.updateLiveIssue(change.record, change.previous.checkedAt)
           : await store.insertLiveIssue(change.record)

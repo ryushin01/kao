@@ -11,7 +11,7 @@ import type {
 import { findRoute } from '../../../src/shared/config/routes'
 import { createRouteGeo, turnRateAt } from '../../../src/shared/lib/route-geo'
 import type { RouteGeo } from '../../../src/shared/lib/route-geo'
-import { VEHICLE_SPECS } from '../fleet-specs'
+import { liveMetricSpecs, VEHICLE_SPECS } from '../fleet-specs'
 import type { MetricSpec, VehicleSpec } from '../fleet-specs'
 import { createCapDeficit } from './cap-deficit'
 import type { CapWindow } from './cap-deficit'
@@ -462,7 +462,8 @@ function liveIssuesOf(vehicle: VehicleSpec, records: LiveIssueRecord[], actions:
   return records
     .filter((record) => record.vehicleId === vehicle.id)
     .flatMap((record) => {
-      const metric = vehicle.metrics.find((item) => item.key === record.metricKey)
+      // 탈것의 지표와 수신 API가 GPS로 계산하는 경로 이탈 거리(liveMetricSpecs)
+      const metric = liveMetricSpecs(vehicle).find((item) => item.key === record.metricKey)
       return metric?.fault ? [liveIssueView(record, metric, actions, now)] : []
     })
 }
@@ -553,7 +554,7 @@ export function computeFrame({ now, actions, readings = [], liveIssues = [], veh
       const vehicle = VEHICLE_SPECS.find((item) => item.id === action.vehicleId)!
       if (isLiveIssueId(action.issueId)) {
         const metricKey = liveIssueMetric(action.issueId, vehicle.id)
-        const title = vehicle.metrics.find((metric) => metric.key === metricKey)?.fault?.title ?? '문제'
+        const title = liveMetricSpecs(vehicle).find((metric) => metric.key === metricKey)?.fault?.title ?? '문제'
         return liveActionLog(action, `${vehicle.model} · ${title}: ${ACTIONS[action.action].label}`, now, liveRecords.get(action.issueId))
       }
       const label = `${vehicle.model} · ${titles.get(action.issueId) ?? '문제'}: ${ACTIONS[action.action].label}`

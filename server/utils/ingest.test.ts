@@ -114,6 +114,32 @@ describe('실차 수신(메모리 저장소)', () => {
     // 경로에서 1km쯤 떨어진 곳은 경로 위 위치로 쓰지 않습니다.
     expect(locateOnRoute(G80, at(0.5).lat + 0.01, at(0.5).lng)).toBeNull()
   })
+  it('실차 GPS가 경로에서 300m 넘게 벗어나면 경로 이탈 문제를 열고, 1km를 넘으면 위험으로 올리며, 돌아와 10초 유지되면 해결합니다', async () => {
+    const store = useStore()
+    const essentia = VEHICLE_SPECS.find((vehicle) => vehicle.id === 'kao-0005')!
+    const geo = createRouteGeo(findRoute(essentia.routeId))
+    const on = geo.toLatLng(0.3)
+    // 위도 0.001도는 약 111m입니다.
+    const off = (meters: number) => ({ lat: on.lat + meters / 111_000, lng: on.lng })
+    // 화면이 '경로에서 벗어남'으로 보이는 150m는 넘었지만 300m 안이면 문제로 열지 않습니다(GPS가 잠깐 튀는 정도).
+    await recordTelemetry(essentia, { at: tick(1000), metrics: {}, gps: off(200) }, now)
+    expect((await store.listOpenLiveIssues(essentia.id)).filter((issue) => issue.metricKey === 'route-offset')).toEqual([])
+    await recordTelemetry(essentia, { at: tick(1000), metrics: {}, gps: off(600) }, now)
+    const [warning] = (await store.listOpenLiveIssues(essentia.id)).filter((issue) => issue.metricKey === 'route-offset')
+    expect(warning).toMatchObject({ severity: 'warning' })
+    await recordTelemetry(essentia, { at: tick(1000), metrics: {}, gps: off(1500) }, now)
+    const frame = await frameFor(operator, tick(100))
+    const issue = frame.vehicles.find((vehicle) => vehicle.id === essentia.id)!.issues.find((item) => item.metricKey === 'route-offset')
+    expect(issue).toMatchObject({ title: '경로 이탈', severity: 'critical', status: 'open', source: 'live', actions: ['notify-rider', 'dispatch-service'] })
+    // 판단에만 쓰는 값이라 저장한 측정값에는 없고, 장치가 보낼 수도 없습니다(알 수 없는 지표).
+    expect((await store.listVehicleReadings(essentia.id, 0, now)).every((reading) => !('route-offset' in reading.metrics))).toBe(true)
+
+    // 경로로 돌아와 10초 동안 유지되면 해결됩니다.
+    await recordTelemetry(essentia, { at: tick(1000), metrics: {}, gps: on }, now)
+    await recordTelemetry(essentia, { at: tick(CLEAR_HOLD), metrics: {}, gps: on }, now)
+    expect((await store.listOpenLiveIssues(essentia.id)).filter((item) => item.metricKey === 'route-offset')).toEqual([])
+  })
+
   it('측정값으로는 늦었어도 가장 최근 GPS보다 새 위치면 바퀴 수를 이어 갑니다(출발선을 늦은 측정값에서 지남)', async () => {
     const ducati = VEHICLE_SPECS.find((vehicle) => vehicle.id === 'kao-0003')!
     const geo = createRouteGeo(findRoute(ducati.routeId))

@@ -108,8 +108,13 @@ test('경로 밖 GPS는 실제 위치와 지나온 길(최근 2분)로 보여 �
   await expect(row.getByRole('cell', { name: 'GPS 경로 밖: 반포대교 남동쪽 약 3.2km' })).toBeVisible()
   // 경로 밖이면 바퀴 수·진행률(시뮬레이션 값)은 내지 않습니다.
   await expect(row.getByRole('cell', { name: '—', exact: true })).toHaveCount(2)
-  const frame = (await (await page.request.get('/api/fleet')).json()) as { vehicles: Array<{ id: string; gps: { onRoute: boolean; trail: number[][] } | null }> }
+  const frame = (await (await page.request.get('/api/fleet')).json()) as {
+    vehicles: Array<{ id: string; gps: { onRoute: boolean; trail: number[][] } | null; issues: Array<{ title: string; severity: string; source: string }> }>
+  }
   const strida = frame.vehicles.find((vehicle) => vehicle.id === 'kao-0004')!
   expect(strida.gps).toMatchObject({ onRoute: false })
   expect(strida.gps!.trail.slice(-3)).toEqual(points.map((point) => [point.lat, point.lng]))
+  // 경로에서 1km 넘게 벗어나 달리면 위험 등급 '경로 이탈' 실측 문제를 엽니다(운전자 알림·긴급 출동 조치).
+  expect(strida.issues).toContainEqual(expect.objectContaining({ title: '경로 이탈', severity: 'critical', source: 'live' }))
+  await expect(page.getByRole('region', { name: '조치 대기열' }).getByRole('heading', { name: '경로 이탈' })).toBeVisible()
 })
