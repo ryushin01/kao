@@ -63,12 +63,23 @@ async function load() {
   }
 }
 
+/** 화면이 보이지 않는 동안에는 다시 받지 않고, 다시 보이면 바로 받습니다. */
+const onVisibility = () => {
+  if (document.visibilityState === 'visible') void load()
+}
+
 onMounted(() => {
   void load()
   // 10초마다 새로 그립니다. 다시 받는 동안에는 이전 그림을 흐리게 둡니다.
-  timer = setInterval(load, 10_000)
+  timer = setInterval(() => {
+    if (document.visibilityState !== 'hidden') void load()
+  }, 10_000)
+  document.addEventListener('visibilitychange', onVisibility)
 })
-onBeforeUnmount(() => clearInterval(timer))
+onBeforeUnmount(() => {
+  clearInterval(timer)
+  document.removeEventListener('visibilitychange', onVisibility)
+})
 watch([metricKey, minutes], load)
 </script>
 

@@ -13,6 +13,8 @@ import { createRouteGeo, turnRateAt } from '../../../src/shared/lib/route-geo'
 import type { RouteGeo } from '../../../src/shared/lib/route-geo'
 import { VEHICLE_SPECS } from '../fleet-specs'
 import type { MetricSpec, VehicleSpec } from '../fleet-specs'
+import { createCapDeficit } from './cap-deficit'
+import type { CapWindow } from './cap-deficit'
 import { createDriveProfile } from './drive'
 import {
   isLiveIssueId,
@@ -191,38 +193,60 @@ function liveSpeedCap(vehicle: VehicleSpec, actions: ActionRecord[], now: number
 
 /** 거리 기준 시각. 위치가 끊기지 않도록 고정된 시각부터 잽니다. */
 const DISTANCE_EPOCH = Date.UTC(2026, 0, 1)
-/** 속도 제한 구간을 수치 적분하는 칸(ms) */
-const CAP_STEP = 500
 
 const wrap = (value: number, size: number) => ((value % size) + size) % size
+
+/** 제한이 없을 때의 유효 시간(초): 교통 흐름 배수의 적분 */
+const baseTime = (vehicle: VehicleSpec, at: number) => {
+  const wave = waves.get(vehicle.id)!
+  return wave.integral(at / 1000) - wave.integral(DISTANCE_EPOCH / 1000)
+}
+
+/**
+ * 속도·출력 제한 때문에 덜 간 유효 시간(시각 → 초). 조치 목록(제한 구간)이 같으면 지난 구간의 적분을 다시 하지 않도록
+ * 기억합니다(cap-deficit.ts). 0.5초마다 프레임을 만들 때 같은 목록(배열)으로 여러 번 부르므로 배열마다도 기억합니다.
+ */
+const deficitCache = new Map<string, (time: number) => number>()
+const deficitsByActions = new WeakMap<readonly ActionRecord[], Map<string, (time: number) => number>>()
+const DEFICIT_CACHE_SIZE = 64
+
+function capDeficit(vehicle: VehicleSpec, actions: readonly ActionRecord[]) {
+  let byVehicle = deficitsByActions.get(actions)
+  if (!byVehicle) {
+    byVehicle = new Map()
+    deficitsByActions.set(actions, byVehicle)
+  }
+  const known = byVehicle.get(vehicle.id)
+  if (known) return known
+  const windows: CapWindow[] = actions
+    .filter((action) => action.vehicleId === vehicle.id && isCapAction(action))
+    .map((action) => ({ start: action.sentAt, end: action.sentAt + SPEED_CAP_DURATION, cap: capValue(vehicle, action.action) / 3.6 }))
+    .sort((a, b) => a.start - b.start)
+  const key = `${vehicle.id}|${windows.map((window) => `${window.start}:${window.cap}`).join(',')}`
+  let deficit = deficitCache.get(key)
+  if (!deficit) {
+    const wave = waves.get(vehicle.id)!
+    const drive = drives.get(vehicle.id)!
+    deficit = createCapDeficit(windows, {
+      pace: (at) => wave.at(at / 1000),
+      base: (at) => baseTime(vehicle, at),
+      speedAt: (effective) => drive.at(wrap(effective, drive.lapTime)).speed,
+    })
+    // 오래된 목록(조치가 더해지기 전, 지난날)부터 버립니다.
+    if (deficitCache.size >= DEFICIT_CACHE_SIZE) deficitCache.delete(deficitCache.keys().next().value!)
+    deficitCache.set(key, deficit)
+  }
+  byVehicle.set(vehicle.id, deficit)
+  return deficit
+}
 
 /**
  * 고정 시각부터 지금까지의 유효 시간(초). 속도·출력 제한이 걸린 구간(조치마다 90초, 겹치면 더 낮은 제한)은
  * 제한 때문에 덜 달린 만큼을 500ms 칸으로 적분해 뺍니다. 제한 아래에서는 유효 시간이 min(m, 제한 / 표의 속도)로 흐릅니다.
+ * time 뒤에 보낸 조치가 섞여 있어도 결과는 같습니다(그 구간은 time 전에 시작하지 않음).
  */
-function effectiveTime(vehicle: VehicleSpec, actions: ActionRecord[], time: number) {
-  const wave = waves.get(vehicle.id)!
-  const drive = drives.get(vehicle.id)!
-  const base = (at: number) => wave.integral(at / 1000) - wave.integral(DISTANCE_EPOCH / 1000)
-  const windows = actions
-    .filter((action) => action.vehicleId === vehicle.id && isCapAction(action) && action.sentAt < time)
-    .map((action) => ({ start: action.sentAt, end: action.sentAt + SPEED_CAP_DURATION, cap: capValue(vehicle, action.action) / 3.6 }))
-    .sort((a, b) => a.start - b.start)
-  let deficit = 0
-  let at = windows[0]?.start ?? time
-  for (const window of windows) {
-    at = Math.max(at, window.start)
-    const until = Math.min(window.end, time)
-    for (; at < until; at += CAP_STEP) {
-      const dt = Math.min(CAP_STEP, until - at) / 1000
-      const cap = Math.min(...windows.filter((item) => item.start <= at && at < item.end).map((item) => item.cap))
-      const pace = wave.at(at / 1000)
-      const { speed } = drive.at(wrap(base(at) - deficit, drive.lapTime))
-      const rate = speed * pace > cap ? cap / speed : pace
-      deficit += (pace - rate) * dt
-    }
-  }
-  return base(time) - deficit
+function effectiveTime(vehicle: VehicleSpec, actions: readonly ActionRecord[], time: number) {
+  return baseTime(vehicle, time) - capDeficit(vehicle, actions)(time)
 }
 
 /** 시각 time의 실제 속도(km/h): 주행 속도 표 × 교통 흐름 배수, 속도·출력 제한이 걸려 있으면 그 이하 */
@@ -486,8 +510,9 @@ export function computeFrame({ now, actions, readings = [], liveIssues = [], veh
       if (metric.key === 'speed') return reading(metric, clamp(speed, metric.min, metric.max))
       const liveValue = live?.metrics[metric.key]
       if (typeof liveValue === 'number') return reading(metric, clamp(liveValue, metric.min, metric.max))
-      // 실차 신호가 있으면 빠진 지표도 실차의 속도와 위치(GPS가 경로 위면 그 위치)로 채웁니다.
-      return reading(metric, metricValue(vehicle, metric, mine, simulated, now, live ? { speed, progress: position.progress } : {}))
+      // 이미 구한 속도·위치로 계산합니다(시뮬레이션이면 다시 구해도 같은 값). 실차 신호가 있으면 빠진 지표도
+      // 실차의 속도와 위치(GPS가 경로 위면 그 위치)로 채웁니다.
+      return reading(metric, metricValue(vehicle, metric, mine, simulated, now, { speed, progress: position.progress }))
     })
     const states: HealthState[] = live
       ? [...metrics.map((metric) => metric.state), ...active.map((issue) => issue.severity)]
@@ -592,6 +617,17 @@ export function computeHistory({ vehicleId, metricKey, from, to, points, actions
   const samples: Array<{ at: number; value: number }> = []
   let cursor = 0
   let liveSamples = 0
+  // 날마다 그날 보낸 시뮬레이션 조치. 각 시각보다 뒤에 보낸 조치가 섞여도 그 시각의 값은 같으므로(effectiveTime, 에피소드의 끝은
+  // 그 시각 뒤에만 달라짐) 하루에 한 목록(같은 배열)을 넘겨, 기억해 둔 제한 구간 적분과 에피소드를 다시 씁니다.
+  const byDay = new Map<number, ActionRecord[]>()
+  const dayActions = (dayStart: number) => {
+    let list = byDay.get(dayStart)
+    if (!list) {
+      list = actions.filter((action) => action.sentAt >= dayStart && action.sentAt < dayStart + 86_400_000 && !isLiveIssueId(action.issueId))
+      byDay.set(dayStart, list)
+    }
+    return list
+  }
   for (let i = 0; i < points; i += 1) {
     const at = Math.round(from + step * i)
     while (cursor < mine.length && mine[cursor]!.at <= at) cursor += 1
@@ -622,7 +658,7 @@ export function computeHistory({ vehicleId, metricKey, from, to, points, actions
       liveSamples += 1
     } else {
       const dayStart = dayStartOf(at)
-      const todays = actions.filter((action) => action.sentAt >= dayStart && action.sentAt <= at && !isLiveIssueId(action.issueId))
+      const todays = dayActions(dayStart)
       const episodes = live ? [] : episodesNear(episodesFor(dayStart, todays), at).filter((episode) => episode.vehicle.id === vehicleId)
       value =
         metric.key === 'speed'
