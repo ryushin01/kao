@@ -107,7 +107,10 @@ watch([metricKey, minutes], load)
       </fieldset>
     </div>
     <p v-if="sourceNote" class="history__note">{{ sourceNote }}</p>
-    <p v-if="error" role="alert" class="history__error">{{ error }}</p>
+    <!-- 알림 영역은 처음부터 두고 내용만 바꿔야 화면 낭독기가 고르게 읽습니다. 비어 있는 동안은 간격만 지웁니다. -->
+    <div class="history__live">
+      <p role="alert" class="history__error">{{ error }}</p>
+    </div>
     <LineChart
       v-if="metric && history"
       :samples="history.samples"
@@ -214,6 +217,14 @@ watch([metricKey, minutes], load)
 .history__range input:focus-visible + span {
   outline: 2px solid var(--color-crimson-text);
   outline-offset: 3px;
+}
+
+.history__live {
+  margin-top: calc(var(--space-4) * -1);
+}
+
+.history__live p:not(:empty) {
+  margin-top: var(--space-4);
 }
 
 .history__error {

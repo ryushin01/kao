@@ -1,6 +1,6 @@
 {
   "name": "kao",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "private": true,
   "type": "module",
   "description": "KAO(Kinetic Aero One) — 회원 탈것의 주행을 실시간으로 지켜보고 문제를 원격으로 조치하는 서비스",
@@ -17,6 +17,7 @@
     "lint:fsd": "steiger ./src",
     "typecheck": "nuxt typecheck",
     "fonts": "node scripts/build-fonts.mjs",
+    "icons": "node scripts/build-icons.mjs",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "screenshots": "SCREENSHOTS=1 playwright test --project=screenshots",

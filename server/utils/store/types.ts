@@ -94,6 +94,8 @@ export interface Store {
   releaseLoginAttempt(key: string, windowStart: number): Promise<void>
   /** 그 키의 시도를 모두 지웁니다. */
   resetLoginAttempts(key: string): Promise<void>
+  /** 오래된 기록을 지웁니다(retention.ts 기준, 끝난 세션 포함). */
+  pruneRecords(now: number): Promise<void>
   savePushSubscription(record: PushSubscriptionRecord): Promise<void>
   deletePushSubscription(endpoint: string, userId: string): Promise<void>
   listPushSubscriptions(): Promise<Array<PushSubscriptionRecord & { role: UserRole; vehicleIds: string[] }>>

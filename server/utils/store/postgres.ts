@@ -1,5 +1,6 @@
 import { neon } from '@neondatabase/serverless'
 import type { ActionCode, Severity, UserRole } from '../../../src/shared/api/contract'
+import { RETENTION } from '../retention'
 import { ACK_TIMEOUT } from '../sim/live'
 import type { ActionRecord, AckResult, LiveIssueRecord, LiveReading } from '../sim/types'
 import type { DeviceRecord, Store, UserRecord } from './types'
@@ -230,6 +231,14 @@ export function createPostgresStore(url: string): Store {
     },
     async resetLoginAttempts(key) {
       await sql`delete from login_throttle where key = ${key}`
+    },
+    async pruneRecords(now) {
+      await sql`delete from telemetry_readings where at < ${now - RETENTION.readings}`
+      await sql`delete from login_throttle where window_start < ${now - RETENTION.loginAttempts}`
+      await sql`delete from remote_actions where sent_at < ${now - RETENTION.actions}`
+      await sql`delete from live_issues where resolved_at < ${now - RETENTION.liveIssues}`
+      await sql`delete from push_deliveries where sent_at < to_timestamp(${(now - RETENTION.deliveries) / 1000})`
+      await sql`delete from sessions where expires_at < ${now}`
     },
     async savePushSubscription(record) {
       await sql`

@@ -1,0 +1,5 @@
+# 관제 센터·탈것 상세와 API는 로그인한 사람만 보는 화면이라 수집하지 않습니다.
+User-agent: *
+Allow: /
+Disallow: /fleet
+Disallow: /api/

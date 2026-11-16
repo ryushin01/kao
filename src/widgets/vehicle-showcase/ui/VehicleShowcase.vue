@@ -16,6 +16,9 @@ const props = withDefaults(
 
 const canvas = ref<HTMLCanvasElement | null>(null)
 const supported = ref(true)
+/** 3D 조각을 받지 못함(배포 뒤 열려 있던 화면은 이전 배포의 조각이 없어 못 받음) */
+const stale = ref(false)
+const drawable = computed(() => supported.value && !stale.value)
 const scene = shallowRef<ShowcaseScene | null>(null)
 const { paused } = useMotion()
 
@@ -29,10 +32,19 @@ let stopWatching = () => {}
 
 // 화면 가까이 왔을 때 three.js와 3D 모델을 받아 장면을 만듭니다(소개 화면 아래쪽에 있을 때 첫 로딩을 가볍게).
 async function start() {
-  const { createShowcaseScene } = await import('../lib/showcase-scene')
+  let createShowcaseScene: typeof import('../lib/showcase-scene').createShowcaseScene
+  try {
+    ;({ createShowcaseScene } = await import('../lib/showcase-scene'))
+  } catch {
+    // Vercel 무료 요금제는 이전 배포의 조각을 남기지 않아, 배포 전에 연 화면은 새로 고쳐야 미니어처를 받습니다.
+    stale.value = true
+    return
+  }
   if (unmounted || !canvas.value) return
   scene.value = createShowcaseScene({ canvas: canvas.value, vehicle: props.vehicle, playing: !paused.value })
 }
+
+const reload = () => window.location.reload()
 
 onMounted(() => {
   if (!canvas.value || !isWebGLAvailable()) {
@@ -59,10 +71,14 @@ onBeforeUnmount(() => {
 <template>
   <div class="showcase">
     <div class="showcase__stage">
-      <canvas v-if="supported" ref="canvas" class="showcase__canvas" role="img" :aria-label="label" />
+      <canvas v-if="drawable" ref="canvas" class="showcase__canvas" role="img" :aria-label="label" />
+      <p v-else-if="stale" class="showcase__fallback">
+        새 버전이 배포되어 3D 미니어처를 불러오지 못했습니다. 새로 고치면 다시 보입니다.
+        <HudButton size="sm" class="showcase__reload" @click="reload">새로 고침</HudButton>
+      </p>
       <p v-else class="showcase__fallback">이 브라우저에서는 3D 미니어처를 그릴 수 없습니다(WebGL 미지원).</p>
     </div>
-    <div v-if="controls && supported" class="showcase__controls">
+    <div v-if="controls && drawable" class="showcase__controls">
       <HudButton size="sm" @click="scene?.rotateBy(-Math.PI / 6)">
         <span aria-hidden="true">←</span> 왼쪽으로 돌리기
       </HudButton>
@@ -103,6 +119,11 @@ onBeforeUnmount(() => {
 .showcase__fallback {
   padding: var(--space-8);
   color: var(--color-text-muted);
+}
+
+.showcase__reload {
+  display: flex;
+  margin-top: var(--space-4);
 }
 
 .showcase__controls {

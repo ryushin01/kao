@@ -106,7 +106,16 @@ describe('푸시 보내기', () => {
 
     fetchMock.mockReset()
     fetchMock.mockResolvedValue(new Response(null, { status: 201 }))
-    expect(await notifyCriticalIssues(now)).toMatchObject({ sent: 1 })
+    expect(await notifyCriticalIssues(now)).toMatchObject({ sent: 1, subscriptions: 1 })
     expect(await store.claimDelivery(issue.id, MEMBER_ENDPOINT)).toBe(false)
+  })
+
+  it('구독이 없으면 문제를 계산하지 않고(DB를 더 읽지 않음) 구독 수 0을 알립니다', async () => {
+    const store = useStore()
+    for (const subscription of await store.listPushSubscriptions()) await store.deletePushSubscription(subscription.endpoint, subscription.userId)
+    const actions = vi.spyOn(store, 'listActionsSince')
+    expect(await notifyCriticalIssues()).toEqual({ sent: 0, issues: 0, subscriptions: 0 })
+    expect(actions).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
