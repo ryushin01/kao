@@ -15,11 +15,10 @@
  * (실제로 달릴 수 있는 길만). 교차로 구조 때문에 크게 돌아가는 조합은 경유점과 방향을 바꿔 고릅니다.
  * Node 22.18 이상이 TS 파일을 그대로 불러와 앱과 같은 좌표 변환을 씁니다.
  */
+import { createHash } from 'node:crypto'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { parseArgs } from 'node:util'
 import { MAP_CENTER, toLocal } from '../src/shared/lib/route-geo.ts'
-// 이미 만든 경로(이번 실행에서도 ROUTE_PLANS로 다시 만듦). 경로 주변 중층 건물을 받을 때만 씁니다(경로를 바꿨으면 --fetch로 다시 받기).
-import { ROUTES as BUILT_ROUTES } from '../src/shared/config/routes.ts'
 
 const { values: args } = parseArgs({ options: { fetch: { type: 'boolean', default: false } } })
 const ROOT = new URL('../', import.meta.url)
@@ -38,8 +37,6 @@ const TALL = ['["building:levels"~"^[1-9][0-9]+$"]', '["height"~"^([3-9][0-9]|[1
 const MIDRISE = ['["building:levels"~"^[6-9]$"]', '["height"~"^2[0-9]([.][0-9]+)?$"]']
 /** 중층 건물은 경로에서 이만큼(m) 안에 있는 것만 받고 그립니다(도심 밀도를 높이되 지도 데이터·삼각형이 너무 늘지 않게). */
 const MIDRISE_ROUTE_DISTANCE = 450
-/** 경로마다 닫힌 선(위도,경도 목록). Overpass의 around 필터로 경로 주변만 묻습니다. */
-const ROUTE_LINES = BUILT_ROUTES.map((route) => [...route.path, route.path[0]].map(([lat, lng]) => `${lat},${lng}`).join(','))
 
 /** 원본별 범위와 선택 조건. split×split 조각으로 나눠 받습니다(공용 서버는 큰 요청을 502·504로 끊습니다). */
 const SOURCES = {
@@ -78,12 +75,10 @@ const SOURCES = {
     select: (b) => ['way', 'relation'].flatMap((type) => TALL.map((tag) => `${type}["building"]${tag}(${b});`)).join(''),
   },
   // 중층 건물은 도심 전체를 받으면 너무 많아(공용 서버가 502·504로 끊음) 경로 주변(around)만 묻습니다.
-  // 경로마다 한 번씩 나눠 받습니다(bbox는 쓰지 않음).
+  // 이번 실행에서 만든 경로의 선(위도,경도 목록)마다 한 번씩 나눠 받으므로 경로를 만든 뒤에 받습니다(아래 '경로 주변 중층 건물').
   midrise: {
-    bbox: DISPLAY_BBOX,
-    split: 1,
+    afterRoutes: true,
     out: 'geom',
-    parts: ROUTE_LINES,
     select: (line) =>
       ['way', 'relation'].flatMap((type) => MIDRISE.map((tag) => `${type}["building"]${tag}(around:${MIDRISE_ROUTE_DISTANCE},${line});`)).join(''),
   },
@@ -107,10 +102,12 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 /**
  * 공용 Overpass 서버는 붐비면 429·502·504를 돌려주므로, 잠시 기다렸다가 다른 서버로도 다시 요청합니다.
  * 시간·메모리 한도를 넘기면 200 응답의 remark('runtime error: …')로 알리고 elements가 비거나 잘려 있으므로, 그 응답도 실패로 봅니다.
+ * first번째 서버부터 묻고, 받은 데이터와 답한 서버의 순번을 돌려줍니다.
  */
-async function overpass(name, query) {
+async function overpass(name, query, first = 0) {
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    const endpoint = OVERPASS[attempt % OVERPASS.length]
+    const server = (first + attempt) % OVERPASS.length
+    const endpoint = OVERPASS[server]
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': 'kao-map-builder (https://github.com/ryushin01/kao)' },
@@ -126,7 +123,7 @@ async function overpass(name, query) {
       } catch {
         // 응답이 중간에 끊겨 JSON이 잘린 경우도 다시 요청합니다.
       }
-      if (data && !/runtime error/i.test(data.remark ?? '')) return data
+      if (data && !/runtime error/i.test(data.remark ?? '')) return { data, server }
       problem = data ? data.remark : '응답이 온전한 JSON이 아님'
     }
     console.log(`[map] ${name}: ${new URL(endpoint).host} ${problem}, 다시 요청합니다.`)
@@ -148,16 +145,30 @@ function tiles([south, west, north, east], split) {
   return result
 }
 
-async function fetchRaw(name) {
-  const { bbox, split, out, select, parts: given } = SOURCES[name]
-  // parts가 있으면 범위 조각 대신 그 값(경로 선 등)마다 나눠 받습니다.
+/**
+ * 원본 하나를 받아 assets-src/osm/<name>.json에 씁니다.
+ * parts를 주면 범위 조각 대신 그 값(경로 선 등)마다 나눠 받고, key는 그 원본을 무엇으로 받았는지 함께 적어 둡니다.
+ */
+async function fetchRaw(name, { parts: given, key } = {}) {
+  const { bbox, split, out, select } = SOURCES[name]
   const parts = given ?? tiles(bbox, split)
   const seen = new Set()
   const elements = []
+  const counts = []
   let head = null
   for (const [i, part] of parts.entries()) {
     console.log(`[map] Overpass에서 ${name} 받는 중… (${i + 1}/${parts.length})`)
-    const data = await overpass(name, `[out:json][timeout:180];(${select(part)});out ${out};`)
+    const query = `[out:json][timeout:180];(${select(part)});out ${out};`
+    const answer = await overpass(name, query)
+    let data = answer.data
+    // 공용 서버가 오류 없이 빈 결과를 주는 일이 있어(0.19.0 첫 생성에서 경로 두 곳 주변의 중층 건물이 통째로 빠졌음),
+    // 빈 조각은 다른 서버에 한 번 더 묻습니다. 정말 아무것도 없는 곳이면 두 번째도 비어 그대로 씁니다.
+    if (data.elements.length === 0) {
+      console.log(`[map] ${name}: 조각 ${i + 1}의 결과가 비어 다른 서버에 한 번 더 묻습니다.`)
+      await wait(3000)
+      data = (await overpass(name, query, answer.server + 1)).data
+    }
+    counts.push(data.elements.length)
     head ??= { version: data.version, generator: data.generator, osm3s: data.osm3s }
     // 조각 경계에 걸친 길·건물은 여러 조각에 들어 있으므로 한 번만 남깁니다.
     for (const element of data.elements) {
@@ -169,20 +180,23 @@ async function fetchRaw(name) {
     // Overpass 공용 서버 사용 규칙: 요청 사이를 띄웁니다.
     await wait(3000)
   }
+  // 조각마다 받은 수를 남겨, 한 조각만 비거나 크게 모자라면 로그에서 보이게 합니다.
+  console.log(`[map] ${name}: ${elements.length}개 받음(조각별 ${counts.join('·')})`)
   await mkdir(RAW, { recursive: true })
-  await writeFile(new URL(`${name}.json`, RAW), JSON.stringify({ ...head, elements }))
+  await writeFile(new URL(`${name}.json`, RAW), JSON.stringify({ ...head, ...(key ? { key } : {}), elements }))
 }
 
-for (const name of Object.keys(SOURCES)) {
-  const exists = await access(new URL(`${name}.json`, RAW)).then(
+const exists = (name) =>
+  access(new URL(`${name}.json`, RAW)).then(
     () => true,
     () => false,
   )
-  if (args.fetch || !exists) await fetchRaw(name)
-}
 const load = async (name) => JSON.parse(await readFile(new URL(`${name}.json`, RAW), 'utf8'))
-const [roadsRaw, minorRaw, areasRaw, outerRaw, buildingsRaw, signalsRaw, midriseRaw, railRaw] = await Promise.all(
-  ['roads', 'minor', 'areas-outer', 'outer', 'buildings', 'signals', 'midrise', 'rail'].map(load),
+for (const [name, source] of Object.entries(SOURCES)) {
+  if (!source.afterRoutes && (args.fetch || !(await exists(name)))) await fetchRaw(name)
+}
+const [roadsRaw, minorRaw, areasRaw, outerRaw, buildingsRaw, signalsRaw, railRaw] = await Promise.all(
+  ['roads', 'minor', 'areas-outer', 'outer', 'buildings', 'signals', 'rail'].map(load),
 )
 
 // ── 도로 그래프와 경로 ─────────────────────────────────────────────────────
@@ -561,6 +575,22 @@ export function findRoute(id: string): RouteDefinition {
 }
 `
 await writeFile(new URL('src/shared/config/routes.ts', ROOT), routesTs)
+
+// ── 경로 주변 중층 건물 ─────────────────────────────────────────────────────
+
+// 이번 실행에서 만든 경로마다 닫힌 선(위도,경도 목록)으로 Overpass의 around 필터를 씁니다. 받아 둔 원본이 다른 경로나
+// 조건으로 받은 것이면(경로를 바꾸거나 더했을 때, key가 없는 예전 원본) --fetch가 없어도 다시 받습니다.
+const routeCorridors = routes.map((route) => [...route.path, route.path[0]].map(([lat, lng]) => `${lat},${lng}`).join(','))
+const midriseKey = createHash('sha256')
+  .update(JSON.stringify([MIDRISE, MIDRISE_ROUTE_DISTANCE, routeCorridors]))
+  .digest('hex')
+  .slice(0, 16)
+let midriseRaw = (await exists('midrise')) ? await load('midrise') : null
+if (args.fetch || midriseRaw?.key !== midriseKey) {
+  if (midriseRaw && !args.fetch) console.log('[map] 경로나 조건이 바뀌어 경로 주변 중층 건물을 다시 받습니다.')
+  await fetchRaw('midrise', { parts: routeCorridors, key: midriseKey })
+  midriseRaw = await load('midrise')
+}
 
 // ── 화면용 지도 ────────────────────────────────────────────────────────────
 
