@@ -30,7 +30,8 @@ function isPruneWindow(time) {
 
 /** @param {Env} env @param {number} scheduledTime */
 async function callNotify(env, scheduledTime) {
-  const gate = env.GATE ? /** @type {{ until?: number } | null} */ (await env.GATE.get(GATE_KEY, 'json')) : null
+  // 기억(KV)을 읽지 못해도 알림 검사와 기록 정리는 그대로 합니다(기억이 없는 것으로 봄).
+  const gate = env.GATE ? /** @type {{ until?: number } | null} */ (await env.GATE.get(GATE_KEY, 'json').catch(() => null)) : null
   if (gate?.until && gate.until > scheduledTime && !isPruneWindow(scheduledTime)) {
     console.log(JSON.stringify({ scheduled: new Date(scheduledTime).toISOString(), skipped: 'no-subscribers', until: new Date(gate.until).toISOString() }))
     return
@@ -52,7 +53,8 @@ async function callNotify(env, scheduledTime) {
   }
   if (subscriptions === 0) {
     await env.GATE.put(GATE_KEY, JSON.stringify({ until: scheduledTime + GATE_MS }), { expirationTtl: Math.ceil(GATE_MS / 1000) + 60 })
-  } else if (gate) {
+  } else if (gate && typeof subscriptions === 'number' && subscriptions > 0) {
+    // 구독이 생긴 것을 확인했을 때만 기억을 지웁니다(구독 수를 모르는 답에는 그대로 둠).
     await env.GATE.delete(GATE_KEY)
   }
 }

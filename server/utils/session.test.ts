@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { DUMMY_PASSWORD_HASH, hashPassword, verifyPassword, verifyPasswordSync } from './password'
 import { decodeSessionCookie, encodeSessionCookie, sessionId } from './session'
 import { createMemoryStore } from './store/memory'
@@ -94,7 +94,12 @@ describe('오래된 기록 정리', () => {
     const store = createMemoryStore()
     const now = Date.UTC(2026, 10, 16)
     const day = 86_400_000
+    // 메모리 저장소는 넣을 때 지금 시각보다 61분 넘게 지난 측정값을 지우므로, 넣는 때를 그 측정값 시각으로 맞춥니다.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(now - 2 * day)
     await store.insertReading({ vehicleId: 'kao-0001', at: now - 2 * day, metrics: {} })
+    expect(await store.listVehicleReadings('kao-0001', 0, now)).toHaveLength(1)
+    vi.setSystemTime(now)
     await store.reserveLoginAttempt(['ip:old'], now - 2 * day, 15 * 60_000)
     await store.reserveLoginAttempt(['ip:new'], now - 1000, 15 * 60_000)
     await store.insertAction({ id: 'old', issueId: 'old', vehicleId: 'kao-0001', action: 'notify-rider', sentAt: now - 8 * day, userId: 'u' })
@@ -109,5 +114,6 @@ describe('오래된 기록 정리', () => {
     expect((await store.listActionsSince(0)).map((action) => action.id)).toEqual(['new'])
     expect(await store.listLiveIssues(0)).toEqual([])
     expect(await store.findSessionUser('s', now - 2 * day)).toBeNull()
+    vi.useRealTimers()
   })
 })

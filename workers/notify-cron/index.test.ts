@@ -68,6 +68,26 @@ describe('위험 알림 크론 워커', () => {
     expect(kv.put).not.toHaveBeenCalled()
   })
 
+  it('기록 정리 시간에 기억을 건너뛰어 부른 답이 구독 수를 모르면 기억을 지우지 않습니다', async () => {
+    const kv = fakeKv()
+    const fourAm = Date.UTC(2026, 10, 15, 19, 5)
+    kv.data.set('no-subscribers', JSON.stringify({ until: fourAm + 30 * 60_000 }))
+    for (const body of ['{"sent":0,"issues":1}', 'not json']) {
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(body, { status: 200 })))
+      await run({ SITE_URL: 'https://kao.example', CRON_SECRET: 's', GATE: kv }, fourAm)
+      expect(kv.data.has('no-subscribers')).toBe(true)
+    }
+    expect(kv.delete).not.toHaveBeenCalled()
+  })
+
+  it('기억을 읽지 못해도 서버를 부릅니다', async () => {
+    const kv = { ...fakeKv(), get: vi.fn(async () => Promise.reject(new Error('KV unavailable'))) }
+    const fetch = respond({ sent: 0, issues: 0, subscriptions: 3 })
+    vi.stubGlobal('fetch', fetch)
+    await run({ SITE_URL: 'https://kao.example', CRON_SECRET: 's', GATE: kv }, NOON)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
   it('인증 헤더를 붙여 /api/cron/notify를 부릅니다(KV가 없어도 동작)', async () => {
     const fetch = respond({ sent: 0, issues: 0, subscriptions: 0 })
     vi.stubGlobal('fetch', fetch)
