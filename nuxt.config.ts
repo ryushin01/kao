@@ -34,6 +34,22 @@ export default defineNuxtConfig({
       ],
     },
   },
+  /**
+   * 보안 헤더(모든 응답). 원격 조치·로그아웃 버튼이 있는 화면을 다른 사이트가 겹쳐 띄우지 못하게(클릭재킹) 하고,
+   * MIME 추측·리퍼러·쓰지 않는 기기 권한을 막습니다. Nuxt가 설정 스크립트를 인라인으로 넣어 script-src까지 막는 CSP는 쓰지 않습니다.
+   */
+  routeRules: {
+    '/**': {
+      headers: {
+        'content-security-policy': "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'",
+        'x-frame-options': 'DENY',
+        'x-content-type-options': 'nosniff',
+        'referrer-policy': 'strict-origin-when-cross-origin',
+        'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+        'cross-origin-opener-policy': 'same-origin',
+      },
+    },
+  },
   eslint: { config: { stylistic: false } },
   typescript: {
     strict: true,

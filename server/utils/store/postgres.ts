@@ -196,6 +196,41 @@ export function createPostgresStore(url: string): Store {
       const rows = (await sql`select * from users where id = ${id}`) as UserRow[]
       return rows[0] ? toUser(rows[0]) : null
     },
+    async createSession(record) {
+      await sql`
+        insert into sessions (id, user_id, created_at, expires_at)
+        values (${record.id}, ${record.userId}, ${record.createdAt}, ${record.expiresAt})
+      `
+    },
+    async findSessionUser(id, now) {
+      // 요청마다 한 번 묻습니다(이전에 계정만 찾던 것과 같은 질의 수).
+      const rows = (await sql`
+        select u.* from sessions s join users u on u.id = s.user_id where s.id = ${id} and s.expires_at > ${now}
+      `) as UserRow[]
+      return rows[0] ? toUser(rows[0]) : null
+    },
+    async deleteSession(id) {
+      await sql`delete from sessions where id = ${id}`
+    },
+    async reserveLoginAttempt(keys, now, windowMs) {
+      // 키마다 한 행을 올립니다. 같은 키는 행 잠금으로 차례로 처리되어, 동시에 몰려도 수가 하나씩 커집니다.
+      const rows = (await sql`
+        insert into login_throttle (key, window_start, count)
+        select key, ${now}, 1 from unnest(${keys}::text[]) as key
+        on conflict (key) do update set
+          count = case when login_throttle.window_start <= ${now - windowMs} then 1 else login_throttle.count + 1 end,
+          window_start = case when login_throttle.window_start <= ${now - windowMs} then ${now} else login_throttle.window_start end
+        returning key, count, window_start
+      `) as Array<{ key: string; count: number; window_start: string }>
+      return Object.fromEntries(rows.map((row) => [row.key, { count: row.count, windowStart: Number(row.window_start) }]))
+    },
+    async releaseLoginAttempt(key, windowStart) {
+      // 예약한 창이 그대로일 때만 내립니다(그사이 새 창이 열렸으면 그 수는 건드리지 않음).
+      await sql`update login_throttle set count = greatest(count - 1, 0) where key = ${key} and window_start = ${windowStart}`
+    },
+    async resetLoginAttempts(key) {
+      await sql`delete from login_throttle where key = ${key}`
+    },
     async savePushSubscription(record) {
       await sql`
         insert into push_subscriptions (endpoint, p256dh, auth, user_id)

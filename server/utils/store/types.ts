@@ -19,6 +19,20 @@ export interface PushSubscriptionRecord {
 
 export type AckOutcome = 'ok' | 'missing' | 'closed'
 
+/** 로그인 시도 카운터: 이번 시도까지 센 수와 그 창의 시작 시각 */
+export interface LoginAttempt {
+  count: number
+  windowStart: number
+}
+
+/** 로그인 세션. id는 쿠키에 담은 세션 토큰의 SHA-256(16진수)이고, 토큰 자체는 저장하지 않습니다. */
+export interface SessionRecord {
+  id: string
+  userId: string
+  createdAt: number
+  expiresAt: number
+}
+
 /** 실차 장치(차량 단말·제조사 연동 하나). 토큰은 탈것 하나에 묶이고, 저장소에는 토큰의 SHA-256만 둡니다. */
 export interface DeviceRecord {
   id: string
@@ -63,6 +77,23 @@ export interface Store {
   revokeDevice(id: string, now: number): Promise<boolean>
   findUserByLogin(login: string): Promise<UserRecord | null>
   findUserById(id: string): Promise<UserRecord | null>
+  createSession(record: SessionRecord): Promise<void>
+  /** 끝나지 않은(expiresAt > now) 세션의 계정. 없거나 끝났으면 null */
+  findSessionUser(id: string, now: number): Promise<UserRecord | null>
+  /** 로그아웃: 그 세션만 지웁니다(같은 계정의 다른 세션은 그대로). */
+  deleteSession(id: string): Promise<void>
+  /**
+   * 로그인 시도를 키마다 하나 올리고 올린 뒤의 수와 그 창의 시작 시각을 돌려줍니다(키마다 원자적으로, 동시에 들어와도
+   * 수가 겹치지 않음). 창(windowMs)이 지난 키는 1부터 다시 셉니다.
+   */
+  reserveLoginAttempt(keys: string[], now: number, windowMs: number): Promise<Record<string, LoginAttempt>>
+  /**
+   * 성공한 시도를 되돌립니다(하나 내림). 예약한 창(windowStart)이 그대로일 때만 내립니다. 확인하는 사이 창이 바뀌어
+   * 다른 요청이 새 창을 열었으면, 이전 창의 시도로 새 창의 수를 줄이지 않습니다.
+   */
+  releaseLoginAttempt(key: string, windowStart: number): Promise<void>
+  /** 그 키의 시도를 모두 지웁니다. */
+  resetLoginAttempts(key: string): Promise<void>
   savePushSubscription(record: PushSubscriptionRecord): Promise<void>
   deletePushSubscription(endpoint: string, userId: string): Promise<void>
   listPushSubscriptions(): Promise<Array<PushSubscriptionRecord & { role: UserRole; vehicleIds: string[] }>>
