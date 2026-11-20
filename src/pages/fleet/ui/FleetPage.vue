@@ -1,25 +1,37 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { NuxtLink } from '#components'
-import { useFetch, useHead } from '#imports'
+import { preloadRouteComponents, useFetch, useHead } from '#imports'
 import { FLEET_URL } from '@shared/api'
 import type { FleetFrame, RemoteActionResponse, VehicleKind } from '@shared/api'
 import { formatClock, toIsoString } from '@shared/lib'
 import { HudPanel } from '@shared/ui'
-import { useSessionExpiry } from '@entities/session'
+import { useSession, useSessionExpiry } from '@entities/session'
 import { CATEGORY_LABELS, MODEL_PROFILES, VEHICLE_CATEGORIES, VehicleCard, activeIssues, fleetSummary, useLiveFleet } from '@entities/vehicle'
 import { RemoteActionPanel } from '@features/remote-action'
 import { ActionLog } from '@widgets/action-log'
 import { FleetTracker } from '@widgets/fleet-tracker'
+import { preloadShowcaseScene } from '@widgets/vehicle-showcase'
 import { LiveAnnouncer } from '@widgets/live-announcer'
 
 useHead({ title: '관제 센터 — KAO' })
 
 const { data } = await useFetch<FleetFrame>(FLEET_URL, { key: 'fleet' })
+const { user } = useSession()
 // 화면을 연 채 세션이 끝나면 로그인 화면으로 보내고, 로그인하면 이 화면으로 돌아옵니다.
-const { frame, status, applyAction } = useLiveFleet(data, { onUnauthorized: useSessionExpiry() })
+// 마지막 상태는 이 기기에 저장해 오프라인에서 저장해 둔 화면을 열 때 씁니다.
+const { frame, status, applyAction } = useLiveFleet(data, { onUnauthorized: useSessionExpiry(), rememberAs: () => user.value?.id })
 
 const summary = computed(() => (frame.value ? fleetSummary(frame.value) : null))
+
+// 탈것 화면 조각(화면과 3D 턴테이블)을 미리 받아 둡니다. 탈것을 누르면 바로 열리고, 서비스 워커가 미리 저장한 탈것 화면을
+// 오프라인에서도 열 수 있습니다(탈것 화면의 HTML에는 그 화면 조각이 적혀 있지 않아 서비스 워커가 따로 알 수 없음).
+onMounted(() => {
+  const first = frame.value?.vehicles[0]
+  if (!first || !navigator.onLine) return
+  void preloadRouteComponents(`/fleet/${first.id}`).catch(() => {})
+  void preloadShowcaseScene().catch(() => {})
+})
 
 // 분류 필터: 아래의 조치 대기열·조치 기록·등록 탈것에 함께 적용합니다.
 const kind = ref<VehicleKind | 'all'>('all')
