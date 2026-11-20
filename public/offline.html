@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#000000">
+  <meta name="robots" content="noindex">
+  <title>오프라인 — KAO</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <!--
+    서비스 워커(public/sw.js)가 저장하지 않은 화면을 오프라인에서 열 때 대신 보여 주는 화면입니다.
+    앱 밖의 정적 파일이라 글꼴·스타일을 따로 받지 않습니다(시스템 글꼴). 바꾸면 sw.js의 OFFLINE_PAGE_REVISION을 올립니다.
+  -->
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #000;
+      color: #f2efea;
+      font-family: system-ui, -apple-system, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif;
+      line-height: 1.6;
+    }
+    a { color: #ff5c4d; }
+    :focus-visible { outline: 2px solid #ff5c4d; outline-offset: 3px; }
+    .skip-link {
+      position: fixed;
+      top: 0.5rem;
+      left: 0.5rem;
+      z-index: 10;
+      padding: 0.75rem 1rem;
+      background: #8b0000;
+      color: #fff;
+      font-weight: 600;
+      transform: translateY(-200%);
+    }
+    .skip-link:focus { transform: none; }
+    .top { border-bottom: 1px solid rgb(255 255 255 / 0.14); }
+    .top__inner, main { max-width: 72rem; margin: 0 auto; padding-inline: 1.5rem; }
+    .top__inner { display: flex; align-items: center; min-height: 4rem; }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      min-height: 2.75rem;
+      color: #f2efea;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-decoration: none;
+    }
+    main { padding-block: 4rem; }
+    .eyebrow { margin: 0 0 0.5rem; color: #ff5c4d; font-family: ui-monospace, monospace; font-size: 0.8125rem; letter-spacing: 0.2em; }
+    h1 { margin: 0 0 1rem; font-size: clamp(1.75rem, 5vw, 3rem); line-height: 1.2; }
+    h2 { margin: 3rem 0 0.5rem; font-size: 1.125rem; }
+    p { max-width: 40rem; margin: 0 0 1rem; color: #a9a29c; }
+    ul { margin: 1rem 0 0; padding: 0; list-style: none; border-top: 1px solid rgb(255 255 255 / 0.14); }
+    li {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 0.25rem 1rem;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid rgb(255 255 255 / 0.14);
+    }
+    li a { display: inline-flex; align-items: center; min-height: 1.5rem; }
+    time { color: #a9a29c; font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+    button {
+      min-height: 2.75rem;
+      margin-top: 2rem;
+      padding: 0 1.25rem;
+      border: 1px solid rgb(255 255 255 / 0.3);
+      background: transparent;
+      color: #f2efea;
+      font: inherit;
+      cursor: pointer;
+    }
+    button:hover { border-color: #ff5c4d; }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">본문 바로가기</a>
+  <header class="top">
+    <div class="top__inner">
+      <a class="brand" href="/">KAO</a>
+    </div>
+  </header>
+  <main id="main-content">
+    <p class="eyebrow">OFFLINE</p>
+    <h1>인터넷에 연결되어 있지 않습니다</h1>
+    <p>이 화면은 아직 이 기기에 저장되지 않아 열 수 없습니다. 인터넷에 연결된 상태에서 한 번 연 화면은 오프라인에서도 열립니다.</p>
+    <p>연결되면 이 화면을 자동으로 다시 엽니다.</p>
+
+    <section aria-labelledby="saved-title">
+      <h2 id="saved-title">이 기기에 저장된 화면</h2>
+      <p>마지막으로 받은 내용입니다. 실시간 위치와 원격 조치는 다시 연결되면 이어집니다.</p>
+      <ul id="saved-list"></ul>
+      <p id="saved-empty" hidden>저장된 화면이 없습니다.</p>
+    </section>
+
+    <button type="button" id="retry">다시 시도</button>
+  </main>
+
+  <script>
+    // public/sw.js와 같은 값이어야 합니다.
+    const PAGE_CACHE = 'kao-pages-v1'
+    const SAVED_AT_HEADER = 'x-kao-saved-at'
+    const PRIVATE_PAGE_MAX_AGE = 7 * 24 * 60 * 60 * 1000
+    const isPrivatePath = (pathname) => pathname === '/fleet' || pathname.startsWith('/fleet/')
+    const formatter = new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+
+    async function savedPages() {
+      if (!('caches' in window) || !(await caches.has(PAGE_CACHE))) return []
+      const cache = await caches.open(PAGE_CACHE)
+      const pages = []
+      for (const request of await cache.keys()) {
+        const response = await cache.match(request)
+        if (!response) continue
+        const { pathname } = new URL(request.url)
+        const savedAt = Number(response.headers.get(SAVED_AT_HEADER) || 0)
+        // 기한이 지난 로그인 화면은 서비스 워커도 보여 주지 않습니다.
+        if (isPrivatePath(pathname) && Date.now() - savedAt > PRIVATE_PAGE_MAX_AGE) continue
+        const title = new DOMParser().parseFromString(await response.text(), 'text/html').title.trim()
+        pages.push({ pathname, title: title || pathname, savedAt })
+      }
+      return pages.sort((a, b) => b.savedAt - a.savedAt)
+    }
+
+    function render(pages) {
+      const list = document.getElementById('saved-list')
+      for (const page of pages) {
+        const item = document.createElement('li')
+        const link = document.createElement('a')
+        link.href = page.pathname
+        link.textContent = page.title
+        item.append(link)
+        if (page.savedAt > 0) {
+          const time = document.createElement('time')
+          time.dateTime = new Date(page.savedAt).toISOString()
+          time.textContent = `${formatter.format(page.savedAt)} 저장`
+          item.append(time)
+        }
+        list.append(item)
+      }
+      document.getElementById('saved-empty').hidden = pages.length > 0
+    }
+
+    savedPages()
+      .then(render)
+      .catch(() => render([]))
+
+    document.getElementById('retry').addEventListener('click', () => window.location.reload())
+    window.addEventListener('online', () => window.location.reload())
+  </script>
+</body>
+</html>
