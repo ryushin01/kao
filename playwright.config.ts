@@ -15,6 +15,8 @@ export default defineConfig({
     baseURL: `http://localhost:${PORT}`,
     trace: 'retain-on-failure',
     launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] },
+    // 서비스 워커가 맡은 요청은 page.route로 가로챌 수 없어(3D 모델 막기 등) 기본은 막습니다. 오프라인 저장은 offline.spec.ts에서 켜고 검사합니다.
+    serviceWorkers: 'block',
   },
   projects: [
     { name: 'desktop', use: { ...devices['Desktop Chrome'] }, testIgnore: /live\.spec\.ts/ },

@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { NuxtLink } from '#components'
 import { clearNuxtData, navigateTo } from '#imports'
-import { formatClock } from '@shared/lib'
+import { forgetPrivatePages, formatClock } from '@shared/lib'
 import { homePathFor, useSession } from '@entities/session'
 import { LogoutButton } from '@features/auth'
 import { usePush } from '../model/use-push'
@@ -27,8 +27,10 @@ onBeforeUnmount(() => clearInterval(timer))
 
 async function onLoggedOut() {
   session.setUser(null)
-  // 다음 사람이 이전 계정의 관제 데이터를 보지 않도록 받아 둔 데이터를 비웁니다.
+  // 다음 사람이 이전 계정의 관제 데이터를 보지 않도록 받아 둔 데이터와 이 기기에 저장한 관제 화면(오프라인용)을 비웁니다.
   clearNuxtData()
+  // 저장본 지우기를 기다리지 않고 바로 이동합니다(비운 관제 화면이 남지 않게).
+  void forgetPrivatePages().catch(() => {})
   await navigateTo('/')
 }
 </script>

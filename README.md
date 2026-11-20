@@ -1,13 +1,13 @@
 # KAO — Kinetic Aero One
 
 [![CI](https://github.com/ryushin01/kao/actions/workflows/ci.yml/badge.svg)](https://github.com/ryushin01/kao/actions/workflows/ci.yml)
-![version](https://img.shields.io/badge/version-1.0.1-8B0000)
+![version](https://img.shields.io/badge/version-1.1.0-8B0000)
 
 회원의 자동차·모터사이클·자전거가 달리는 동안 상태를 실시간으로 지켜보고, 문제가 생기면 원격으로 조치하는 관제 서비스입니다. 등록된 탈것은 실제 모양을 본뜬 3D 미니어처로 서울 도심 지도의 실제 도로 위를 달립니다.
 
 **[데모 바로 보기](https://kao-ryushin01.vercel.app/)** · 로그인 화면에서 데모 계정 버튼(관제 요원, 회원 01~07)을 누르면 됩니다. 비밀번호는 모두 `kao-demo-2026`입니다.
 
-> **프로젝트 상태:** 1.0.1. 런칭을 가정해 보안·실시간 안정성·성능·웹 앱을 다듬은 포트폴리오 프로젝트입니다. 실제 차량 대신 서버의 주행 시뮬레이션이 데이터를 만들고, 실제 차량은 [실차 연결 API](docs/integration.md)로 붙일 수 있습니다(데모 장치 스크립트로 시험). 회원·등록번호·주행 기록은 모두 가상 데이터입니다.
+> **프로젝트 상태:** 1.1.0. 런칭을 가정해 보안·실시간 안정성·성능·웹 앱·오프라인을 다듬은 포트폴리오 프로젝트입니다. 실제 차량 대신 서버의 주행 시뮬레이션이 데이터를 만들고, 실제 차량은 [실차 연결 API](docs/integration.md)로 붙일 수 있습니다(데모 장치 스크립트로 시험). 회원·등록번호·주행 기록은 모두 가상 데이터입니다.
 
 ## 화면
 
@@ -37,6 +37,7 @@
 - **미니어처**: 세단·슈퍼카·슈퍼바이크·자전거·전기자동차·SUV·MPV 일곱 분류의 대표 모델입니다. G80·아벤타도르·파니갈레·에센시아·아르카나·알파드는 실제 3D 모델(아래 출처)을 실제 치수로 맞추고 바퀴를 분리했고, STRiDA LT는 Three.js로 직접 모델링했습니다. 바퀴는 속도에 맞춰 구르고, 이륜차는 굽은 길에서 실제 속도에 맞는 각도로 눕습니다.
 - **원격 조치·실차 연결**: 냉각 모드, 출력·속도 제한, TPMS 재보정 등을 확인 대화상자를 거쳐 한 번만 보냅니다. 실제 차량이 측정값·GPS를 보내면 실측값으로 바뀌고, 조치는 명령으로 차량에 전달돼 적용·실패 응답을 받습니다. 장치는 탈것 하나에 묶인 토큰을 쓰고, 제조사 서버에는 서명한 웹훅으로 명령을 보내며, 경로 밖을 달리면 실제 위치와 지나온 길을 그리고 300m를 넘으면 '경로 이탈' 문제를 엽니다([실차 연결](docs/integration.md)).
 - **서버리스·성능**: 시뮬레이션은 시간의 순수 함수라 어느 서버 인스턴스든 같은 상태를 냅니다. 실시간 스트림은 gzip으로 보내(초당 약 0.6 KB) 끊기면 다시 연결하고 숨긴 탭에서는 멈춥니다. 3D는 화면에 다가올 때 받고, 지도 도형은 웹 워커에서 만들며, 셰이더는 그리기 전에 메인 스레드를 막지 않게 컴파일합니다.
+- **오프라인**: 한 번 연 화면은 인터넷이 끊겨도 이 기기에 저장해 둔 화면과 서울 지도·3D 모델·글꼴로 엽니다(실시간 위치와 원격 조치는 다시 연결되면 이어짐). 저장하지 않은 화면은 저장된 화면 목록을 안내하고, 로그인해야 보이는 화면의 저장본은 로그아웃하면 지웁니다. 로컬로 띄운 KAO는 외부에서 받는 것이 없어 처음부터 인터넷 없이 돕니다([개발 가이드](docs/development.md#오프라인)).
 - **접근성**: 본문 바로가기, 애니메이션 정지(운영체제 '동작 줄이기' 따름), 색·모양·글자를 함께 쓰는 상태 표시, 새 문제를 `status`·`alert`로 알림, 3D 지도의 표 대체 콘텐츠
 
 ## 기술 스택
@@ -71,6 +72,10 @@ pnpm dev        # http://localhost:3000
 
 3D 모델·서울 지도 만들기, 실차 데모 장치, DB 마이그레이션, Storybook 명령은 [개발 가이드](docs/development.md#명령)에 있습니다.
 
+### 인터넷 없이 띄우기
+
+서울 지도 데이터(OpenStreetMap)·3D 모델·글꼴은 저장소에 들어 있고, 화면을 열 때 외부에서 받는 것이 없습니다. 인터넷이 될 때 `pnpm install`과 `pnpm build`를 해 두면 오프라인에서도 `pnpm preview`로 띄운 `http://localhost:3000`을 그대로 쓸 수 있습니다. `DATABASE_URL`을 비워 두면 메모리 저장소와 데모 계정(`operator` / `kao-demo-2026`)·주행 시뮬레이션으로 돕니다. 인터넷이 있어야 하는 것과 외부 요청이 없음을 확인한 방법은 [개발 가이드](docs/development.md#인터넷-없이-내-컴퓨터에서-띄우기)에 있습니다.
+
 ## 프로젝트 구조
 
 ```
@@ -92,7 +97,7 @@ tests/e2e/  Playwright E2E
 | 스포카 한 산스 네오 (줄인 판 이름 KaoSans) | 한글 본문 | 400·500·700 | Spoqa | SIL OFL 1.1 (예약 이름 Spoqa Han Sans Neo) | [GitHub spoqa/spoqa-han-sans](https://github.com/spoqa/spoqa-han-sans) |
 | 오빗 (Orbit) | 한글 제목 (h1·h2) | 400 | 조수운·JAMO | SIL OFL 1.1 | [Google Fonts](https://fonts.google.com/specimen/Orbit) · [google/fonts](https://github.com/google/fonts/tree/main/ofl/orbit) |
 
-모두 같은 사이트에서 제공합니다(외부 글꼴 CDN 없음). 한글 두 글꼴은 화면에 쓰는 글자만 담은 파일을 먼저 받고, 나머지 글자 조각(`public/fonts`)은 페이지를 다 받은 뒤 붙입니다(`pnpm fonts`로 만듦, 원본과 라이선스 전문은 `scripts/fonts/`). 스포카 한 산스 네오는 OFL 예약 이름이 있어 줄인 파일의 이름을 KaoSans로 바꿨습니다. 오빗에는 h1·h2 제목에 쓰는 글자만 미리 담고(`scripts/fonts/titles.mjs`), 자주 쓰는 한글 2,780자만 들어 있어 그 밖의 드문 글자는 KaoSans로 보입니다.
+모두 같은 사이트에서 제공합니다(외부 글꼴 CDN 없음). 한글 두 글꼴은 화면에 쓰는 글자만 담은 파일을 먼저 받고, 나머지 글자 조각(`public/fonts`)은 페이지를 다 받은 뒤 붙입니다(`pnpm fonts`로 만듦, 원본과 라이선스 전문은 `scripts/fonts/`. 이름 바꾸기에 Python `fontTools`가 필요: `pip install fonttools brotli`). 스포카 한 산스 네오는 OFL 예약 이름이 있어 줄인 파일의 이름을 KaoSans로 바꿨습니다. 오빗에는 h1·h2 제목에 쓰는 글자만 미리 담고(`scripts/fonts/titles.mjs`), 자주 쓰는 한글 2,780자만 들어 있어 그 밖의 드문 글자는 KaoSans로 보입니다.
 
 ## 출처
 
@@ -112,7 +117,7 @@ tests/e2e/  Playwright E2E
 
 | 문서 | 내용 |
 |---|---|
-| [개발 가이드](docs/development.md) | 구조, API와 시뮬레이션, 로그인, 서울 지도, 미니어처 모델링, 테스트, CI |
+| [개발 가이드](docs/development.md) | 구조, API와 시뮬레이션, 로그인, 서울 지도, 미니어처 모델링, 오프라인, 테스트, CI |
 | [배포](docs/deploy.md) | Vercel·Neon 구성, 환경 변수, 웹 푸시, 서버리스에서 상태 다루기 |
 | [실차 연결](docs/integration.md) | 측정값·GPS 수신, 실측 문제, 원격 조치 명령과 응답, 데모 장치 |
 | [버전 기록](CHANGELOG.md) | 버전별 변경 내용 |
