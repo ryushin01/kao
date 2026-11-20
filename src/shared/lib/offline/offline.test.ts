@@ -227,6 +227,11 @@ function startServiceWorker() {
     fetch,
     network,
     state,
+    /** 이벤트를 보내기만 하고 끝나기를 기다리지 않습니다(시간을 흉내 낼 때). */
+    fire: <T extends FakeExtendableEvent>(type: string, event: T) => {
+      listeners.get(type)!(event)
+      return event
+    },
     install: () => dispatch('install', new FakeExtendableEvent()),
     activate: () => dispatch('activate', new FakeExtendableEvent()),
     message: (data: unknown) => dispatch('message', new FakeMessageEvent(data)),
@@ -300,6 +305,37 @@ describe('오프라인 저장(서비스 워커)', () => {
     sw.network.set('/fleet/kao-0001', () => page('Genesis G80 — KAO 관제').text().then((html) => new Response(html.replace('Cd34.js', 'Gone99.js'), { headers: { 'content-type': 'text/html' } })))
     await sw.request(navigation('/fleet/kao-0001'))
     expect(await sw.paths(OFFLINE_PAGE_CACHE)).toEqual(['/fleet'])
+  })
+
+  it('화면 응답이 5초 넘게 없으면 저장한 화면을 먼저 주고, 늦게 온 응답으로 저장본을 갱신한다', async () => {
+    sw.network.set('/fleet', () => page('관제 센터 (처음)'))
+    await sw.request(navigation('/fleet'))
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    let release!: () => void
+    sw.network.set('/fleet', () => new Promise<Response>((resolve) => (release = () => resolve(page('관제 센터 (나중)')))))
+
+    const event = sw.fire('fetch', new FakeFetchEvent(navigation('/fleet')))
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(await (await event.response!).text()).toContain('관제 센터 (처음)')
+
+    release()
+    await event.settled()
+    expect(await (await (await sw.caches.open(OFFLINE_PAGE_CACHE)).match('/fleet'))!.text()).toContain('관제 센터 (나중)')
+  })
+
+  it('저장한 화면이 없으면 응답이 늦어도 계속 기다린다', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    let release!: () => void
+    sw.network.set('/fleet/kao-0002', () => new Promise<Response>((resolve) => (release = () => resolve(page('Lamborghini Aventador — KAO 관제')))))
+
+    const event = sw.fire('fetch', new FakeFetchEvent(navigation('/fleet/kao-0002')))
+    let answered = false
+    void event.response!.then(() => (answered = true))
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(answered).toBe(false)
+
+    release()
+    expect(await (await event.response!).text()).toContain('Lamborghini Aventador — KAO 관제')
   })
 
   it('세션 유지 기간(7일)이 지난 로그인 화면은 보여 주지 않고 지운다. 공개 화면은 기한이 없다', async () => {

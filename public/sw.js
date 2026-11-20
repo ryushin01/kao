@@ -2,6 +2,7 @@
 //
 // 오프라인 저장(연결이 끊겨도 한 번 연 화면과 서울 지도를 보여 줌)
 // - 화면(HTML): 네트워크를 먼저 쓰고, 받은 화면을 저장합니다. 연결이 없으면 저장한 화면을, 그것도 없으면 /offline.html을 줍니다.
+//   응답이 5초 넘게 없으면(Wi-Fi에는 붙었지만 인터넷이 안 될 때 등) 저장한 화면을 먼저 주고, 늦게 온 응답으로 저장본을 갱신합니다.
 //   앱 안에서 옮긴 화면은 앱이 'save-page' 메시지로 알려 주면 따로 받아 저장합니다(같은 화면은 10분에 한 번).
 //   화면이 서비스 워커가 맡기 전에 받은 자원은 앱이 'save-page'·'save-resources'로 알려 주면 저장합니다.
 // - 로그인해야 보이는 화면(/fleet…)은 세션 유지 기간(7일)이 지나면 쓰지 않고, 로그아웃·세션 만료 때 지웁니다.
@@ -34,6 +35,8 @@ const SAVED_AT_HEADER = 'x-kao-saved-at'
 const PRIVATE_PAGE_MAX_AGE = 7 * 24 * 60 * 60 * 1000
 /** 앱 안에서 옮긴 화면을 다시 받아 저장하는 간격 */
 const RESAVE_INTERVAL = 10 * 60 * 1000
+/** 화면 응답을 기다리는 시간. 넘으면 저장한 화면이 있을 때 그것을 먼저 줍니다(저장본이 없으면 계속 기다림). */
+const NETWORK_TIMEOUT = 5000
 const MAX_PAGES = 30
 const MAX_ASSETS = 200
 const MAX_LINKED_PAGES = 12
@@ -180,19 +183,11 @@ async function startPageRedirect(url) {
   return Response.redirect(new URL(startPage, self.location.origin).href, 302)
 }
 
-async function respondToPage(event, url) {
-  const generation = privateGeneration
-  let response
-  try {
-    response = (await event.preloadResponse) ?? (await fetch(event.request))
-  } catch {
-    return (
-      (await savedPage(url)) ??
-      (await startPageRedirect(url)) ??
-      (await caches.match(OFFLINE_PAGE, { cacheName: SHELL_CACHE })) ??
-      Response.error()
-    )
-  }
+const TIMED_OUT = Symbol('timed out')
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** 받은 화면 응답으로 저장본을 갱신하거나, 로그인 화면이 거절·돌려보내면 저장본을 지웁니다. */
+function handlePageResponse(event, url, response, generation) {
   if (isPrivatePath(url.pathname) && isRejected(response)) {
     event.waitUntil(forgetPrivatePages())
   } else if (isPrivatePath(url.pathname) && response.type === 'opaqueredirect') {
@@ -201,6 +196,29 @@ async function respondToPage(event, url) {
     event.waitUntil(savePage(url, response.clone(), generation))
   }
   return response
+}
+
+async function respondToPage(event, url) {
+  const generation = privateGeneration
+  const network = Promise.resolve(event.preloadResponse)
+    .then((preloaded) => preloaded ?? fetch(event.request))
+    .then((response) => handlePageResponse(event, url, response, generation))
+  const first = await Promise.race([network.catch(() => null), delay(NETWORK_TIMEOUT).then(() => TIMED_OUT)])
+  if (first && first !== TIMED_OUT) return first
+  // 연결이 없거나(오류) 응답이 늦으면 저장한 화면을 줍니다. 늦은 응답은 마저 받아 저장본을 갱신합니다.
+  const fallback = (await savedPage(url)) ?? (await startPageRedirect(url))
+  if (fallback) {
+    if (first === TIMED_OUT) event.waitUntil(network.catch(() => {}))
+    return fallback
+  }
+  if (first === TIMED_OUT) {
+    try {
+      return await network
+    } catch {
+      // 끝내 받지 못하면 아래의 오프라인 안내 화면을 줍니다.
+    }
+  }
+  return (await caches.match(OFFLINE_PAGE, { cacheName: SHELL_CACHE })) ?? Response.error()
 }
 
 async function cacheFirst(event, request) {

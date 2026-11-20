@@ -10,6 +10,12 @@ import { loginAs, waitForHydration } from './fixtures'
  */
 test.use({ serviceWorkers: 'allow', reducedMotion: 'reduce' })
 
+// 다른 화면 검사처럼 3D 모델 요청을 막아, 받지 못했을 때 쓰는 직접 만든 모형으로 그립니다(GPU 없는 CI에서 CPU로 그리는 부담을
+// 줄임). page.route와 달리 context.route는 서비스 워커가 보내는 요청도 막습니다. 실제 모델 저장은 운영 확인으로 봅니다.
+test.beforeEach(async ({ context }) => {
+  await context.route('**/models/*.glb', (route) => route.abort())
+})
+
 const PAGE_CACHE = 'kao-pages-v1'
 const STATIC_CACHE = 'kao-static-v1'
 const ASSET_CACHE = 'kao-assets-v1'
