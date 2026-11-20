@@ -26,7 +26,8 @@ if (!data.value?.vehicles.some((vehicle) => vehicle.id === vehicleId.value)) {
   throw createError({ statusCode: 404, message: '등록되지 않은 탈것입니다.', fatal: true })
 }
 // 화면을 연 채 세션이 끝나면 로그인 화면으로 보내고, 로그인하면 이 화면으로 돌아옵니다.
-const { frame, applyAction } = useLiveFleet(data, { onUnauthorized: useSessionExpiry() })
+// 마지막 상태는 이 기기에 저장해 오프라인에서 저장해 둔 화면을 열 때 씁니다.
+const { frame, applyAction } = useLiveFleet(data, { onUnauthorized: useSessionExpiry(), rememberAs: () => user.value?.id })
 
 const vehicle = computed(() => frame.value!.vehicles.find((item) => item.id === vehicleId.value)!)
 const profile = computed(() => MODEL_PROFILES[vehicle.value.modelId])

@@ -2,8 +2,16 @@ import { defineComponent, h, ref } from 'vue'
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { FleetFrame } from '@shared/api'
-import { HIDDEN_GRACE_MS, useLiveFleet } from './live-fleet'
+import { recallLastFrame, rememberLastFrame } from '@shared/lib'
+import { HIDDEN_GRACE_MS, REMEMBER_INTERVAL_MS, useLiveFleet } from './live-fleet'
 import type { LiveFleetOptions } from './live-fleet'
+
+// 마지막 상태 저장소(Cache API)는 오프라인 저장 테스트(shared/lib/offline)가 확인하고, 여기서는 언제 저장·복원하는지만 봅니다.
+vi.mock('@shared/lib', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@shared/lib')>()),
+  rememberLastFrame: vi.fn(async () => {}),
+  recallLastFrame: vi.fn(async () => null),
+}))
 
 class FakeEventSource {
   static readonly CONNECTING = 0
@@ -172,5 +180,63 @@ describe('useLiveFleet', () => {
     expect(latest().closed).toBe(true)
     await vi.advanceTimersByTimeAsync(120_000)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  describe('마지막 상태를 기기에 저장(오프라인)', () => {
+    const remember = vi.mocked(rememberLastFrame)
+    const recall = vi.mocked(recallLastFrame)
+
+    beforeEach(() => {
+      remember.mockClear()
+      recall.mockReset()
+      recall.mockResolvedValue(null)
+    })
+
+    it('저장해 둔 상태가 화면의 첫 상태보다 새것이면 그것으로 시작하고, 오래된 것이면 쓰지 않습니다', async () => {
+      recall.mockResolvedValueOnce(frameAt(9000))
+      const newer = mountFleet({ rememberAs: () => 'user-operator' })
+      await vi.waitFor(() => expect(newer.api.frame.value?.at).toBe(9000))
+      expect(recall).toHaveBeenCalledWith('user-operator')
+
+      recall.mockResolvedValueOnce(frameAt(500))
+      const older = mountFleet({ rememberAs: () => 'user-operator' })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(older.api.frame.value?.at).toBe(1000)
+    })
+
+    it('받은 상태를 10초마다, 연결이 끊기는 순간과 화면을 떠날 때 저장합니다', async () => {
+      const { wrapper } = mountFleet({ rememberAs: () => 'user-operator' })
+      latest().frame(frameAt(2000))
+      latest().frame(frameAt(2500))
+      expect(remember).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(REMEMBER_INTERVAL_MS)
+      expect(remember).toHaveBeenLastCalledWith('user-operator', frameAt(2500))
+
+      latest().frame(frameAt(3000))
+      window.dispatchEvent(new Event('offline'))
+      expect(remember).toHaveBeenLastCalledWith('user-operator', frameAt(3000))
+
+      latest().frame(frameAt(3500))
+      wrapper.unmount()
+      expect(remember).toHaveBeenLastCalledWith('user-operator', frameAt(3500))
+    })
+
+    it('로그아웃해 로그인한 사람이 없으면 저장하지 않고, 저장을 켜지 않으면 기기에 손대지 않습니다', async () => {
+      let userId: string | null = 'user-operator'
+      const { wrapper } = mountFleet({ rememberAs: () => userId })
+      latest().frame(frameAt(2000))
+      userId = null
+      await vi.advanceTimersByTimeAsync(REMEMBER_INTERVAL_MS)
+      wrapper.unmount()
+      expect(remember).not.toHaveBeenCalled()
+
+      recall.mockClear()
+      mountFleet()
+      latest().frame(frameAt(2000))
+      window.dispatchEvent(new Event('offline'))
+      await vi.advanceTimersByTimeAsync(REMEMBER_INTERVAL_MS)
+      expect(remember).not.toHaveBeenCalled()
+      expect(recall).not.toHaveBeenCalled()
+    })
   })
 })

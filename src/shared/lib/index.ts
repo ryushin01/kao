@@ -8,4 +8,16 @@ export { whenNearViewport } from './viewport'
 export { isWebGLAvailable } from './webgl'
 export type { RouteGeo, RouteMatch } from './route-geo'
 export { attachFonts } from './attach-fonts'
-export { forgetPrivatePages, initOnlineStatus, isPrivatePagePath, OFFLINE_PAGE_CACHE, registerOfflineSupport, savePageForOffline, useOnline } from './offline'
+export {
+  forgetPrivatePages,
+  initOnlineStatus,
+  isPrivatePagePath,
+  OFFLINE_PAGE_CACHE,
+  OFFLINE_PRIVATE_CACHE,
+  recallLastFrame,
+  registerOfflineSupport,
+  rememberLastFrame,
+  rememberSignedInUser,
+  savePageForOffline,
+  useOnline,
+} from './offline'

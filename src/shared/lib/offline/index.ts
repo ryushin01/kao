@@ -1,1 +1,13 @@
-export { forgetPrivatePages, initOnlineStatus, isPrivatePagePath, OFFLINE_PAGE_CACHE, registerOfflineSupport, savePageForOffline, useOnline } from './offline'
+export {
+  forgetPrivatePages,
+  initOnlineStatus,
+  isPrivatePagePath,
+  OFFLINE_PAGE_CACHE,
+  OFFLINE_PRIVATE_CACHE,
+  recallLastFrame,
+  registerOfflineSupport,
+  rememberLastFrame,
+  rememberSignedInUser,
+  savePageForOffline,
+  useOnline,
+} from './offline'

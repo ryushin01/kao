@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { forgetPrivatePages, initOnlineStatus, isPrivatePagePath, OFFLINE_PAGE_CACHE, useOnline } from './offline'
+import { forgetPrivatePages, initOnlineStatus, isPrivatePagePath, OFFLINE_PAGE_CACHE, OFFLINE_PRIVATE_CACHE, recallLastFrame, rememberLastFrame, useOnline } from './offline'
 
 /**
  * 오프라인 저장: 앱 쪽 함수와 서비스 워커(public/sw.js)의 저장 규칙을 확인합니다. 서비스 워커는 가짜 환경(저장소·네트워크)에서
@@ -26,6 +26,8 @@ interface Stored {
 /** 주소로만 찾는 Cache API 흉내(서비스 워커가 쓰는 만큼만) */
 class FakeCache {
   readonly entries = new Map<string, Stored>()
+  /** 저장이 끝나기 전에 끼어들 일을 흉내 내려고 put을 잠시 붙잡습니다. */
+  beforePut: ((key: string) => Promise<void>) | null = null
 
   async match(input: RequestLike) {
     const stored = this.entries.get(toUrl(input))
@@ -34,6 +36,7 @@ class FakeCache {
 
   async put(input: RequestLike, response: Response) {
     const key = toUrl(input)
+    await this.beforePut?.(key)
     const stored = { body: await response.arrayBuffer(), status: response.status, statusText: response.statusText, headers: [...response.headers] }
     this.entries.delete(key)
     this.entries.set(key, stored)
@@ -98,10 +101,24 @@ describe('오프라인 저장(앱)', () => {
     vi.stubGlobal('caches', storage)
     vi.stubGlobal('navigator', { serviceWorker: { controller: { postMessage } } })
 
+    await storage.open(OFFLINE_PRIVATE_CACHE)
     await forgetPrivatePages()
 
     expect(pages.paths()).toEqual(['/', '/login'])
+    expect(await storage.has(OFFLINE_PRIVATE_CACHE)).toBe(false)
     expect(postMessage).toHaveBeenCalledWith({ type: 'forget-private-pages' })
+  })
+
+  it('마지막 실시간 상태는 저장한 사람에게만, 기한(7일) 안에만 돌려준다', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.stubGlobal('caches', new FakeCacheStorage())
+    await rememberLastFrame('user-operator', { at: 1 })
+
+    expect(await recallLastFrame('user-operator')).toEqual({ at: 1 })
+    expect(await recallLastFrame('user-member01')).toBeNull()
+    vi.setSystemTime(Date.now() + 7 * 24 * 60 * 60 * 1000 + 1)
+    expect(await recallLastFrame('user-operator')).toBeNull()
+    vi.useRealTimers()
   })
 
   it('브라우저의 연결 상태를 따라간다', () => {
@@ -160,6 +177,7 @@ class FakeMessageEvent extends FakeExtendableEvent {
 const opaqueRedirect = () => ({ type: 'opaqueredirect', status: 0, ok: false, headers: new Headers() }) as unknown as Response
 
 const BUILD_ID = 'build-1'
+const LINKED_ASSETS = ['/_nuxt/entry.Ab12.css', '/_nuxt/Cd34.js', `/_nuxt/builds/meta/${BUILD_ID}.json`]
 const page = (title: string) =>
   new Response(
     `<!doctype html><html><head><title>${title}</title><link rel="stylesheet" href="/_nuxt/entry.Ab12.css">` +
@@ -189,10 +207,13 @@ function startServiceWorker() {
     skipWaiting: vi.fn(async () => {}),
     registration: { navigationPreload: { enable: vi.fn(async () => {}) } },
     clients: { claim: vi.fn(async () => {}) },
+    navigator: { connection: { saveData: false } },
   }
   // 서비스 워커 파일은 앱 번들이 아니라 그대로 내보내는 정적 파일이라, 원문을 가짜 전역으로 감싸 실행합니다.
   new Function('self', 'caches', 'fetch', SW_SOURCE)(self, caches, fetch)
   network.set('/offline.html', () => new Response(OFFLINE_HTML, { headers: { 'content-type': 'text/html' } }))
+  // page()가 잇는 빌드 조각과 Nuxt 앱 정보(화면은 이것들을 모두 저장해야 저장합니다)
+  for (const path of LINKED_ASSETS) network.set(path, () => new Response(path))
 
   async function dispatch<T extends FakeExtendableEvent>(type: string, event: T) {
     listeners.get(type)!(event)
@@ -236,6 +257,8 @@ describe('오프라인 저장(서비스 워커)', () => {
 
     expect(await sw.paths(OFFLINE_PAGE_CACHE)).toEqual(['/'])
     expect(OFFLINE_HTML).toContain(`const PAGE_CACHE = '${OFFLINE_PAGE_CACHE}'`)
+    await sw.message({ type: 'set-user', userId: 'user-operator', startPage: '/fleet' })
+    expect(await sw.caches.has(OFFLINE_PRIVATE_CACHE)).toBe(true)
     const saved = await (await sw.caches.open(OFFLINE_PAGE_CACHE)).match('/')
     expect(Number(saved!.headers.get('x-kao-saved-at'))).toBe(Date.now())
     expect(OFFLINE_HTML).toContain("const SAVED_AT_HEADER = 'x-kao-saved-at'")
@@ -267,12 +290,16 @@ describe('오프라인 저장(서비스 워커)', () => {
     expect(await text(sw.request(navigation('/fleet/kao-0003')))).toContain('인터넷에 연결되어 있지 않습니다')
   })
 
-  it('저장한 화면이 쓰는 빌드 조각과 Nuxt 앱 정보 파일도 함께 저장한다', async () => {
+  it('화면이 쓰는 빌드 조각과 Nuxt 앱 정보 파일을 먼저 저장하고, 하나라도 받지 못하면 그 화면은 저장하지 않는다', async () => {
     sw.network.set('/fleet', () => page('관제 센터 — KAO'))
-    for (const path of ['/_nuxt/entry.Ab12.css', '/_nuxt/Cd34.js', `/_nuxt/builds/meta/${BUILD_ID}.json`]) sw.network.set(path, () => new Response(path))
     await sw.request(navigation('/fleet'))
+    expect(await sw.paths('kao-assets-v1')).toEqual(LINKED_ASSETS)
+    expect(await sw.paths(OFFLINE_PAGE_CACHE)).toEqual(['/fleet'])
 
-    expect(await sw.paths('kao-assets-v1')).toEqual(['/_nuxt/entry.Ab12.css', '/_nuxt/Cd34.js', `/_nuxt/builds/meta/${BUILD_ID}.json`])
+    // 새로 배포해 옛 조각이 없어진 화면처럼, 조각을 받지 못하면 오프라인에서 오류 화면이 되므로 저장하지 않습니다.
+    sw.network.set('/fleet/kao-0001', () => page('Genesis G80 — KAO 관제').text().then((html) => new Response(html.replace('Cd34.js', 'Gone99.js'), { headers: { 'content-type': 'text/html' } })))
+    await sw.request(navigation('/fleet/kao-0001'))
+    expect(await sw.paths(OFFLINE_PAGE_CACHE)).toEqual(['/fleet'])
   })
 
   it('세션 유지 기간(7일)이 지난 로그인 화면은 보여 주지 않고 지운다. 공개 화면은 기한이 없다', async () => {
@@ -288,17 +315,72 @@ describe('오프라인 저장(서비스 워커)', () => {
     expect(await sw.paths(OFFLINE_PAGE_CACHE)).toEqual(['/'])
   })
 
-  it('로그인 화면이 로그인으로 돌려보내면(세션이 끝남) 저장한 로그인 화면을 모두 지운다', async () => {
+  it('로그인 화면이 돌려보내면 세션을 물어, 끝났을 때만 저장한 로그인 화면과 로그인한 사람의 것을 지운다', async () => {
     sw.network.set('/', () => page('소개'))
     sw.network.set('/fleet', () => page('관제 센터 — KAO'))
     sw.network.set('/fleet/kao-0001', () => page('Genesis G80 — KAO 관제'))
     for (const path of ['/', '/fleet', '/fleet/kao-0001']) await sw.request(navigation(path))
+    await sw.message({ type: 'set-user', userId: 'user-member01', startPage: '/fleet/kao-0001' })
 
+    // 회원이 /fleet을 열면 세션이 있어도 자기 탈것으로 돌려보냅니다.
     sw.network.set('/fleet', opaqueRedirect)
-    const response = await sw.request(navigation('/fleet'))
+    sw.network.set('/api/auth/session', () => Response.json({ user: { id: 'user-member01' } }))
+    expect((await (await sw.request(navigation('/fleet')))!).type).toBe('opaqueredirect')
+    expect(await sw.paths(OFFLINE_PAGE_CACHE)).toEqual(['/', '/fleet', '/fleet/kao-0001'])
 
-    expect((await response!).type).toBe('opaqueredirect')
+    sw.network.set('/api/auth/session', () => Response.json({ user: null }))
+    await sw.request(navigation('/fleet'))
     expect(await sw.paths(OFFLINE_PAGE_CACHE)).toEqual(['/'])
+    expect(await sw.caches.has(OFFLINE_PRIVATE_CACHE)).toBe(false)
+  })
+
+  it('다른 사람이 로그인하면 이전 사람의 로그인 화면을 지우고, 같은 사람이면 둔다', async () => {
+    sw.network.set('/fleet', () => page('관제 센터 — KAO'))
+    await sw.message({ type: 'set-user', userId: 'user-operator', startPage: '/fleet' })
+    await sw.request(navigation('/fleet'))
+
+    await sw.message({ type: 'set-user', userId: 'user-operator', startPage: '/fleet' })
+    expect(await sw.paths(OFFLINE_PAGE_CACHE)).toEqual(['/fleet'])
+    await sw.message({ type: 'set-user', userId: 'user-member01', startPage: '/fleet/kao-0001' })
+    expect(await sw.paths(OFFLINE_PAGE_CACHE)).toEqual([])
+  })
+
+  it('오프라인에서 저장본이 없는 /fleet은 회원의 첫 화면(자기 탈것)으로 보내고, 관제 요원은 안내 화면을 준다', async () => {
+    sw.network.set('/fleet/kao-0001', () => page('Genesis G80 — KAO 관제'))
+    await sw.request(navigation('/fleet/kao-0001'))
+    await sw.message({ type: 'set-user', userId: 'user-member01', startPage: '/fleet/kao-0001' })
+    sw.state.offline = true
+
+    const response = (await sw.request(navigation('/fleet')))!
+    expect(response.status).toBe(302)
+    expect(response.headers.get('location')).toBe(`${ORIGIN}/fleet/kao-0001`)
+    expect(await text(sw.request(navigation('/fleet/kao-0001')))).toContain('Genesis G80 — KAO 관제')
+
+    sw.state.offline = false
+    await sw.message({ type: 'set-user', userId: 'user-operator', startPage: '/fleet' })
+    sw.state.offline = true
+    expect(await text(sw.request(navigation('/fleet')))).toContain('인터넷에 연결되어 있지 않습니다')
+  })
+
+  it('관제 센터를 저장할 때 그 화면이 잇는 탈것 화면도 미리 저장하고, 데이터 절약 모드면 건너뛴다', async () => {
+    const fleetWithLinks = () => {
+      const links = ['kao-0001', 'kao-0002'].map((id) => `<a href="/fleet/${id}">${id}</a>`).join('')
+      return new Response(`<!doctype html><html><head><title>관제 센터 — KAO</title></head><body>${links}<a href="/">소개</a></body></html>`, {
+        headers: { 'content-type': 'text/html' },
+      })
+    }
+    sw.network.set('/fleet', fleetWithLinks)
+    sw.network.set('/fleet/kao-0001', () => page('Genesis G80 — KAO 관제'))
+    sw.network.set('/fleet/kao-0002', () => page('Lamborghini Aventador — KAO 관제'))
+
+    sw.self.navigator.connection.saveData = true
+    await sw.request(navigation('/fleet'))
+    expect(await sw.paths(OFFLINE_PAGE_CACHE)).toEqual(['/fleet'])
+
+    sw.self.navigator.connection.saveData = false
+    await sw.request(navigation('/fleet'))
+    expect(await sw.paths(OFFLINE_PAGE_CACHE)).toEqual(expect.arrayContaining(['/fleet', '/fleet/kao-0001', '/fleet/kao-0002']))
+    expect(await sw.paths(OFFLINE_PAGE_CACHE)).not.toContain('/')
   })
 
   it('API·실시간 스트림·다른 사이트·POST·구간 요청·질의 문자열이 붙은 조각은 맡지 않는다', async () => {
@@ -358,6 +440,21 @@ describe('오프라인 저장(서비스 워커)', () => {
     expect(await sw.paths('kao-assets-v1')).toEqual(['/_nuxt/three.Gh78.js'])
     expect(await sw.paths('kao-static-v1')).toEqual(['/models/genesis-g80.lite.glb'])
     expect(sw.fetch.mock.calls.some(([input]) => toUrl(input).includes('/api/'))).toBe(false)
+  })
+
+  it('저장하는 사이에 로그아웃해 지우기가 먼저 끝나도, 방금 저장한 로그인 화면을 남기지 않는다', async () => {
+    sw.network.set('/fleet', () => page('관제 센터 — KAO'))
+    const pages = await sw.caches.open(OFFLINE_PAGE_CACHE)
+    let release!: () => void
+    pages.beforePut = (key) => (key.endsWith('/fleet') ? new Promise((resolve) => (release = resolve)) : Promise.resolve())
+
+    const saving = sw.request(navigation('/fleet'))
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+    await sw.message({ type: 'forget-private-pages' })
+    release()
+    await saving
+
+    expect(await sw.paths(OFFLINE_PAGE_CACHE)).toEqual([])
   })
 
   it('로그아웃하면 그 전에 받기 시작한 로그인 화면도 저장하지 않는다', async () => {

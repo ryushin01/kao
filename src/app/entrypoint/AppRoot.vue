@@ -2,13 +2,15 @@
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { NuxtPage } from '#components'
 import { useRoute } from '#imports'
-import { attachFonts, initMotionPreference, initOnlineStatus, registerOfflineSupport, savePageForOffline, useOnline } from '@shared/lib'
+import { attachFonts, initMotionPreference, initOnlineStatus, registerOfflineSupport, rememberSignedInUser, savePageForOffline, useOnline } from '@shared/lib'
+import { homePathFor, useSession } from '@entities/session'
 import { SiteFooter } from '@widgets/site-footer'
 import { SiteHeader } from '@widgets/site-header'
 
 const route = useRoute()
 const main = ref<HTMLElement | null>(null)
 const online = useOnline()
+const session = useSession()
 
 onMounted(initMotionPreference)
 // 한글 나머지 글자 조각(화면 글자 파일에 없는 글자)은 첫 화면 뒤에 붙입니다.
@@ -18,9 +20,19 @@ onMounted(() => {
 })
 // 오프라인 저장: 연 화면과 지도·모델·글꼴을 이 기기에 저장해 연결이 끊겨도 보여 줍니다.
 // 개발 서버에서는 등록하지 않습니다(고친 모듈 대신 저장해 둔 옛 파일이 나오지 않게).
-onMounted(() => {
+onMounted(async () => {
   initOnlineStatus()
-  if (!import.meta.dev) void registerOfflineSupport()
+  if (import.meta.dev) return
+  await registerOfflineSupport()
+  // 서비스 워커가 켜진 뒤부터 로그인한 사람과 그 첫 화면을 알립니다(다른 사람이 로그인하면 이전 사람의 저장본을 지우고,
+  // 오프라인에서 /fleet을 열면 회원은 자기 탈것 화면으로 이동).
+  watch(
+    () => session.user.value,
+    (user) => {
+      if (user) void rememberSignedInUser(user.id, homePathFor(user))
+    },
+    { immediate: true },
+  )
 })
 
 // 화면을 옮기면 새 본문으로 초점을 보내고(화면 낭독기가 이전 화면에 머물지 않게), 새 화면을 오프라인용으로 저장합니다.
