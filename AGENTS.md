@@ -20,7 +20,7 @@
 
 ## 3. 설치·개발 명령
 
-- Node.js 24(`.nvmrc`), pnpm 12(`packageManager: pnpm@12.16.1`).
+- Node.js 24(`.nvmrc`, `engines`는 `>=22.18`), pnpm 12(`packageManager: pnpm@12.16.1`).
 
 ```bash
 corepack enable pnpm
@@ -50,7 +50,9 @@ pnpm exec playwright install --with-deps chromium
 pnpm test:e2e             # 프로덕션 빌드를 데스크톱·모바일에서, axe(WCAG 2.2 AA)
 ```
 
-- E2E는 3D 모델 요청을 막고 돕니다(`tests/e2e/fixtures.ts`). 실제 모델은 `models.spec.ts`, 실차 연동은 `live` 프로젝트, 오프라인은 `offline.spec.ts`가 따로 봅니다.
+- E2E는 3D 모델 요청을 막고 돕니다(`tests/e2e/fixtures.ts`). 실제 모델은 `models.spec.ts`, 실차 연동은 `live` 프로젝트, 서비스 워커 오프라인은 `offline.spec.ts`가 따로 봅니다.
+- `offline-network.spec.ts`는 `DATABASE_URL` 없이 띄운 운영 빌드에서 localhost 밖 요청을 모두 막고 모든 화면이 내용과 함께 뜨는지(사이트 안 요청 실패·런타임 오류·axe 위반 없음) 봅니다. 화면에 외부 요청(CDN 글꼴·원격 지도·외부 API)을 새로 넣으면 이 검사가 깨지므로 저장소 파일로 둡니다([오프라인](docs/development.md#오프라인)).
+- 단위 테스트는 `src/`, `server/`, `workers/` 아래 `*.test.ts`에 둡니다.
 - CI는 E2E 브라우저를 2개만 띄웁니다. 코어가 많은 기기에서 `CI=1`로 돌리면 같은 조건이 됩니다.
 - 의존성의 빌드 스크립트는 `pnpm-workspace.yaml`의 `allowBuilds`에 허용한 것만 실행됩니다.
 - **Testing Library 원칙**: 구현 세부가 아니라 사용자가 보는 동작을 검사하고, 요소는 역할·이름(`getByRole`)으로 찾습니다. 단위·컴포넌트는 Vitest + **Vue Test Utils**(`@vue/test-utils`, happy-dom)이고 Testing Library 패키지는 쓰지 않습니다(표준과 다른 점, 컴포넌트 테스트는 `mount`로 그림). 화면 흐름은 Playwright E2E(`getByRole` 사용), 접근성은 `@axe-core/playwright`(`tests/e2e/a11y.spec.ts`)로 검사합니다.
@@ -98,9 +100,12 @@ pnpm test:e2e             # 프로덕션 빌드를 데스크톱·모바일에서
 - 비밀값과 `.env.local`, `.env.cron.local`, `.env.ingest.local`을 커밋하지 않습니다. 비밀은 Vercel에 읽을 수 없는 Secret으로 넣습니다.
 - `CRON_SECRET`은 Vercel·GitHub 저장소 비밀·Cloudflare 워커 비밀 세 곳이 같아야 합니다. 바꿀 때는 [배포](docs/deploy.md)의 이어 실행 명령으로 세 곳을 함께 바꿉니다.
 - 보안 헤더, 서버 세션(scrypt, 서명 쿠키), 로그인 시도 제한(15분 창)을 유지합니다. 운영에 `SESSION_SECRET`이 없으면 서버가 시작하지 않습니다.
-- 실차 장치는 탈것 하나에 묶인 장치 토큰(`pnpm device add`)을 씁니다. `pnpm device`는 운영 DB를 바꾸므로 주의합니다.
+- 실차 장치는 탈것 하나에 묶인 장치 토큰(`pnpm device add`)을 씁니다.
 - 공개 데모에 유료 API 키를 넣지 않습니다. 회원·등록번호·주행 기록은 가상 데이터로만 둡니다.
 - 3D 모델·지도 데이터의 출처(CC BY 4.0, ODbL)를 README 출처 표와 화면에 유지합니다.
+- CI·배포·릴리스 상태는 명령 결과(`gh run`, Vercel API, `curl`)로 확인한 것만 말합니다.
+- 먼저 묻기: 새 런타임 의존성 추가, 빌드·배포 설정(`nuxt.config.ts`, `vercel.json`, `vercel-build`) 변경, 운영 DB를 바꾸는 명령(`pnpm db:migrate`, `pnpm device`) 실행.
+- 절대 금지: 비밀값을 `NUXT_PUBLIC_*`·`runtimeConfig.public`에 넣기, `.env*` 커밋, `eslint-disable`·`--no-verify`로 검사 우회, `main` 직접 푸시.
 
 ## 9. 공통 규칙
 
