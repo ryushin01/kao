@@ -74,7 +74,8 @@ pnpm test:e2e             # 프로덕션 빌드를 데스크톱·모바일에서
 - 흐름은 **GitHub Flow**입니다. `main`에 직접 커밋·푸시하지 않고, 최신 `main`에서 브랜치를 만들어 PR로만 병합합니다.
 - 브랜치 이름: `feat/…`, `fix/…`, `refactor/…`, `docs/…`, `test/…`, `chore/…`, `release/…`.
 - 커밋·PR 제목은 **Conventional Commits**(`<타입>: <한국어 요약>`)입니다. 타입은 `feat`, `fix`, `refactor`, `perf`, `docs`, `test`, `style`, `chore`, `ci`, `build`입니다. 이 저장소는 `release`, `security` 타입도 썼습니다. 실제 예: `feat: 오프라인 마지막 상태·탈것 화면 미리 저장·회원 첫 화면 1.2.0`, `security: 보안 헤더·서버 세션·로그인 시도 제한 0.16.0`. 이 저장소는 버전을 괄호 없이 끝에 붙여 왔습니다(표준의 끝 `(x.y.z)`와 다른 점, 0.12.0까지는 타입 없이 `… (0.12.0)`처럼 괄호를 썼음).
-- 공동 작성자 표기: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- **기여자는 ryushin01만 남깁니다.** 커밋 작성자는 항상 ryushin01(`ryushin0 <141554987+ryushin01@users.noreply.github.com>`)입니다. 이 저장소는 백엔드 코드가 있는 저장소라 공동 작성자 줄은 `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` 하나만 넣습니다.
+- GitHub Actions가 커밋하는 워크플로는 작성자를 ryushin01로 설정합니다(`github-actions[bot]` 금지). Dependabot PR은 그대로 병합하지 말고 같은 변경을 ryushin01 커밋으로 다시 만들어 병합합니다.
 - **Semantic Versioning**(주.부.수): 기능·수정 PR은 `package.json`의 `version`, README 버전 배지, README의 '프로젝트 상태' 줄을 함께 올리고 `CHANGELOG.md`에 절을 더합니다. 머리 줄은 이 파일의 기존 형식 `## x.y.z — YYYY-MM-DD`, 내용은 소제목 없이 `-` 목록입니다(표준의 `-`·추가·변경·수정·제거와 다른 점). 문서만 바뀐 PR은 보통 버전을 올리지 않습니다.
 - **Keep a Changelog**를 따르되, 이 저장소는 `[Unreleased]` 절을 쓰지 않고 PR마다 바로 버전 절을 더합니다(표준과 다른 점).
 - 병합은 squash(`… (#번호)`)로 합니다. 원격 브랜치 삭제는 저장소 설정에 맡깁니다.
